@@ -8,7 +8,7 @@ const { audit, money, fmtDate, fmtDateTime, today, canView, canAdd, canEdit, can
 const router = express.Router();
 
 /* ---------- رفع الملفات ---------- */
-const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const storage = multer.diskStorage({
   destination: function (req, file, cb) { cb(null, UPLOAD_DIR); },
