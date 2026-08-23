@@ -1,0 +1,25 @@
+<%- include('_head', { title: 'البرامج', page: 'programs' }) %>
+<div class="site-container">
+  <h2 style="margin-bottom:6px">برامجنا التدريبية</h2>
+  <p style="color:var(--text-muted);margin-bottom:28px">دورات مكثفة وتعليمية للسباحة لجميع الأعمار</p>
+  <div class="dash-grid">
+    <% programs.forEach(function (p) { %>
+      <a href="/site/programs/<%= p.id %>" class="program-card" style="text-decoration:none;color:var(--text)">
+        <div class="flex justify-between items-center">
+          <span class="badge badge-primary"><%= p.type %></span>
+          <span class="fw-700" style="color:var(--primary);font-size:18px"><%= money(p.price) %></span>
+        </div>
+        <b style="font-size:16px"><%= p.name %></b>
+        <div style="font-size:13px;color:var(--text-soft)"><%= p.description || '' %></div>
+        <div style="font-size:12px;color:var(--text-muted)">
+          <i class="fas fa-stopwatch"></i> <%= p.sessions_count %> حصة — <%= p.session_duration_min %> دقيقة ·
+          <i class="fas fa-users"></i> <%= p.age_from %>-<%= p.age_to %> سنة ·
+          <i class="fas fa-calendar-week"></i> <%= p.weeks_count %> أسابيع
+        </div>
+        <div style="margin-top:8px"><span class="btn btn-primary btn-sm"><i class="fas fa-eye"></i> التفاصيل</span></div>
+      </a>
+    <% }); %>
+    <% if (!programs.length) { %><div class="card"><div class="card-body"><div class="empty-state"><p>لا توجد برامج متاحة حالياً</p></div></div></div><% } %>
+  </div>
+</div>
+<%- include('_foot') %>

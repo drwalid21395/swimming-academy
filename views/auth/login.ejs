@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>تسجيل الدخول | <%= siteName %></title>
+  <link rel="stylesheet" href="/vendor/fa-all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>">
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo"><% if (siteLogo) { %><img src="<%= siteLogo %>" alt="logo" class="logo-img"><% } else { %><i class="fas fa-water"></i><% } %></div>
+    <div class="auth-title"><%= siteName %></div>
+    <div class="auth-sub">نظام إدارة أكاديمية السباحة المتكامل</div>
+    <% if (error) { %>
+      <div class="toast error" style="margin-bottom:14px; border-inline-start:4px solid var(--danger);"><i class="fas fa-circle-xmark text-danger"></i><span><%= error %></span></div>
+    <% } %>
+    <form method="POST" action="/login">
+      <div class="auth-input-wrap">
+        <i class="fas fa-user"></i>
+        <input class="form-control" type="text" name="username" placeholder="اسم المستخدم" required autofocus>
+      </div>
+      <div class="auth-input-wrap">
+        <i class="fas fa-lock"></i>
+        <input class="form-control" type="password" name="password" placeholder="كلمة المرور" required>
+      </div>
+      <button class="btn btn-primary btn-lg btn-block" type="submit"><i class="fas fa-right-to-bracket"></i> دخول النظام</button>
+    </form>
+    <div class="auth-footer"><a href="/forgot-password">نسيت كلمة المرور؟</a></div>
+    <% if (settings && settings.phone) { %>
+      <div class="auth-footer">
+        <a href="tel:<%= String(settings.phone).replace(/\s+/g, '') %>" class="phone-link"><i class="fas fa-phone"></i> اتصل: <span dir="ltr"><%= settings.phone %></span></a>
+        <% if (settings.whatsapp) { %>
+          <a href="https://wa.me/<%= String(settings.whatsapp).replace(/\D+/g, '') %>" class="phone-link" target="_blank" rel="noopener"><i class="fab fa-whatsapp" style="color:#22c55e"></i> واتساب</a>
+        <% } %>
+      </div>
+    <% } %>
+    <div class="demo-box">
+      <b>حسابات التجربة</b> (كلمة المرور: <b>123456</b>)
+      <div class="mt-1">👤 admin — مدير النظام &nbsp;|&nbsp; 👤 manager — مدير الأكاديمية</div>
+      <div class="mt-1">👤 reception — الاستقبال &nbsp;|&nbsp; 👤 finance — المالي &nbsp;|&nbsp; 👤 coach1 — كابتن</div>
+      <div class="mt-1">👤 guardian1 — ولي أمر &nbsp;|&nbsp; 👤 swimmer1 — سباح</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

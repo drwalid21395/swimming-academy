@@ -1,0 +1,66 @@
+<%- include('partials/layout_top', { title: 'تفاصيل الفريق', active: 'teams' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-flag-checkered"></i> <%= t.name %></div>
+    <div class="page-sub"><%= t.age_group || '' %> · <%= t.coach_name || '—' %> · <%= t.branch_name || '—' %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="/teams" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل الفرق</a>
+    <% if (canEdit) { %><a href="/teams/<%= t.id %>/edit" class="btn btn-primary"><i class="fas fa-pen"></i> تعديل</a><% } %>
+  </div>
+</div>
+
+<div class="dash-grid">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-users"></i> الأعضاء (<%= members.length %>)</h3></div>
+    <div class="card-body">
+      <% if (canEdit) { %>
+        <form method="POST" action="/teams/<%= t.id %>/members" class="flex gap-1 mb-1">
+          <select name="swimmer_id" class="form-control" required style="min-width:250px">
+            <option value="">— أضف سباحاً إلى الفريق —</option>
+            <% swimmers.forEach(function (s) { %><option value="<%= s.value %>"><%= s.label %></option><% }); %>
+          </select>
+          <button class="btn btn-primary" type="submit"><i class="fas fa-user-plus"></i> إضافة</button>
+        </form>
+      <% } %>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>السباح</th><th>رقم العضوية</th><th>تاريخ الانضمام</th><th>الدور</th><% if (canEdit) { %><th></th><% } %></tr></thead>
+          <tbody>
+            <% members.forEach(function (m) { %>
+              <tr>
+                <td><a href="/swimmers/<%= m.swimmer_id %>" class="link"><%= m.full_name %></a></td>
+                <td><%= m.membership_no %></td>
+                <td><%= fmtDate(m.joined_date) %></td>
+                <td><span class="badge badge-info"><%= m.role %></span></td>
+                <% if (canEdit) { %>
+                  <td>
+                    <form method="POST" action="/teams/<%= t.id %>/members/<%= m.id %>/delete" style="display:inline;margin:0">
+                      <button type="submit" class="btn btn-ghost btn-sm text-danger" data-confirm="إخراج هذا السباح من الفريق؟" data-action="submit">إخراج</button>
+                    </form>
+                  </td>
+                <% } %>
+              </tr>
+            <% }); %>
+            <% if (!members.length) { %><tr><td colspan="5"><div class="empty-state"><i class="fas fa-users-slash"></i><p>لا يوجد أعضاء بعد</p></div></td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-bullseye"></i> الخطة التدريبية</h3></div>
+    <div class="card-body">
+      <div class="detail-item"><div class="dl">الوصف</div><div class="dv"><%= t.description || '—' %></div></div>
+      <div class="detail-item"><div class="dl">الخطة</div><div class="dv"><%= t.training_plan || '—' %></div></div>
+    </div>
+  </div>
+</div>
+
+<% if (canDel) { %>
+<form method="POST" action="/teams/<%= t.id %>/delete" style="margin-top:12px">
+  <button type="submit" class="btn btn-outline-danger" data-confirm="حذف الفريق بالكامل؟" data-action="submit"><i class="fas fa-trash"></i> حذف الفريق</button>
+</form>
+<% } %>
+<%- include('partials/layout_bottom') %>

@@ -1,0 +1,83 @@
+<%- include('partials/layout_top', { title: 'تفاصيل البطولة', active: 'competitions' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-trophy"></i> <%= c.name %></div>
+    <div class="page-sub"><%= c.type %> · <%= fmtDate(c.date) %><%= c.end_date ? ' — ' + fmtDate(c.end_date) : '' %> · <%= c.place || '' %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="/competitions" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل البطولات</a>
+    <% if (canEdit) { %><a href="/competitions/<%= c.id %>/edit" class="btn btn-primary"><i class="fas fa-pen"></i> تعديل</a><% } %>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h3><i class="fas fa-medal"></i> نتائج البطولة (<%= results.length %>)</h3></div>
+  <div class="card-body">
+    <% if (canEdit) { %>
+      <form method="POST" action="/competitions/<%= c.id %>/results" class="form-grid" style="background:var(--bg-soft);padding:14px;border-radius:12px;margin-bottom:14px">
+        <div class="form-group">
+          <label>السباح <span class="req">*</span></label>
+          <select name="swimmer_id" class="form-control" required>
+            <option value="">— اختر —</option>
+            <% swimmers.forEach(function (s) { %><option value="<%= s.value %>"><%= s.label %></option><% }); %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>السباحة</label>
+          <select name="race_type" class="form-control">
+            <option value="حرة">حرة</option><option value="ظهر">ظهر</option><option value="صدر">صدر</option><option value="فراشة">فراشة</option><option value="متنوع">متنوع</option>
+          </select>
+        </div>
+        <div class="form-group"><label>المسافة (م)</label><input type="number" name="distance_m" class="form-control" value="50"></div>
+        <div class="form-group"><label>الزمن (ث)</label><input type="number" name="time_seconds" step="0.01" class="form-control"></div>
+        <div class="form-group"><label>زمن سابق</label><input type="number" name="previous_time_seconds" step="0.01" class="form-control"></div>
+        <div class="form-group"><label>المركز</label><input type="number" name="position" class="form-control"></div>
+        <div class="form-group">
+          <label style="padding-top:8px;"><input type="checkbox" name="qualified" value="1" style="width:18px;height:18px;accent-color:var(--primary)"> تأهل</label>
+        </div>
+        <div class="form-group">
+          <label style="padding-top:8px;"><input type="checkbox" name="pb" value="1" style="width:18px;height:18px;accent-color:var(--primary)"> أفضل زمن (PB)</label>
+        </div>
+        <div class="form-group full">
+          <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> إضافة النتيجة</button>
+        </div>
+      </form>
+    <% } %>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>السباح</th><th>السباحة</th><th>المسافة</th><th>الزمن</th><th>المركز</th><th>التأهل</th><th>PB</th><% if (canEdit) { %><th></th><% } %></tr></thead>
+        <tbody>
+          <% results.forEach(function (r) { %>
+            <tr>
+              <td><a href="/swimmers/<%= r.swimmer_id %>" class="link"><b><%= r.full_name %></b></a> <span class="font-11 text-muted"><%= r.membership_no %></span></td>
+              <td><span class="badge badge-primary"><%= r.race_type %></span></td>
+              <td><%= r.distance_m %> م</td>
+              <td class="fw-700"><%= r.time_seconds != null ? r.time_seconds + ' ث' : '—' %></td>
+              <td>
+                <% if (r.position === 1) { %><span class="badge medal-gold">🥇 الأول</span><% } else if (r.position === 2) { %><span class="badge medal-silver">🥈 الثاني</span><% } else if (r.position === 3) { %><span class="badge medal-bronze">🥉 الثالث</span><% } else if (r.position) { %><%= r.position %><% } else { %>—<% } %>
+              </td>
+              <td><% if (r.qualified) { %><span class="badge badge-success">تأهل</span><% } else { %><span class="badge badge-gray">—</span><% } %></td>
+              <td><% if (r.pb) { %><span class="badge badge-warning"><i class="fas fa-bolt"></i> PB</span><% } else { %>—<% } %></td>
+              <% if (canEdit) { %>
+                <td>
+                  <form method="POST" action="/competitions/<%= c.id %>/results/<%= r.id %>/delete" style="display:inline;margin:0">
+                    <button type="submit" class="btn btn-ghost btn-sm text-danger" data-confirm="حذف النتيجة؟" data-action="submit">حذف</button>
+                  </form>
+                </td>
+              <% } %>
+            </tr>
+          <% }); %>
+          <% if (!results.length) { %><tr><td colspan="8"><div class="empty-state"><i class="fas fa-medal"></i><p>لا توجد نتائج بعد</p></div></td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<% if (canDel) { %>
+<form method="POST" action="/competitions/<%= c.id %>/delete" style="margin-top:12px">
+  <button type="submit" class="btn btn-outline-danger" data-confirm="حذف البطولة ونتائجها؟" data-action="submit"><i class="fas fa-trash"></i> حذف البطولة</button>
+</form>
+<% } %>
+<%- include('partials/layout_bottom') %>

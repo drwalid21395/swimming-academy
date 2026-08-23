@@ -1,0 +1,75 @@
+<%- include('partials/layout_top', { title: 'تفاصيل التقييم', active: 'assessments' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-clipboard-check"></i> تفاصيل التقييم</div>
+    <div class="page-sub"><b><%= a.swimmer_name || '—' %></b> · <%= fmtDate(a.date) %> · مستوى <%= a.level_name || '—' %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="/assessments" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل التقييمات</a>
+    <a href="/swimmers/<%= a.swimmer_id %>" class="btn btn-primary"><i class="fas fa-person-swimming"></i> ملف السباح</a>
+    <a href="/swimmers/<%= a.swimmer_id %>/assessment-report" class="btn btn-primary"><i class="fas fa-clipboard-check"></i> التقرير الشامل</a>
+    <% if (canEdit) { %><a href="/assessments/<%= a.id %>/edit" class="btn btn-primary"><i class="fas fa-pen"></i> تعديل</a><% } %>
+    <% if (a.ready_to_advance) { %>
+      <form method="POST" action="/assessments/<%= a.id %>/advance" style="display:inline;margin:0">
+        <button type="submit" class="btn btn-success" data-confirm="تأكيد ترقية السباح إلى المستوى التالي؟" data-action="submit"><i class="fas fa-arrow-up"></i> ترقية المستوى</button>
+      </form>
+    <% } %>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="k-val <%= a.overall_percent >= 80 ? 'text-success' : a.overall_percent >= 60 ? 'text-warning' : 'text-danger' %>"><%= a.overall_percent || 0 %>%</div><div class="k-lbl">النسبة النهائية (المتوسط)</div></div>
+  <div class="kpi"><div class="k-val text-primary"><%= levelPercent %>%</div><div class="k-lbl">متوسط النسب</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= levelTotal %><span class="font-12 text-soft"> / <%= levelCount * 100 %></span></div><div class="k-lbl">مجموع النسب</div></div>
+  <div class="kpi"><div class="k-val text-primary"><%= a.coach_name || '—' %></div><div class="k-lbl">الكابتن المقيّم</div></div>
+  <div class="kpi"><div class="k-val"><%= a.ready_to_advance ? 'جاهز' : 'قيد التدريب' %></div><div class="k-lbl">حالة الترقية</div></div>
+</div>
+
+<div class="dash-grid">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-gauge-high"></i> درجات المعايير</h3></div>
+    <div class="card-body">
+      <% const entries = Object.entries(scores); %>
+      <% if (entries.length) { %>
+        <% entries.forEach(function (e) { %>
+          <% const crit = criteriaMap[Number(e[0])] || null; %>
+          <div class="flex justify-between items-center" style="padding:8px 0;border-bottom:1px dashed var(--card-border)">
+            <span><%= crit ? crit.name : e[0] %></span>
+            <span class="score-pill"><%= e[1] %></span>
+          </div>
+        <% }); %>
+        <div class="flex justify-between items-center" style="padding:10px 0 2px">
+          <b>مجموع النسب</b>
+          <span class="score-pill"><%= levelTotal %> / <%= levelCount * 100 %></span>
+        </div>
+        <div class="flex justify-between items-center" style="padding:6px 0 2px">
+          <b>متوسط النسب</b>
+          <span class="score-pill"><%= levelPercent %>%</span>
+        </div>
+        <div class="flex justify-between items-center" style="padding:6px 0 2px">
+          <b>النسبة النهائية</b>
+          <span class="score-pill"><%= a.overall_percent || 0 %>%</span>
+        </div>
+      <% } else { %>
+        <div class="empty-state"><i class="fas fa-chart-simple"></i><p>لا توجد درجات معايير مسجلة</p></div>
+      <% } %>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-comment-dots"></i> الملاحظات الفنية</h3></div>
+    <div class="card-body">
+      <div class="detail-item"><div class="dl">نقاط القوة</div><div class="dv"><%= a.strengths || '—' %></div></div>
+      <div class="detail-item"><div class="dl">نقاط الضعف</div><div class="dv"><%= a.weaknesses || '—' %></div></div>
+      <div class="detail-item"><div class="dl">التوصيات</div><div class="dv"><%= a.recommendations || '—' %></div></div>
+      <div class="detail-item"><div class="dl">ملاحظات عامة</div><div class="dv"><%= a.notes || '—' %></div></div>
+    </div>
+  </div>
+</div>
+
+<% if (canDel) { %>
+<form method="POST" action="/assessments/<%= a.id %>/delete" style="margin-top:12px">
+  <button type="submit" class="btn btn-outline-danger" data-confirm="حذف التقييم؟" data-action="submit"><i class="fas fa-trash"></i> حذف التقييم</button>
+</form>
+<% } %>
+<%- include('partials/layout_bottom') %>

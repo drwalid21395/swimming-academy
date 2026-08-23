@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>استعادة كلمة المرور | <%= siteName %></title>
+  <link rel="stylesheet" href="/vendor/fa-all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo"><i class="fas fa-key"></i></div>
+    <div class="auth-title">استعادة كلمة المرور</div>
+    <div class="auth-sub">أدخل اسم المستخدم أو البريد الإلكتروني</div>
+    <% if (message) { %>
+      <div class="toast <%= message.includes('تم') ? 'success' : 'error' %>" style="margin-bottom:14px"><i class="fas fa-circle-check text-success"></i><span><%= message %></span></div>
+    <% } %>
+    <form method="POST" action="/forgot-password">
+      <div class="auth-input-wrap">
+        <i class="fas fa-user"></i>
+        <input class="form-control" type="text" name="username" placeholder="اسم المستخدم أو البريد الإلكتروني" required>
+      </div>
+      <button class="btn btn-primary btn-lg btn-block" type="submit"><i class="fas fa-paper-plane"></i> إرسال</button>
+    </form>
+    <div class="auth-footer"><a href="/login"><i class="fas fa-arrow-right"></i> العودة لتسجيل الدخول</a></div>
+  </div>
+</div>
+</body>
+</html>

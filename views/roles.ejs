@@ -1,0 +1,74 @@
+<%- include('partials/layout_top', { title: 'الأدوار والصلاحيات', active: 'users' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-user-shield"></i> الأدوار والصلاحيات</div>
+    <div class="page-sub">إدارة أدوار النظام وتحديد صلاحيات كل دور</div>
+  </div>
+  <div class="spacer"></div>
+  <a href="/users" class="btn btn-outline"><i class="fas fa-users"></i> المستخدمون</a>
+</div>
+
+<% roles.forEach(function (role) { %>
+  <div class="card" style="margin-bottom:18px">
+    <div class="card-header">
+      <div>
+        <h3><i class="fas fa-user-tag"></i> <%= role.name %></h3>
+        <span class="font-12 text-muted"><%= role.users_count %> مستخدم · <%= role.is_system ? 'دور نظام' : 'دور مخصص' %></span>
+      </div>
+    </div>
+    <div class="card-body">
+      <% if (!canEdit) { %>
+        <p class="text-muted">ليست لديك صلاحية تعديل الصلاحيات.</p>
+      <% } else { %>
+        <form method="POST" action="/roles/<%= role.id %>/permissions" novalidate>
+          <div class="table-wrap">
+            <table class="data-table perms-table">
+              <thead>
+                <tr>
+                  <th>الوحدة</th>
+                  <th style="width:90px"><label class="perm-head"><input type="checkbox" class="perm-all-col" data-col="view"> عرض</label></th>
+                  <th style="width:90px"><label class="perm-head"><input type="checkbox" class="perm-all-col" data-col="add"> إضافة</label></th>
+                  <th style="width:90px"><label class="perm-head"><input type="checkbox" class="perm-all-col" data-col="edit"> تعديل</label></th>
+                  <th style="width:90px"><label class="perm-head"><input type="checkbox" class="perm-all-col" data-col="del"> حذف</label></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% let perms = {}; try { perms = JSON.parse(role.permissions || '{}'); } catch (e) { perms = {}; } %>
+                <% groups.forEach(function (grp) { %>
+                  <tr class="group-row"><td colspan="5"><i class="fas fa-folder"></i> <%= grp[0] %></td></tr>
+                  <% grp[1].forEach(function (m) { %>
+                    <% const p = perms[m] || { view: 0, add: 0, edit: 0, del: 0 }; %>
+                    <tr>
+                      <td><%= labels[m] || m %></td>
+                      <td><input type="checkbox" name="<%= m %>_view" value="1" <%= p.view ? 'checked' : '' %> class="perm-row" data-row="view"></td>
+                      <td><input type="checkbox" name="<%= m %>_add" value="1" <%= p.add ? 'checked' : '' %> class="perm-row" data-row="add"></td>
+                      <td><input type="checkbox" name="<%= m %>_edit" value="1" <%= p.edit ? 'checked' : '' %> class="perm-row" data-row="edit"></td>
+                      <td><input type="checkbox" name="<%= m %>_del" value="1" <%= p.del ? 'checked' : '' %> class="perm-row" data-row="del"></td>
+                    </tr>
+                  <% }); %>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> حفظ صلاحيات <%= role.name %></button>
+          </div>
+        </form>
+      <% } %>
+    </div>
+  </div>
+<% }); %>
+
+<script>
+document.querySelectorAll('.perm-all-col').forEach(function (chk) {
+  chk.addEventListener('change', function () {
+    var col = this.getAttribute('data-col');
+    document.querySelectorAll('.perm-row[data-row="' + col + '"]').forEach(function (c) { c.checked = chk.checked; });
+  });
+});
+document.querySelectorAll('.group-row').forEach(function (r) {
+  r.style.background = 'var(--bg-soft)';
+  r.style.fontWeight = '700';
+});
+</script>
+<%- include('partials/layout_bottom') %>

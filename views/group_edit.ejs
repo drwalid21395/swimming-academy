@@ -1,0 +1,150 @@
+<%- include('partials/layout_top', { title, active: 'groups' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-people-group"></i> <%= title %></div>
+    <div class="page-sub"><%= editMode ? group.name : 'إنشاء مجموعة تدريبية جديدة — يمكن إضافة الأعضاء بعد الإنشاء' %></div>
+  </div>
+  <div class="spacer"></div>
+  <% if (editMode) { %>
+    <a href="/groups/<%= group.id %>/swimmers-print" class="btn btn-outline"><i class="fas fa-file-pdf"></i> طباعة / PDF</a>
+    <a href="/groups/<%= group.id %>/swimmers.xls" class="btn btn-outline"><i class="fas fa-file-excel"></i> Excel</a>
+  <% } %>
+  <a href="<%= cancelUrl %>" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل المجموعات</a>
+</div>
+
+<form method="POST" action="<%= submitAction %>" novalidate>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-gears"></i> بيانات المجموعة</h3></div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>اسم المجموعة <span class="req">*</span></label>
+          <input type="text" class="form-control" name="name" required value="<%= values.name || '' %>">
+        </div>
+        <div class="form-group">
+          <label>البرنامج</label>
+          <select class="form-control" name="program_id">
+            <option value="">— اختر —</option>
+            <% programs.forEach(function (p) { %>
+              <option value="<%= p.id %>" <%= String(values.program_id) === String(p.id) ? 'selected' : '' %>><%= p.name %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>الكابتن المسؤول</label>
+          <select class="form-control" name="coach_id">
+            <option value="">— اختر —</option>
+            <% coaches.forEach(function (c) { %>
+              <option value="<%= c.id %>" <%= String(values.coach_id) === String(c.id) ? 'selected' : '' %>><%= c.full_name %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>حمام السباحة</label>
+          <select class="form-control" name="pool_id">
+            <option value="">— اختر —</option>
+            <% pools.forEach(function (p) { %>
+              <option value="<%= p.id %>" <%= String(values.pool_id) === String(p.id) ? 'selected' : '' %>><%= p.name %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>الفرع</label>
+          <select class="form-control" name="branch_id">
+            <option value="">— اختر —</option>
+            <% branches.forEach(function (b) { %>
+              <option value="<%= b.id %>" <%= String(values.branch_id) === String(b.id) ? 'selected' : '' %>><%= b.name %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>السعة القصوى</label>
+          <input type="number" class="form-control" name="capacity" value="<%= values.capacity || 12 %>">
+        </div>
+        <div class="form-group">
+          <label>عدد الحصص</label>
+          <input type="number" class="form-control" name="sessions_count" value="<%= values.sessions_count || 8 %>">
+        </div>
+        <div class="form-group">
+          <label>الحالة</label>
+          <select class="form-control" name="status">
+            <option value="نشطة" <%= values.status === 'نشطة' ? 'selected' : '' %>>نشطة</option>
+            <option value="متوقفة" <%= values.status === 'متوقفة' ? 'selected' : '' %>>متوقفة</option>
+          </select>
+        </div>
+        <div class="form-group full">
+          <label>ملاحظات</label>
+          <textarea class="form-control" name="notes" rows="3"><%= values.notes || '' %></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mt-2">
+    <div class="card-header"><h3><i class="fas fa-calendar-week"></i> مواعيد التدريب الأسبوعية</h3></div>
+    <div class="card-body">
+      <div class="form-grid">
+        <% days.forEach(function (d) { %>
+          <div class="form-group">
+            <label><%= d.a %></label>
+            <div class="flex gap-1">
+              <input type="time" class="form-control" name="day_<%= d.k %>_start" value="<%= values['day_' + d.k + '_start'] || '' %>">
+              <span class="text-muted" style="align-self:center">إلى</span>
+              <input type="time" class="form-control" name="day_<%= d.k %>_end" value="<%= values['day_' + d.k + '_end'] || '' %>">
+            </div>
+          </div>
+        <% }); %>
+      </div>
+      <div class="form-hint">اترك الأيام غير المخصصة للتدريب فارغة.</div>
+    </div>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> حفظ البيانات</button>
+    <a href="<%= cancelUrl %>" class="btn btn-outline btn-lg">إلغاء</a>
+  </div>
+</form>
+
+<% if (editMode) { %>
+  <div class="card mt-2" data-group-members>
+    <div class="card-header"><h3><i class="fas fa-user-group"></i> أعضاء المجموعة (<span data-member-count data-capacity="<%= group.capacity || 12 %>"><%= members.length %> / <%= group.capacity || 12 %></span>)</h3></div>
+    <div class="card-body">
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>السباح</th><th>رقم العضوية</th><th>المستوى</th><th></th></tr></thead>
+          <tbody>
+            <% members.forEach(function (m, i) { %>
+              <tr>
+                <td><%= i + 1 %></td>
+                <td><b><%= m.full_name %></b></td>
+                <td><%= m.membership_no %></td>
+                <td><%= m.level_name || '—' %></td>
+                <td style="text-align:left;white-space:nowrap">
+                  <a href="/swimmers/<%= m.id %>" class="btn btn-ghost btn-sm"><i class="fas fa-eye"></i> عرض</a>
+                  <form method="POST" action="/groups/<%= group.id %>/members/remove" data-confirm="إزالة <%= m.full_name %> من هذه المجموعة؟" data-ajax>
+                    <input type="hidden" name="swimmer_id" value="<%= m.id %>">
+                    <button type="submit" class="btn btn-ghost btn-sm text-danger">إزالة</button>
+                  </form>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+      <div class="empty-state" data-empty-members <%= members.length ? 'style="display:none"' : '' %>><i class="fas fa-user-slash"></i><p>لا يوجد أعضاء في هذه المجموعة بعد</p></div>
+
+      <div class="form-section-title mt-2"><i class="fas fa-user-plus"></i> إضافة سباح إلى المجموعة</div>
+      <form method="POST" action="/groups/<%= group.id %>/members/add" class="chip-add" data-ajax-add>
+        <select name="swimmer_id" class="form-control" required style="flex:1;min-width:220px">
+          <option value="">— اختر السباح —</option>
+          <% allSwimmers.forEach(function (s) { %>
+            <option value="<%= s.id %>"><%= s.full_name %> (<%= s.membership_no %>)</option>
+          <% }); %>
+        </select>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> إضافة</button>
+      </form>
+      <% if (!allSwimmers.length) { %><div class="form-hint">جميع السباحين مضافون بالفعل لهذه المجموعة.</div><% } %>
+    </div>
+  </div>
+<% } %>
+<%- include('partials/layout_bottom') %>

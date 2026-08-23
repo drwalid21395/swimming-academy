@@ -1,0 +1,179 @@
+<%- include('partials/layout_top', { title: 'لوحة التحكم', active: 'dashboard' }) %>
+
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-gauge-high"></i> لوحة التحكم</div>
+    <div class="page-sub">مرحباً <%= user.full_name %>، إليك ملخص نشاط الأكاديمية <b><%= fmtDate(today) %></b></div>
+  </div>
+  <div class="spacer"></div>
+  <a href="/site" target="_blank" class="btn btn-outline"><i class="fas fa-globe"></i> الموقع التعريفي</a>
+</div>
+
+<!-- ===== البطاقات الإحصائية ===== -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-icon bg-primary-soft"><i class="fas fa-person-swimming"></i></div>
+    <div class="stat-info">
+      <h4>إجمالي السباحين</h4>
+      <div class="stat-value"><%= stats.S.total %></div>
+      <div class="stat-sub">نشط <%= stats.S.active %> · متوقف <%= stats.S.stopped %></div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon bg-success-soft"><i class="fas fa-file-contract"></i></div>
+    <div class="stat-info">
+      <h4>اشتراكات سارية</h4>
+      <div class="stat-value"><%= stats.subs.active %></div>
+      <div class="stat-sub"><span class="text-warning fw-700">يوشك <%= stats.subs.expiringSoon %> على الانتهاء</span></div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon bg-info-soft"><i class="fas fa-calendar-check"></i></div>
+    <div class="stat-info">
+      <h4>حصص اليوم</h4>
+      <div class="stat-value"><%= stats.sessions.scheduledToday %></div>
+      <div class="stat-sub">منفذة <%= stats.sessions.executed %> · قادمة <%= stats.sessions.upcoming %></div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon bg-purple-soft"><i class="fas fa-user-tie"></i></div>
+    <div class="stat-info">
+      <h4>الكباتن والمدربون</h4>
+      <div class="stat-value"><%= stats.coachesCount %></div>
+      <div class="stat-sub">فرق <%= stats.teamsCount %> · مجموعات <%= stats.groupsCount %></div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon bg-teal-soft"><i class="fas fa-arrow-trend-up"></i></div>
+    <div class="stat-info">
+      <h4>إجمالي الإيرادات</h4>
+      <div class="stat-value"><%= money(stats.finance.revenues) %></div>
+      <div class="stat-sub">صافي الدخل <%= money(stats.finance.revenues - stats.finance.expenses) %></div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon bg-danger-soft"><i class="fas fa-arrow-trend-down"></i></div>
+    <div class="stat-info">
+      <h4>إجمالي المصروفات</h4>
+      <div class="stat-value"><%= money(stats.finance.expenses) %></div>
+      <div class="stat-sub">سجلات معتمدة</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon bg-warning-soft"><i class="fas fa-hand-holding-dollar"></i></div>
+    <div class="stat-info">
+      <h4>مبالغ مستحقة</h4>
+      <div class="stat-value"><%= money(stats.finance.due) %></div>
+      <div class="stat-sub">عدد غير المسددين <%= stats.finance.unpaidCount %></div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon bg-pink-soft"><i class="fas fa-user-check"></i></div>
+    <div class="stat-info">
+      <h4>حضور اليوم</h4>
+      <div class="stat-value"><%= stats.attendanceToday.present %></div>
+      <div class="stat-sub">غائب <%= stats.attendanceToday.absent %> · معتذر <%= stats.attendanceToday.excused %></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== الرسوم البيانية ===== -->
+<div class="dash-grid">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-chart-line"></i> الإيرادات والمصروفات — آخر 12 أسبوع</h3></div>
+    <div class="card-body"><div class="chart-box"><canvas id="chartRevenue"></canvas></div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-chart-pie"></i> السباحون حسب البرنامج</h3></div>
+    <div class="card-body"><div class="chart-box"><canvas id="chartPrograms"></canvas></div></div>
+  </div>
+</div>
+<div class="dash-grid">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-chart-area"></i> الحضور والغياب — آخر 14 يوم</h3></div>
+    <div class="card-body"><div class="chart-box"><canvas id="chartAttendance"></canvas></div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-bell"></i> التنبيهات المهمة</h3></div>
+    <div class="card-body">
+      <% if (alerts.length) { %>
+        <div class="alerts-list">
+          <% alerts.slice(0, 6).forEach(function (a) { %>
+            <a href="<%= a.link %>" class="alert-item <%= a.type === 'danger' ? 'alert-danger' : a.type === 'warn' ? '' : 'alert-info' %>" style="color:inherit">
+              <i class="fas <%= a.icon %> <%= a.type === 'danger' ? 'text-danger' : a.type === 'warn' ? 'text-warning' : 'text-primary' %>"></i>
+              <div>
+                <div class="a-title"><%= a.title %></div>
+                <div class="a-sub"><%= a.sub %></div>
+              </div>
+            </a>
+          <% }); %>
+        </div>
+      <% } else { %>
+        <div class="empty-state"><i class="fas fa-circle-check"></i><p>لا توجد تنبيهات</p></div>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<% let homeImages = []; if (typeof settings !== 'undefined' && settings.home_images) { try { const h = JSON.parse(settings.home_images); if (Array.isArray(h)) homeImages = h; } catch (e) {} } %>
+<% if (homeImages.length) { %>
+  <div class="card" style="margin-top:16px">
+    <div class="card-header"><h3><i class="fas fa-images"></i> صور النشاط</h3></div>
+    <div class="card-body">
+      <div class="img-grid">
+        <% homeImages.forEach(function (img) { %>
+          <div class="img-tile"><img src="/uploads/<%= img %>" alt="صورة نشاط"></div>
+        <% }); %>
+      </div>
+    </div>
+  </div>
+<% } %>
+
+<div class="dash-grid-3">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-calendar-day"></i> حصص اليوم</h3></div>
+    <div class="card-body">
+      <% if (todaySessions.length) { %>
+        <% todaySessions.forEach(function (s) { %>
+          <div class="attendance-session">
+            <div class="att-session-head">
+              <span class="time"><%= s.start_time %></span>
+              <b><%= s.group_name %></b>
+              <span class="badge badge-primary"><%= s.coach_name || '—' %></span>
+            </div>
+            <div class="font-11 text-muted mt-1"><i class="fas fa-person-swimming"></i> <%= s.pool_name || '—' %></div>
+          </div>
+        <% }); %>
+      <% } else { %>
+        <div class="empty-state"><i class="fas fa-calendar-xmark"></i><p>لا توجد حصص مجدولة اليوم</p></div>
+      <% } %>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-clipboard-check"></i> أحدث التقييمات</h3></div>
+    <div class="card-body">
+      <% latestAssess.forEach(function (a) { %>
+        <div class="tl-item" style="padding-bottom:12px">
+          <div class="flex justify-between items-center">
+            <span class="tl-title"><%= a.swimmer_name %></span>
+            <span class="score-pill"><%= a.overall_percent %>%</span>
+          </div>
+          <div class="tl-date"><%= fmtDate(a.date) %> · <%= a.coach_name || '' %> · مستوى <%= a.level_name || '' %></div>
+        </div>
+      <% }); %>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-landmark"></i> الفروع والبنية</h3></div>
+    <div class="card-body">
+      <div class="kpi-row" style="grid-template-columns:1fr 1fr">
+        <div class="kpi"><div class="k-val"><%= stats.branchesCount %></div><div class="k-lbl">فروع</div></div>
+        <div class="kpi"><div class="k-val"><%= stats.groupsCount %></div><div class="k-lbl">مجموعات تدريبية</div></div>
+        <div class="kpi"><div class="k-val"><%= stats.teamsCount %></div><div class="k-lbl">فرق</div></div>
+        <div class="kpi"><div class="k-val"><%= stats.subs.frozen %></div><div class="k-lbl">اشتراكات مجمدة</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('partials/layout_bottom') %>

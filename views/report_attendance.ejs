@@ -1,0 +1,48 @@
+<%- include('partials/layout_top', { title: 'تقرير الحضور والغياب', active: 'reports' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-clipboard-user"></i> تقرير الحضور والغياب</div>
+    <div class="page-sub">من <%= fmtDate(from) %> إلى <%= fmtDate(to) %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <form method="get" action="/reports/attendance" class="flex gap-1">
+      <input type="date" name="from" class="form-control" value="<%= from %>">
+      <input type="date" name="to" class="form-control" value="<%= to %>">
+      <button class="btn btn-outline" type="submit">تصفية</button>
+    </form>
+    <button class="btn btn-outline" data-print><i class="fas fa-print"></i> طباعة</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>السباح</th><th>رقم العضوية</th><th>إجمالي الحصص</th><th>حاضر</th><th>غائب</th><th>معتذر</th><th>نسبة الحضور</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% rows.forEach(function (r) { %>
+          <tr>
+            <td><b><%= r.full_name %></b></td>
+            <td><%= r.membership_no %></td>
+            <td><%= r.total %></td>
+            <td class="text-success fw-700"><%= r.present %></td>
+            <td class="text-danger"><%= r.absent %></td>
+            <td class="text-warning"><%= r.excused %></td>
+            <td>
+              <div class="flex items-center gap-1">
+                <div class="progress" style="width:120px"><span style="width:<%= pct(r.present, r.total) %>%"></span></div>
+                <span class="fw-700 <%= pct(r.present, r.total) >= 80 ? 'text-success' : 'text-danger' %>"><%= pct(r.present, r.total) %>%</span>
+              </div>
+            </td>
+          </tr>
+        <% }); %>
+        <% if (!rows.length) { %><tr><td colspan="7"><div class="empty-state"><p>لا توجد بيانات</p></div></td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<%- include('partials/layout_bottom') %>

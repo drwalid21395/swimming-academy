@@ -1,0 +1,39 @@
+<%- include('partials/layout_top', { title: 'تقرير تقدم السباحين', active: 'reports' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-chart-line"></i> تقرير تقدم السباحين</div>
+    <div class="page-sub">المستويات والتقييمات والاختبارات</div>
+  </div>
+  <div class="spacer"></div>
+  <button class="btn btn-outline" data-print><i class="fas fa-print"></i> طباعة</button>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>السباح</th><th>رقم العضوية</th><th>المستوى</th><th>عدد التقييمات</th><th>آخر تقييم</th><th>اختبارات مجتازة</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% rows.forEach(function (r) { %>
+          <tr>
+            <td><b><%= r.full_name %></b></td>
+            <td><%= r.membership_no %></td>
+            <td><span class="badge badge-primary"><%= r.level_name || '—' %></span></td>
+            <td><%= r.assessments_count %></td>
+            <td>
+              <% if (r.last_percent != null) { %>
+                <span class="badge <%= r.last_percent >= 80 ? 'badge-success' : r.last_percent >= 60 ? 'badge-warning' : 'badge-danger' %>"><%= r.last_percent %>%</span>
+              <% } else { %>—<% } %>
+            </td>
+            <td><span class="badge badge-success"><%= r.passed_tests %></span></td>
+          </tr>
+        <% }); %>
+        <% if (!rows.length) { %><tr><td colspan="6"><div class="empty-state"><p>لا توجد بيانات</p></div></td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<%- include('partials/layout_bottom') %>

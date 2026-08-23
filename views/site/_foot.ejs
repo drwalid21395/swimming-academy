@@ -1,0 +1,39 @@
+<footer class="site-foot">
+  <div class="inner">
+    <div>
+      <div class="site-logo" style="margin-bottom:10px">
+        <div class="logo-icon" style="width:38px;height:38px;font-size:16px"><% if (data.logo) { %><img src="<%= data.logo %>" alt="logo" class="logo-img"><% } else { %><i class="fas fa-water"></i><% } %></div>
+        <b style="color:#fff"><%= data.siteName %></b>
+      </div>
+      <p style="font-size:13px;line-height:1.8;color:#94a3b8"><%= data.about || 'أكاديمية متخصصة في تعليم رياضة السباحة لجميع الأعمار وفق أعلى معايير السلامة والاحتراف.' %></p>
+    </div>
+    <div>
+      <b style="color:#fff;display:block;margin-bottom:10px">البرامج</b>
+      <a href="/site/programs" style="display:block;margin-bottom:8px;font-size:14px">البرامج والدورات</a>
+      <a href="/site/coaches" style="display:block;margin-bottom:8px;font-size:14px">فريق الكباتن</a>
+      <a href="/site/announcements" style="display:block;margin-bottom:8px;font-size:14px">آخر الإعلانات</a>
+      <a href="/site/contact" style="display:block;font-size:14px">التسجيل والتواصل</a>
+    </div>
+    <div>
+      <b style="color:#fff;display:block;margin-bottom:10px">التواصل</b>
+      <div style="font-size:14px;margin-bottom:8px"><i class="fas fa-phone"></i> <% if (data.phone) { %><a href="tel:<%= String(data.phone).replace(/\s+/g, '') %>" style="color:inherit" dir="ltr"><%= data.phone %></a><% } else { %>—<% } %></div>
+      <div style="font-size:14px;margin-bottom:8px"><i class="fab fa-whatsapp"></i> <% if (data.whatsapp) { %><a href="https://wa.me/<%= String(data.whatsapp).replace(/\D+/g, '') %>" target="_blank" rel="noopener" style="color:inherit" dir="ltr"><%= data.whatsapp %></a><% } else { %>—<% } %></div>
+      <div style="font-size:14px;margin-bottom:8px"><i class="fas fa-envelope"></i> <%= data.email || '—' %></div>
+      <div style="font-size:14px"><i class="fas fa-location-dot"></i> <%= data.address || '—' %></div>
+    </div>
+    <div>
+      <b style="color:#fff;display:block;margin-bottom:10px">مواعيد العمل</b>
+      <div style="font-size:14px;margin-bottom:12px"><%= data.work_hours || 'السبت - الخميس: 9 ص - 9 م' %></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:13px">
+        <% if (data.facebook) { %><a href="<%= data.facebook %>" target="_blank" style="background:#1e293b;padding:6px 14px;border-radius:999px">فيسبوك</a><% } %>
+        <% if (data.instagram) { %><a href="<%= data.instagram %>" target="_blank" style="background:#1e293b;padding:6px 14px;border-radius:999px">انستجرام</a><% } %>
+        <% if (data.tiktok) { %><a href="<%= data.tiktok %>" target="_blank" style="background:#1e293b;padding:6px 14px;border-radius:999px">تيك توك</a><% } %>
+      </div>
+    </div>
+  </div>
+  <div style="text-align:center;padding:16px;border-top:1px solid #1e293b;font-size:13px;color:#64748b">
+    © <%= new Date().getFullYear() %> <%= data.siteName %> — جميع الحقوق محفوظة
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="<%= typeof user !== 'undefined' && user && user.theme ? user.theme : 'light' %>">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %> | <%= siteName %></title>
+  <link rel="stylesheet" href="/vendor/fa-all.min.css">
+  <link rel="stylesheet" href="/css/style.css?v=19">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>">
+</head>
+<body>
+<div class="layout">
+  <!-- ============ القائمة الجانبية ============ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo"><% if (siteLogo) { %><img src="<%= siteLogo %>" alt="logo" class="logo-img"><% } else { %><i class="fas fa-water"></i><% } %></div>
+      <div>
+        <div class="sidebar-title"><%= siteName %></div>
+        <div class="sidebar-sub">نظام الإدارة المتكامل</div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <% const nav = [
+        { sec: 'الرئيسية' },
+        { url: '/', label: 'لوحة التحكم', icon: 'fa-gauge-high', module: 'dashboard' },
+        { sec: 'الأعضاء والتسجيل' },
+        { url: '/swimmers', label: 'السباحون', icon: 'fa-person-swimming', module: 'swimmers' },
+        { url: '/guardians', label: 'أولياء الأمور', icon: 'fa-people-roof', module: 'guardians' },
+        { url: '/coaches', label: 'الكباتن والمدربون', icon: 'fa-user-tie', module: 'coaches' },
+        { url: '/staff', label: 'الموظفون', icon: 'fa-user-gear', module: 'staff' },
+        { sec: 'البرامج التدريبية' },
+        { url: '/programs', label: 'البرامج والدورات', icon: 'fa-list-check', module: 'programs' },
+        { url: '/levels', label: 'المستويات', icon: 'fa-layer-group', module: 'levels' },
+        { url: '/groups', label: 'المجموعات التدريبية', icon: 'fa-people-group', module: 'groups' },
+        { sec: 'الجداول والحضور' },
+        { url: '/sessions', label: 'الحصص والجداول', icon: 'fa-calendar-days', module: 'sessions' },
+        { url: '/attendance', label: 'الحضور والغياب', icon: 'fa-clipboard-user', module: 'attendance' },
+        { sec: 'الجوانب الفنية' },
+        { url: '/assessments', label: 'التقييمات الفنية', icon: 'fa-clipboard-check', module: 'assessments' },
+        { url: '/tests', label: 'الاختبارات', icon: 'fa-vial-circle-check', module: 'tests' },
+        { url: '/teams', label: 'فرق السباحة', icon: 'fa-flag-checkered', module: 'teams' },
+        { url: '/competitions', label: 'البطولات', icon: 'fa-trophy', module: 'competitions' },
+        { sec: 'المالية' },
+        { url: '/subscriptions', label: 'الاشتراكات', icon: 'fa-file-contract', module: 'subscriptions' },
+        { url: '/payments', label: 'المدفوعات', icon: 'fa-money-bill-wave', module: 'payments' },
+        { url: '/revenues', label: 'الإيرادات', icon: 'fa-arrow-up-right-dots', module: 'revenues' },
+        { url: '/expenses', label: 'المصروفات', icon: 'fa-arrow-down-right-dots', module: 'expenses' },
+        { url: '/coach-payments', label: 'مستحقات المدربين', icon: 'fa-coins', module: 'coachPayments' },
+        { sec: 'الإدارة والمراسلات' },
+        { url: '/incoming', label: 'الوارد', icon: 'fa-inbox', module: 'incoming' },
+        { url: '/outgoing', label: 'الصادر', icon: 'fa-paper-plane', module: 'outgoing' },
+        { url: '/documents', label: 'المستندات', icon: 'fa-folder-open', module: 'documents' },
+        { url: '/notifications', label: 'الإشعارات', icon: 'fa-bell', module: 'notifications' },
+        { url: '/complaints', label: 'الشكاوى والطلبات', icon: 'fa-headset', module: 'complaints' },
+        { sec: 'التقارير والإعدادات' },
+        { url: '/reports', label: 'التقارير', icon: 'fa-chart-column', module: 'reports' },
+        { url: '/branches', label: 'الفروع وحمامات السباحة', icon: 'fa-building', module: 'branches' },
+        { url: '/pools', label: 'حمامات السباحة', icon: 'fa-person-swimming', module: 'pools' },
+        { url: '/schools', label: 'المدارس والجهات الدراسية', icon: 'fa-school', module: 'schools' },
+        { url: '/users', label: 'المستخدمون والصلاحيات', icon: 'fa-user-shield', module: 'users' },
+        { url: '/settings', label: 'إعدادات النظام', icon: 'fa-gears', module: 'settings' },
+        { url: '/settings/types', label: 'أنواع البرامج والاختبارات', icon: 'fa-layer-group', module: 'settings' },
+        { url: '/settings/images', label: 'صور الواجهة الرئيسية', icon: 'fa-images', module: 'settings' },
+        { url: '/audit-log', label: 'سجل النشاط', icon: 'fa-clock-rotate-left', module: 'auditLog' }
+      ]; %>
+      <% let section = ''; %>
+      <% nav.forEach(function (item) { %>
+        <% if (item.sec) { section = item.sec; %>
+          <div class="nav-section"><%= item.sec %></div>
+        <% } else if (canView(user, item.module)) { %>
+          <a href="<%= item.url %>" class="nav-item <%= active === item.module ? 'active' : '' %>">
+            <i class="fas <%= item.icon %>"></i><span><%= item.label %></span>
+            <% if (item.module === 'notifications' && typeof unreadCount !== 'undefined' && unreadCount > 0) { %><span class="nav-badge"><%= unreadCount %></span><% } %>
+          </a>
+        <% } %>
+      <% }); %>
+    </nav>
+    <div class="sidebar-footer">
+      <i class="fas fa-database"></i> النسخة التجريبية 1.0
+    </div>
+  </aside>
+
+  <!-- ============ المحتوى الرئيسي ============ -->
+  <div class="main-area">
+    <header class="topbar">
+      <button class="icon-btn menu-toggle with-label" id="menuToggle" title="القائمة"><i class="fas fa-bars"></i><span class="btn-text">القائمة</span></button>
+      <div class="topbar-search">
+        <i class="fas fa-magnifying-glass"></i>
+        <form action="/search" method="get" style="margin:0">
+          <input type="text" name="q" placeholder="بحث سريع... (اسم، رقم عضوية، هاتف)" value="<%= typeof q !== 'undefined' ? q : '' %>">
+        </form>
+      </div>
+      <div class="topbar-right">
+        <% if (canView(user, 'site')) { %>
+          <a href="/site" target="_blank" class="icon-btn with-label" title="الموقع التعريفي"><i class="fas fa-globe"></i><span class="btn-text">الموقع</span></a>
+        <% } %>
+        <button class="icon-btn with-label" data-print title="طباعة / PDF"><i class="fas fa-print"></i><span class="btn-text">طباعة</span></button>
+        <button class="icon-btn with-label" id="themeToggle" title="الوضع الليلي/النهاري"><i class="fas fa-moon"></i><span class="btn-text">الوضع</span></button>
+        <a href="/notifications" class="icon-btn with-label" title="الإشعارات">
+          <i class="fas fa-bell"></i><span class="btn-text">الإشعارات</span>
+          <% if (typeof unreadCount !== 'undefined' && unreadCount > 0) { %><span class="dot"><%= unreadCount > 99 ? '99+' : unreadCount %></span><% } %>
+        </a>
+        <div class="dropdown">
+          <button class="user-chip dropdown-toggle">
+            <div class="user-avatar"><%= user.full_name ? user.full_name.trim().charAt(0) : 'م' %></div>
+            <div>
+              <div class="uname"><%= user.full_name %></div>
+              <div class="urole"><%= user.role_name || user.user_type %></div>
+            </div>
+            <i class="fas fa-chevron-down font-11 text-muted"></i>
+          </button>
+          <div class="dropdown-menu">
+            <a href="/profile"><i class="fas fa-user"></i> حسابي</a>
+            <a href="/notifications"><i class="fas fa-bell"></i> الإشعارات</a>
+            <% if (canView(user, 'site')) { %><a href="/site" target="_blank"><i class="fas fa-globe"></i> الموقع التعريفي</a><% } %>
+            <a href="/logout" class="danger"><i class="fas fa-right-from-bracket"></i> تسجيل الخروج</a>
+          </div>
+        </div>
+      </div>
+    </header>
+    <main class="main-content">
+      <div class="print-header">
+        <div class="ph-brand">
+          <% if (siteLogo) { %><img src="<%= siteLogo %>" alt="logo" class="logo-img"><% } else { %><i class="fas fa-water" style="font-size:30px;color:#0ea5e9"></i><% } %>
+          <div>
+            <div class="ph-name"><%= siteName %></div>
+            <div style="font-size:12px;color:#64748b"><%= typeof settings !== 'undefined' && settings.slogan ? settings.slogan : '' %></div>
+          </div>
+        </div>
+        <div class="ph-info">
+          <% if (typeof settings !== 'undefined' && settings.phone) { %><div>هاتف: <b dir="ltr"><%= settings.phone %></b></div><% } %>
+          <% if (typeof settings !== 'undefined' && settings.whatsapp) { %><div>واتساب: <b dir="ltr"><%= settings.whatsapp %></b></div><% } %>
+        </div>
+      </div>

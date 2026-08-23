@@ -1,0 +1,58 @@
+<%- include('partials/layout_top', { title: 'تفاصيل الشكوى', active: 'complaints' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-headset"></i> تفاصيل الشكوى</div>
+    <div class="page-sub"><%= c.title %> · <span class="badge <%= c.status === 'جديدة' ? 'badge-danger' : c.status === 'قيد المعالجة' ? 'badge-warning' : c.status === 'تمت المعالجة' ? 'badge-info' : 'badge-gray' %>"><%= c.status %></span></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="/complaints" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل الشكاوى</a>
+  </div>
+</div>
+
+<div class="dash-grid">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-circle-info"></i> بيانات الشكوى</h3></div>
+    <div class="card-body">
+      <div class="detail-grid">
+        <% fields.forEach(function (f) { %>
+          <div class="detail-item"><div class="dl"><%= f.label %></div><div class="dv"><%= f.value %></div></div>
+        <% }); %>
+      </div>
+    </div>
+  </div>
+  <% if (canEdit) { %>
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-reply"></i> معالجة الشكوى</h3></div>
+      <div class="card-body">
+        <form method="POST" action="/complaints/<%= c.id %>/respond" novalidate>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>الحالة</label>
+              <select name="status" class="form-control">
+                <option value="جديدة" <%= c.status === 'جديدة' ? 'selected' : '' %>>جديدة</option>
+                <option value="قيد المعالجة" <%= c.status === 'قيد المعالجة' ? 'selected' : '' %>>قيد المعالجة</option>
+                <option value="تمت المعالجة" <%= c.status === 'تمت المعالجة' ? 'selected' : '' %>>تمت المعالجة</option>
+                <option value="مغلقة" <%= c.status === 'مغلقة' ? 'selected' : '' %>>مغلقة</option>
+              </select>
+            </div>
+            <div class="form-group full">
+              <label>الرد على الشكوى</label>
+              <textarea name="response" class="form-control" rows="4" placeholder="اكتب الرد هنا..."><%= c.response || '' %></textarea>
+            </div>
+            <div class="form-group full">
+              <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> حفظ المعالجة</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  <% } %>
+</div>
+
+<% if (canDel) { %>
+<form method="POST" action="/complaints/<%= c.id %>/delete" style="margin-top:12px">
+  <button type="submit" class="btn btn-outline-danger" data-confirm="حذف الشكوى؟" data-action="submit"><i class="fas fa-trash"></i> حذف الشكوى</button>
+</form>
+<% } %>
+<%- include('partials/layout_bottom') %>

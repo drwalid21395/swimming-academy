@@ -1,0 +1,41 @@
+<%- include('partials/layout_top', { title: 'إعدادات النظام', active: 'settings' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-gears"></i> إعدادات النظام</div>
+    <div class="page-sub">بيانات الأكاديمية وتفاصيل الموقع التعريفي</div>
+  </div>
+</div>
+
+<div class="card" style="max-width:820px">
+  <div class="card-body">
+    <% if (!canEdit) { %>
+      <div class="detail-grid">
+        <% defs.forEach(function (d) { %>
+          <div class="detail-item"><div class="dl"><%= d.label %></div><div class="dv"><%= current[d.key] || '—' %></div></div>
+        <% }); %>
+      </div>
+    <% } else { %>
+      <form method="POST" action="/settings" novalidate>
+        <div class="form-grid">
+          <% let lastSec = ''; %>
+          <% defs.forEach(function (d, i) { %>
+            <% const sec = i === 0 ? 'بيانات الأكاديمية' : (i === 3 ? 'التواصل' : (i === 7 ? 'عن الأكاديمية' : (i === 9 ? 'السوشيال ميديا' : (i === 12 ? 'السلامة' : '')))); %>
+            <% if (sec && sec !== lastSec) { %><div class="full form-section-title"><i class="fas fa-circle-info"></i> <%= sec %></div><% lastSec = sec; } %>
+            <div class="form-group <%= d.type === 'textarea' ? 'full' : '' %>">
+              <label><%= d.label %></label>
+              <% if (d.type === 'textarea') { %>
+                <textarea class="form-control" name="<%= d.key %>" rows="4"><%= current[d.key] || '' %></textarea>
+              <% } else { %>
+                <input type="<%= d.type || 'text' %>" class="form-control" name="<%= d.key %>" value="<%= current[d.key] || '' %>">
+              <% } %>
+            </div>
+          <% }); %>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> حفظ الإعدادات</button>
+        </div>
+      </form>
+    <% } %>
+  </div>
+</div>
+<%- include('partials/layout_bottom') %>

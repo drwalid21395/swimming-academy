@@ -1,0 +1,28 @@
+{
+  "name": "swimming-academy-system",
+  "version": "1.0.0",
+  "description": "نظام إدارة أكاديمية السباحة - إدارة شاملة للسباحين والاشتراكات والمدربين والفرق والمالية",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node db/seed.js"
+  },
+  "keywords": [
+    "swimming",
+    "academy",
+    "management",
+    "arabic",
+    "rtl"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "multer": "^2.0.1",
+    "pdfmake": "^0.3.11"
+  }
+}

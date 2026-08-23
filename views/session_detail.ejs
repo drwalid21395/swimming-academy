@@ -1,0 +1,63 @@
+<%- include('partials/layout_top', { title: 'تفاصيل الحصة', active: 'sessions' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-calendar-day"></i> تفاصيل الحصة</div>
+    <div class="page-sub"><b><%= s.group_name || '—' %></b> · <%= fmtDate(s.date) %> · <%= s.start_time %> — <%= s.end_time || '' %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="/sessions" class="btn btn-outline"><i class="fas fa-arrow-right"></i> الحصص</a>
+    <a href="/attendance/session/<%= s.id %>" class="btn btn-primary"><i class="fas fa-clipboard-user"></i> تسجيل الحضور</a>
+    <% if (page.canEdit) { %><a href="/sessions/<%= s.id %>/edit" class="btn btn-primary"><i class="fas fa-pen"></i> تعديل</a><% } %>
+  </div>
+</div>
+
+<div class="dash-grid">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-circle-info"></i> بيانات الحصة</h3></div>
+    <div class="card-body">
+      <div class="detail-grid">
+        <div class="detail-item"><div class="dl">العنوان</div><div class="dv"><%= s.title || '—' %></div></div>
+        <div class="detail-item"><div class="dl">التاريخ</div><div class="dv"><%= fmtDate(s.date) %></div></div>
+        <div class="detail-item"><div class="dl">الوقت</div><div class="dv"><%= s.start_time %> — <%= s.end_time || '' %></div></div>
+        <div class="detail-item"><div class="dl">المجموعة</div><div class="dv"><%= s.group_name || '—' %></div></div>
+        <div class="detail-item"><div class="dl">الكابتن</div><div class="dv"><%= s.coach_name || '—' %></div></div>
+        <div class="detail-item"><div class="dl">الحمام</div><div class="dv"><%= s.pool_name || '—' %></div></div>
+        <div class="detail-item"><div class="dl">الحالة</div><div class="dv">
+          <% if (s.status === 'scheduled') { %><span class="badge badge-primary">مجدولة</span><% } else if (s.status === 'completed') { %><span class="badge badge-success">منفذة</span><% } else if (s.status === 'cancelled') { %><span class="badge badge-danger">ملغاة</span><% } else { %><span class="badge badge-warning">مؤجلة</span><% } %>
+        </div></div>
+        <% if (s.is_compensatory) { %>
+          <div class="detail-item"><div class="dl">حصة تعويضية</div><div class="dv">نعم <%= s.original_date ? 'عن ' + fmtDate(s.original_date) : '' %></div></div>
+        <% } %>
+        <div class="detail-item"><div class="dl">ملاحظات</div><div class="dv"><%= s.note || '—' %></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-clipboard-user"></i> الحضور</h3></div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>السباح</th><th>الحالة</th><th>ملاحظة</th></tr></thead>
+        <tbody>
+          <% members.forEach(function (m) { %>
+            <tr>
+              <td><b><%= m.full_name %></b></td>
+              <td>
+                <% if (m.att_status === 'present') { %><span class="badge badge-success">حاضر</span><% } else if (m.att_status === 'absent') { %><span class="badge badge-danger">غائب</span><% } else if (m.att_status === 'excused') { %><span class="badge badge-warning">معتذر</span><% } else if (m.att_status === 'late') { %><span class="badge badge-info">متأخر</span><% } else { %><span class="badge badge-gray">—</span><% } %>
+              </td>
+              <td class="font-12 text-soft"><%= m.coach_note || m.reason || '—' %></td>
+            </tr>
+          <% }); %>
+          <% if (!members.length) { %><tr><td colspan="3"><div class="empty-state"><i class="fas fa-users-slash"></i><p>لا يوجد أعضاء</p></div></td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<% if (page.canDel) { %>
+<form method="POST" action="/sessions/<%= s.id %>/delete" style="margin-top:12px">
+  <button type="submit" class="btn btn-outline-danger" data-confirm="هل أنت متأكد من حذف هذه الحصة؟" data-action="submit"><i class="fas fa-trash"></i> حذف الحصة</button>
+</form>
+<% } %>
+<%- include('partials/layout_bottom') %>

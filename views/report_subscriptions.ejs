@@ -1,0 +1,44 @@
+<%- include('partials/layout_top', { title: 'تقرير الاشتراكات', active: 'reports' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-file-contract"></i> تقرير الاشتراكات</div>
+    <div class="page-sub">حالة الاشتراكات والمدفوعات والمستحقات</div>
+  </div>
+  <div class="spacer"></div>
+  <button class="btn btn-outline" data-print><i class="fas fa-print"></i> طباعة</button>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="k-val text-primary"><%= activeCount %></div><div class="k-lbl">اشتراكات نشطة</div></div>
+  <div class="kpi"><div class="k-val text-danger"><%= dueCount %></div><div class="k-lbl">عليها متبقي</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= money(revenueTotal) %></div><div class="k-lbl">إجمالي المحصل</div></div>
+  <div class="kpi"><div class="k-val text-danger"><%= money(dueTotal) %></div><div class="k-lbl">إجمالي المتبقي</div></div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>السباح</th><th>البرنامج</th><th>الفترة</th><th>الحصص</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>الحالة</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% rows.forEach(function (r) { %>
+          <tr>
+            <td><b><%= r.swimmer_name || '—' %></b> <span class="font-11 text-muted"><%= r.membership_no %></span></td>
+            <td><%= r.program_name || '—' %></td>
+            <td><%= fmtDate(r.start_date) %> — <%= fmtDate(r.end_date) %></td>
+            <td><%= r.sessions_used %> / <%= r.sessions_total %></td>
+            <td><%= money(r.total) %></td>
+            <td class="text-success fw-700"><%= money(r.paid_amount) %></td>
+            <td class="<%= r.remaining > 0 ? 'text-danger fw-700' : 'text-success' %>"><%= money(r.remaining) %></td>
+            <td><span class="badge <%= r.status === 'نشط' ? 'badge-success' : r.status === 'مكتمل' ? 'badge-primary' : r.status === 'منتهي' ? 'badge-gray' : r.status === 'مجمد' ? 'badge-info' : 'badge-danger' %>"><%= r.status %></span></td>
+          </tr>
+        <% }); %>
+        <% if (!rows.length) { %><tr><td colspan="8"><div class="empty-state"><p>لا توجد اشتراكات</p></div></td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<%- include('partials/layout_bottom') %>

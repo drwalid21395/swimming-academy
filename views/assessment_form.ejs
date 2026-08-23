@@ -1,0 +1,206 @@
+<%- include('partials/layout_top', { title: title, active: 'assessments' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas <%= isEdit ? 'fa-pen' : 'fa-clipboard-check' %>"></i> <%= title %></div>
+    <div class="page-sub">تقييم مهارات السباح على جميع المستويات</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <form method="POST" action="<%= action %>">
+      <input type="hidden" name="level_id" value="<%= values.level_id !== undefined && values.level_id !== null ? values.level_id : '' %>">
+      <div class="form-grid">
+        <div class="full form-section-title"><i class="fas fa-user"></i> بيانات التقييم</div>
+        <div class="form-group">
+          <label>السباح <span class="req">*</span></label>
+          <select class="form-control" name="swimmer_id" required>
+            <option value="">— اختر —</option>
+            <% swimmers.forEach(function (s) { %><option value="<%= s.value %>" data-level="<%= s.level || '' %>" <%= String(values.swimmer_id) === String(s.value) ? 'selected' : '' %>><%= s.label %></option><% }); %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>الكابتن المقيم</label>
+          <select class="form-control" name="coach_id">
+            <option value="">— اختر —</option>
+            <% coaches.forEach(function (c) { %><option value="<%= c.value %>" <%= String(values.coach_id) === String(c.value) ? 'selected' : '' %>><%= c.label %></option><% }); %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>البرنامج</label>
+          <select class="form-control" name="program_id">
+            <option value="">— اختر —</option>
+            <% programs.forEach(function (p) { %><option value="<%= p.value %>" <%= String(values.program_id) === String(p.value) ? 'selected' : '' %>><%= p.label %></option><% }); %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>تاريخ التقييم</label>
+          <input type="date" class="form-control" name="date" value="<%= values.date || '' %>">
+        </div>
+
+        <% if (generalCriteria && generalCriteria.length) { %>
+          <div class="full form-section-title"><i class="fas fa-star"></i> المعايير العامة <span class="font-12 text-muted">— تُقيَّم مرة واحدة وتُضمَّن تلقائياً في كل المستويات</span></div>
+          <div class="level-block general-block" data-general="1">
+            <div class="level-block-head">
+              <div class="level-block-title"><span class="level-badge" style="background:linear-gradient(135deg,#f59e0b,#f97316)"><i class="fas fa-star"></i></span> معايير عامة (السرعة · الالتزام · الانضباط)</div>
+              <div class="level-block-total"><span>متوسط المعايير العامة</span><b class="levelAvg">0%</b></div>
+            </div>
+            <div class="level-block-body">
+              <% generalCriteria.forEach(function (c) { %>
+                <% const v = values['score_' + c.id] !== undefined && values['score_' + c.id] !== '' ? values['score_' + c.id] : 0; %>
+                <div class="form-group criteria-row">
+                  <label><%= c.name %></label>
+                  <input type="range" min="0" max="100" step="1" class="criteria-range" id="range_<%= c.id %>" name="score_<%= c.id %>" value="<%= v %>">
+                  <span class="criteria-input-group"><input type="number" min="0" max="100" class="criteria-num" value="<%= v %>" data-range="range_<%= c.id %>"><span class="criteria-pct">%</span></span>
+                </div>
+              <% }); %>
+            </div>
+            <div class="level-summary">
+              <div class="crit-sum"><span>مجموع النسب</span><b class="levelSum">0%</b></div>
+              <div class="crit-sum"><span>متوسط النسب (المجموع ÷ العدد)</span><b class="levelAvg2">0%</b></div>
+            </div>
+          </div>
+        <% } %>
+
+        <div class="full form-section-title"><i class="fas fa-layer-group"></i> تقييم المستويات (نسبة كل مهارة 0 — 100)٪</div>
+        <% levelGroups.forEach(function (g, gi) { %>
+          <div class="level-block" data-level-id="<%= g.level.value %>">
+            <div class="level-block-head">
+              <div class="level-block-title">
+                <span class="level-badge"><%= gi + 1 %></span>
+                <span><%= g.level.label %></span>
+                <% if (g.level.current) { %><span class="badge badge-success"><i class="fas fa-star"></i> المستوى الحالي</span><% } %>
+              </div>
+              <div class="level-block-total"><span>متوسط المستوى</span><b class="levelAvg">0%</b></div>
+            </div>
+            <div class="level-block-body">
+              <% g.criteria.forEach(function (c) { %>
+                <% const v = values['score_' + c.id] !== undefined && values['score_' + c.id] !== '' ? values['score_' + c.id] : 0; %>
+                <div class="form-group criteria-row">
+                  <label><%= c.name %></label>
+                  <input type="range" min="0" max="100" step="1" class="criteria-range" id="range_<%= c.id %>" name="score_<%= c.id %>" value="<%= v %>">
+                  <span class="criteria-input-group"><input type="number" min="0" max="100" class="criteria-num" value="<%= v %>" data-range="range_<%= c.id %>"><span class="criteria-pct">%</span></span>
+                </div>
+              <% }); %>
+              <% if (!g.criteria.length) { %>
+                <div class="empty-state" style="grid-column:1/-1"><i class="fas fa-sliders"></i><p>لا توجد مهارات مسجلة لهذا المستوى</p></div>
+              <% } %>
+            </div>
+            <div class="level-summary">
+              <div class="crit-sum"><span>مجموع النسب</span><b class="levelSum">0%</b></div>
+              <div class="crit-sum"><span>متوسط النسب (المجموع ÷ العدد)</span><b class="levelAvg2">0%</b></div>
+            </div>
+          </div>
+        <% }); %>
+
+        <% if (levelGroups.length > 1) { %>
+          <div class="grand-summary">
+            <div class="grand-block"><span class="grand-label">المستويات المقيّمة</span><b id="grandCount">0</b></div>
+            <div class="grand-block"><span class="grand-label">مجموع كل النسب</span><b id="grandSum">0%</b></div>
+            <div class="grand-block"><span class="grand-label">المتوسط العام (جميع المستويات)</span><b id="grandAvg">0%</b></div>
+          </div>
+        <% } %>
+
+        <div class="full form-section-title"><i class="fas fa-file-signature"></i> التحليل والتوصيات</div>
+        <div class="form-group">
+          <label>نقاط القوة</label>
+          <textarea class="form-control" name="strengths" rows="2"><%= values.strengths || '' %></textarea>
+        </div>
+        <div class="form-group">
+          <label>نقاط الضعف</label>
+          <textarea class="form-control" name="weaknesses" rows="2"><%= values.weaknesses || '' %></textarea>
+        </div>
+        <div class="form-group full">
+          <label>التوصيات</label>
+          <textarea class="form-control" name="recommendations" rows="2"><%= values.recommendations || '' %></textarea>
+        </div>
+        <div class="form-group">
+          <label class="flex items-center gap-1" style="cursor:pointer; padding-top:8px;">
+            <input type="hidden" name="ready_to_advance" value="0">
+            <input type="checkbox" name="ready_to_advance" value="1" style="width:18px;height:18px;accent-color:var(--primary)" <%= values.ready_to_advance == 1 ? 'checked' : '' %>> جاهز للانتقال للمستوى التالي
+          </label>
+        </div>
+        <div class="form-group">
+          <label>تاريخ التقييم القادم</label>
+          <input type="date" class="form-control" name="next_assessment_date" value="<%= values.next_assessment_date || '' %>">
+        </div>
+        <div class="form-group full">
+          <label>ملاحظات</label>
+          <textarea class="form-control" name="notes" rows="2"><%= values.notes || '' %></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> <%= isEdit ? 'حفظ التعديلات' : 'حفظ التقييم' %></button>
+        <a href="<%= isEdit ? '/assessments' : '/assessments' %>" class="btn btn-outline btn-lg"><i class="fas fa-xmark"></i> إلغاء</a>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+(function () {
+  const blocks = Array.prototype.slice.call(document.querySelectorAll('.level-block'));
+  const grandCount = document.getElementById('grandCount');
+  const grandSum = document.getElementById('grandSum');
+  const grandAvg = document.getElementById('grandAvg');
+  function roundAvg(s, n) { return (n ? Math.round((s / n) * 1000) / 1000 : 0) + '%'; }
+  function blockSum(b) {
+    let sum = 0;
+    b.querySelectorAll('.criteria-range').forEach(function (r) { sum += parseInt(r.value, 10) || 0; });
+    return sum;
+  }
+  function blockN(b) { return b.querySelectorAll('.criteria-range').length; }
+  function recalcBlock(b, sum, n) {
+    b.querySelector('.levelSum').textContent = sum + '%';
+    b.querySelector('.levelAvg').textContent = roundAvg(sum, n);
+    b.querySelector('.levelAvg2').textContent = roundAvg(sum, n);
+  }
+  function recalcAll() {
+    const generalBlock = blocks.filter(function (b) { return b.hasAttribute('data-general'); })[0] || null;
+    let gSum = 0, gN = 0;
+    if (generalBlock) { gSum = blockSum(generalBlock); gN = blockN(generalBlock); recalcBlock(generalBlock, gSum, gN); }
+    let grand = 0, grandN = 0, scored = 0;
+    blocks.forEach(function (b) {
+      if (b.hasAttribute('data-general')) return;
+      const ownSum = blockSum(b), ownN = blockN(b);
+      const sum = ownSum + gSum, n = ownN + gN;
+      recalcBlock(b, sum, n);
+      if (ownN) scored++;
+      grand += sum; grandN += n;
+    });
+    if (grandCount) grandCount.textContent = scored;
+    if (grandSum) grandSum.textContent = grand + '%';
+    if (grandAvg) grandAvg.textContent = roundAvg(grand, grandN);
+  }
+  document.addEventListener('input', function (e) {
+    if (e.target.classList.contains('criteria-range')) {
+      const num = e.target.nextElementSibling ? e.target.nextElementSibling.querySelector('.criteria-num') : null;
+      if (num) num.value = e.target.value;
+      recalcAll();
+    } else if (e.target.classList.contains('criteria-num')) {
+      let v = parseInt(e.target.value, 10);
+      if (isNaN(v)) v = 0;
+      v = Math.min(100, Math.max(0, v));
+      const range = document.getElementById(e.target.getAttribute('data-range'));
+      if (range) range.value = v;
+      recalcAll();
+    }
+  });
+  const swimSel = document.querySelector('select[name="swimmer_id"]');
+  if (swimSel) {
+    swimSel.addEventListener('change', function () {
+      const opt = swimSel.options[swimSel.selectedIndex];
+      const lvl = opt ? opt.getAttribute('data-level') : '';
+      if (lvl) {
+        const target = document.querySelector('.level-block[data-level-id="' + lvl + '"]');
+        if (target) {
+          blocks.forEach(function (b) { b.classList.remove('level-current'); });
+          target.classList.add('level-current');
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+    });
+  }
+  recalcAll();
+})();
+</script>
+<%- include('partials/layout_bottom') %>

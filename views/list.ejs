@@ -1,0 +1,69 @@
+<%- include('partials/layout_top', { title: page.title, active: page.active || page.module }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas <%= page.icon || 'fa-list' %>"></i> <%= page.title %></div>
+    <div class="page-sub"><%= page.subtitle || '' %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <% if (page.filters) { page.filters.forEach(function (f) { %>
+      <select class="form-control" data-filter-target="<%= f.name %>" style="min-width:150px">
+        <option value=""><%= f.label %></option>
+        <% (f.options || []).forEach(function (o) { %><option value="<%= o.value %>"><%= o.label %></option><% }); %>
+      </select>
+    <% }); } %>
+    <input type="search" id="tableSearch" class="form-control" placeholder="بحث داخل الجدول..." style="min-width:200px">
+    <% if (page.headerActions) { page.headerActions.forEach(function (a) { %>
+      <a href="<%= a.href %>" class="btn <%= a.cls || 'btn-outline' %>"><i class="fas <%= a.icon %>"></i> <%= a.label %></a>
+    <% }); } %>
+    <% if (page.canAdd && page.addUrl) { %>
+      <a href="<%= page.addUrl %>" class="btn btn-primary"><i class="fas fa-plus"></i> <%= page.addLabel || 'إضافة جديد' %></a>
+    <% } %>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <% page.columns.forEach(function (col) { %><th class="sortable" title="اضغط للترتيب"><%= col.label %><span class="sort-ind"></span></th><% }); %>
+          <% if (page.actions) { %><th>إجراءات</th><% } %>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (page.rows && page.rows.length) { %>
+          <% page.rows.forEach(function (row) { %>
+            <tr <%- page.filters ? page.filters.map(function (f) { return 'data-' + f.name + '="' + (row[f.name] ?? '') + '"'; }).join(' ') : '' %>>
+              <% page.columns.forEach(function (col) { %>
+                <td><% if (col.html) { %><%- col.html(row) %><% } else { %><%= row[col.key] !== null && row[col.key] !== undefined ? row[col.key] : '—' %><% } %></td>
+              <% }); %>
+              <% if (page.actions) { %>
+                <td>
+                  <div class="table-actions">
+                    <% var acts = (typeof page.actions === 'function') ? page.actions() : page.actions; %>
+                    <% if (typeof acts === 'function') acts = acts(row); %>
+                    <% (acts && acts.forEach ? acts : []).forEach(function (a) { %>
+                      <div class="action-cell">
+                        <% if (a.confirm) { %>
+                          <form method="POST" action="<%= a.href %>" style="display:inline;margin:0"><button type="submit" class="btn btn-ghost btn-sm <%= a.cls || '' %>" title="<%= a.label %>" data-confirm="<%= a.confirm %>" data-action="submit"><i class="fas <%= a.icon %>"></i> <%= a.label %></button></form>
+                        <% } else { %>
+                          <a href="<%= a.href %>" class="btn btn-ghost btn-sm <%= a.cls || '' %>" title="<%= a.label %>"><i class="fas <%= a.icon %>"></i> <%= a.label %></a>
+                        <% } %>
+                      </div>
+                    <% }); %>
+                  </div>
+                </td>
+              <% } %>
+            </tr>
+          <% }); %>
+        <% } else { %>
+          <tr><td colspan="<%= page.columns.length + (page.actions ? 1 : 0) %>">
+            <div class="empty-state"><i class="fas fa-folder-open"></i><p>لا توجد بيانات لعرضها</p></div>
+          </td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<%- include('partials/layout_bottom') %>

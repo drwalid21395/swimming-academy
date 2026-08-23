@@ -1,0 +1,44 @@
+<%- include('partials/layout_top', { title: 'أنواع البرامج والاختبارات', active: 'settings' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-layer-group"></i> أنواع البرامج والاختبارات</div>
+    <div class="page-sub">إدارة الخيارات المتاحة في برامج التدريب واختبارات التقييم</div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <% defs.forEach(function (d) { %>
+    <div class="card">
+      <div class="card-body">
+        <div class="form-section-title"><i class="fas <%= d.icon %>"></i> <%= d.label %></div>
+        <% const items = types[d.key] || []; %>
+        <% if (items.length) { %>
+          <div class="chip-list">
+            <% items.forEach(function (item) { %>
+              <span class="chip">
+                <%= item %>
+                <% if (canEdit) { %>
+                  <form method="POST" action="/settings/types/remove" class="chip-x" data-confirm="حذف هذا النوع؟">
+                    <input type="hidden" name="key" value="<%= d.key %>">
+                    <input type="hidden" name="value" value="<%= item %>">
+                    <button type="submit" title="حذف">&times;</button>
+                  </form>
+                <% } %>
+              </span>
+            <% }); %>
+          </div>
+        <% } else { %>
+          <div class="empty-state"><i class="fas fa-empty-set"></i><p>لا توجد أنواع مسجلة</p></div>
+        <% } %>
+        <% if (canEdit) { %>
+          <form method="POST" action="/settings/types/add" class="chip-add">
+            <input type="hidden" name="key" value="<%= d.key %>">
+            <input type="text" name="value" class="form-control" placeholder="<%= d.placeholder %>" required>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> إضافة</button>
+          </form>
+        <% } %>
+      </div>
+    </div>
+  <% }); %>
+</div>
+<%- include('partials/layout_bottom') %>

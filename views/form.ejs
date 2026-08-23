@@ -1,0 +1,215 @@
+<%- include('partials/layout_top', { title: form.title, active: form.active }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas <%= form.icon || 'fa-pen-to-square' %>"></i> <%= form.title %></div>
+    <div class="page-sub"><%= form.subtitle || '' %></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <form method="POST" action="<%= form.action %>" <%- form.encType ? 'enctype="' + form.encType + '"' : '' %> novalidate>
+      <input type="hidden" name="_csrf" value="<%= form.csrf || '' %>">
+      <div class="form-grid">
+        <% let lastSection = ''; %>
+        <% form.fields.forEach(function (f) { %>
+          <% if (f.section && f.section !== lastSection) { %>
+            <div class="full form-section-title"><i class="fas <%= f.sectionIcon || 'fa-circle-info' %>"></i> <%= f.section %></div>
+            <% lastSection = f.section; %>
+          <% } %>
+          <% if (f.type === 'hidden') { %>
+            <input type="hidden" name="<%= f.key %>" value="<%= form.values[f.key] !== undefined ? form.values[f.key] : (f.value || '') %>">
+          <% } else { %>
+            <div class="form-group <%= f.full ? 'full' : '' %>">
+              <label><%= f.label %><% if (f.required) { %> <span class="req">*</span><% } %></label>
+              <% const v = form.values[f.key] !== undefined ? form.values[f.key] : (f.value !== undefined ? f.value : ''); %>
+              <% if (f.type === 'textarea') { %>
+                <textarea class="form-control" name="<%= f.key %>" rows="<%= f.rows || 3 %>" placeholder="<%= f.placeholder || '' %>" <%= f.required ? 'required' : '' %>><%= v %></textarea>
+              <% } else if (f.type === 'select') { %>
+                <select class="form-control" id="f_<%= f.key %>" name="<%= f.key %>" <%= f.required ? 'required' : '' %>>
+                  <option value="">— اختر —</option>
+                  <% (typeof f.options === 'function' ? f.options(form.values) : (f.options || [])).forEach(function (o) { %>
+                    <option value="<%= o.value %>" <%- o.coach ? 'data-coach="' + o.coach + '"' : '' %> <%= String(v) === String(o.value) ? 'selected' : '' %>><%= o.label %></option>
+                  <% }); %>
+                </select>
+              <% } else if (f.type === 'checkbox') { %>
+                <label class="flex items-center gap-1" style="cursor:pointer; padding-top:8px;">
+                  <input type="hidden" name="<%= f.key %>" value="0">
+                  <input type="checkbox" name="<%= f.key %>" value="1" style="width:18px;height:18px;accent-color:var(--primary)" <%= v == 1 ? 'checked' : '' %>> <%= f.checkLabel || '' %>
+                </label>
+              <% } else if (f.type === 'color') { %>
+                <input type="color" class="form-control" name="<%= f.key %>" value="<%= v || '#0284c7' %>" style="height:42px;padding:4px">
+              <% } else if (f.type === 'file') { %>
+                <% if (f.preview) { %>
+                  <div class="file-preview">
+                    <div class="avatar-preview <%= v ? 'has-img' : '' %>" data-avatar-preview>
+                      <% if (v) { %><img src="<%= v %>" alt=""><% } else { %><span><%= f.initial || 'س' %></span><% } %>
+                    </div>
+                    <div class="file-preview-body">
+                      <input type="file" class="form-control" name="<%= f.key %>" accept="<%= f.accept || '' %>" data-avatar-input>
+                      <div class="form-hint"><%= f.hint || '' %></div>
+                    </div>
+                  </div>
+                <% } else { %>
+                  <input type="file" class="form-control" name="<%= f.key %>" accept="<%= f.accept || '' %>">
+                  <% if (v) { %><div class="form-hint"><a href="<%= v %>" target="_blank" class="btn btn-ghost btn-sm" style="margin-top:6px"><i class="fas fa-paperclip"></i> الملف الحالي</a></div><% } %>
+                  <% if (f.hint) { %><div class="form-hint"><%= f.hint %></div><% } %>
+                <% } %>
+              <% } else if (f.type === 'schedule-days') { %>
+                <div class="form-grid" style="margin-top:2px">
+                  <% const sdays = f.days || [['sunday','الأحد'],['monday','الإثنين'],['tuesday','الثلاثاء'],['wednesday','الأربعاء'],['thursday','الخميس'],['friday','الجمعة'],['saturday','السبت']]; %>
+                  <% sdays.forEach(function (d) { %>
+                    <div class="form-group" style="margin:0">
+                      <label><%= d[1] %></label>
+                      <div class="flex gap-1">
+                        <input type="time" class="form-control" name="day_<%= d[0] %>_start" value="<%= form.values['day_' + d[0] + '_start'] || '' %>">
+                        <span class="text-muted" style="align-self:center">إلى</span>
+                        <input type="time" class="form-control" name="day_<%= d[0] %>_end" value="<%= form.values['day_' + d[0] + '_end'] || '' %>">
+                      </div>
+                    </div>
+                  <% }); %>
+                </div>
+                <div class="form-hint">اترك الأيام غير المخصصة للتدريب فارغة.</div>
+              <% } else if (f.type === 'info') { %>
+                <div class="form-info"><%- typeof f.html === 'function' ? f.html(v, form.values) : (v || '—') %></div>
+              <% } else if (f.type === 'coach_auto') { %>
+                <input type="hidden" id="f_<%= f.key %>" name="<%= f.key %>" value="<%= v %>" data-orig="<%= v %>">
+                <div class="coach-lock" data-coach-key="<%= f.key %>" data-group="<%= f.groupField %>">
+                  <i class="fas fa-user-tie"></i>
+                  <span class="coach-name">—</span>
+                  <i class="fas fa-lock text-soft" title="الكابتن مرتبط بالمجموعة ولا يُعدَّل هنا"></i>
+                </div>
+                <div class="hint"><i class="fas fa-circle-info"></i> يظهر تلقائياً حسب المجموعة المختارة — لتغييره عدّل إعدادات المجموعة</div>
+                <script>(function () { var m = {}; <% (f.coaches || []).forEach(function (c) { %>m[<%= c.value %>] = '<%- c.label.replace(/'/g, "\\'") %>'; <% }); %>window._coachMap = window._coachMap || {}; window._coachMap['<%= f.key %>'] = m; })();</script>
+              <% } else { %>
+                <input type="<%= f.type || 'text' %>" class="form-control" name="<%= f.key %>" value="<%= v %>" placeholder="<%= f.placeholder || '' %>" <%= f.required ? 'required' : '' %> <%= f.step ? 'step="' + f.step + '"' : '' %> <%= f.min !== undefined ? 'min="' + f.min + '"' : '' %> <%= f.max !== undefined ? 'max="' + f.max + '"' : '' %> <%= f.datalist ? 'list="dl_' + f.key + '"' : '' %>>
+                <% if (f.datalist) { %><datalist id="dl_<%= f.key %>"><% f.datalist.forEach(function (o) { %><option value="<%= typeof o === 'object' ? o.value : o %>"><%= typeof o === 'object' ? (o.label || o.value) : o %></option><% }); %></datalist><% } %>
+              <% } %>
+              <% if (f.hint && f.type !== 'file') { %><div class="form-hint"><%= f.hint %></div><% } %>
+            </div>
+          <% } %>
+        <% }); %>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> <%= form.submitLabel || 'حفظ' %></button>
+        <a href="<%= form.cancelUrl || '/' %>" class="btn btn-outline btn-lg"><i class="fas fa-xmark"></i> إلغاء</a>
+      </div>
+    </form>
+  </div>
+</div>
+<% if (form.transfer) { %>
+<div class="card mt-2">
+  <div class="card-header"><h3><i class="fas fa-right-left"></i> نقل السباح من مجموعة إلى مجموعة</h3></div>
+  <div class="card-body">
+    <div class="transfer-summary">
+      <div class="ts-box">
+        <i class="fas fa-people-group"></i>
+        <span>المجموعة الحالية</span>
+        <b><%= form.transfer.current_group_name %></b>
+        <em><i class="fas fa-user-tie"></i> الكابتن: <%= form.transfer.current_coach_name %></em>
+      </div>
+      <div class="ts-arrow"><i class="fas fa-arrow-left-long"></i></div>
+      <div class="ts-box ts-to">
+        <i class="fas fa-people-group"></i>
+        <span>المجموعة الجديدة</span>
+        <b id="transferToGroup">— اختر المجموعة —</b>
+        <em><i class="fas fa-user-tie"></i> الكابتن: <span id="transferToCoach">—</span></em>
+      </div>
+    </div>
+    <form method="post" action="<%= form.transfer.action %>" class="grid-2" style="align-items:end" data-confirm="تأكيد نقل السباح إلى المجموعة والكابتن الجديد؟ ستبقى كل بياناته (الحضور، التقييمات، الاشتراكات) كما هي.">
+      <div class="field">
+        <label>المجموعة الجديدة</label>
+        <select name="group_id" id="transferGroup" required>
+          <option value="">— اختر المجموعة —</option>
+          <% form.transfer.groups.forEach(function (g) { %>
+            <option value="<%= g.id %>" data-coach="<%= g.coach_id || '' %>" <%= form.transfer.current_group === g.id ? 'selected' : '' %>><%= g.name %></option>
+          <% }); %>
+        </select>
+      </div>
+      <div class="field">
+        <label>الكابتن <span class="text-soft font-11">(تلقائياً من المجموعة)</span></label>
+        <input type="hidden" name="coach_id" id="transferCoach">
+        <div class="coach-lock">
+          <i class="fas fa-user-tie"></i>
+          <span id="transferCoachName">— كابتن المجموعة —</span>
+          <i class="fas fa-lock text-soft" title="الكابتن مرتبط بالمجموعة ولا يُعدَّل هنا"></i>
+        </div>
+        <div class="hint"><i class="fas fa-circle-info"></i> عند اختيار المجموعة يُحدَّد الكابتن تلقائياً — لتغييره عدّل إعدادات المجموعة</div>
+      </div>
+      <div class="field">
+        <label>ملاحظة على النقل (اختياري)</label>
+        <input type="text" name="note" placeholder="مثال: انتقال بسبب تغيير المستوى">
+      </div>
+      <div class="field">
+        <button type="submit" class="btn btn-primary"><i class="fas fa-right-left"></i> نقل السباح</button>
+      </div>
+    </form>
+    <script>
+    (function () {
+      var tg = document.getElementById('transferGroup');
+      var tc = document.getElementById('transferCoach');
+      var coachNames = { <% form.transfer.coaches.forEach(function (c) { %>'<%= c.id %>':'<%- c.full_name.replace(/'/g, "\\'") %>',<% }); %> };
+      function syncCoach() {
+        var opt = tg ? tg.options[tg.selectedIndex] : null;
+        var cid = opt ? (opt.getAttribute('data-coach') || '') : '';
+        if (tc) tc.value = cid;
+        var view = document.getElementById('transferCoachName');
+        var toG = document.getElementById('transferToGroup');
+        var toC = document.getElementById('transferToCoach');
+        if (opt && opt.value !== '') {
+          if (view) view.textContent = (cid && coachNames[cid]) ? coachNames[cid] : '— كابتن المجموعة —';
+          if (toG) toG.textContent = opt.textContent;
+          if (toC) toC.textContent = (cid && coachNames[cid]) ? coachNames[cid] : '—';
+        } else {
+          if (view) view.textContent = '— كابتن المجموعة —';
+          if (toG) toG.textContent = '— اختر المجموعة —';
+          if (toC) toC.textContent = '—';
+        }
+      }
+      if (tg) { tg.addEventListener('change', syncCoach); syncCoach(); }
+    })();
+    </script>
+  </div>
+</div>
+<% } %>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('[data-avatar-input]').forEach(function (input) {
+    input.addEventListener('change', function () {
+      if (!input.files || !input.files[0]) return;
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        var prev = input.closest('.file-preview').querySelector('[data-avatar-preview]');
+        prev.classList.add('has-img');
+        prev.innerHTML = '<img src="' + e.target.result + '" alt="">';
+      };
+      reader.readAsDataURL(input.files[0]);
+    });
+  });
+  document.querySelectorAll('.coach-lock[data-coach-key]').forEach(function (lock) {
+    var key = lock.getAttribute('data-coach-key');
+    var hidden = document.getElementById('f_' + key);
+    var groupSel = document.getElementById('f_' + lock.getAttribute('data-group'));
+    if (!hidden || !groupSel) return;
+    var map = (window._coachMap || {})[key] || {};
+    var nameEl = lock.querySelector('.coach-name');
+    function sync() {
+      var opt = groupSel.options[groupSel.selectedIndex];
+      var cid = opt ? (opt.getAttribute('data-coach') || '') : '';
+      if (cid) {
+        hidden.value = cid;
+        nameEl.textContent = map[cid] || cid;
+      } else if (opt && opt.value !== '') {
+        hidden.value = '';
+        nameEl.textContent = '— كابتن المجموعة —';
+      } else {
+        hidden.value = hidden.getAttribute('data-orig') || '';
+        nameEl.textContent = map[hidden.value] ? map[hidden.value] : (hidden.value ? hidden.value : '— كابتن المجموعة —');
+      }
+    }
+    groupSel.addEventListener('change', sync);
+    sync();
+  });
+});
+</script>
+<%- include('partials/layout_bottom') %>

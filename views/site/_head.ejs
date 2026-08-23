@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %> | <%= data.siteName %></title>
+  <link rel="stylesheet" href="/vendor/fa-all.min.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>">
+  <style>
+    body { background: linear-gradient(180deg, var(--site-bg, #f8fafc) 0%, #fff 100%); }
+    .site-topbar { position: sticky; top: 0; z-index: 50; background: rgba(255,255,255,.9); backdrop-filter: blur(10px); border-bottom: 1px solid var(--card-border); }
+    .site-topbar .inner { display: flex; align-items: center; justify-content: space-between; padding: 14px 32px; max-width: 1280px; margin: auto; gap: 16px; flex-wrap: wrap; }
+    .site-logo { display: flex; align-items: center; gap: 12px; }
+    .site-logo .logo-icon { width: 46px; height: 46px; border-radius: 14px; background: linear-gradient(135deg,#0284c7,#06b6d4); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 4px 12px rgba(2,132,199,.35); }
+    .site-logo b { font-size: 18px; }
+    .site-nav { display: flex; gap: 4px; flex-wrap: wrap; }
+    .site-nav a { padding: 9px 16px; border-radius: 10px; color: var(--text-soft); font-weight: 600; }
+    .site-nav a:hover, .site-nav a.active { background: var(--primary-soft); color: var(--primary); }
+    .site-hero { padding: 72px 32px 60px; text-align: center; background: linear-gradient(135deg,#0284c7 0%, #0ea5e9 55%, #06b6d4 100%); color: #fff; border-radius: 0 0 40px 40px; position: relative; overflow: hidden; }
+    .site-hero h1 { font-size: 40px; margin-bottom: 14px; }
+    .site-hero p { font-size: 18px; opacity: .92; max-width: 700px; margin: 0 auto 26px; }
+    .site-container { max-width: 1280px; margin: auto; padding: 40px 32px; }
+    .site-foot { background: #0f172a; color: #cbd5e1; margin-top: 40px; }
+    .site-foot .inner { max-width: 1280px; margin: auto; padding: 40px 32px; display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 24px; }
+    .site-foot a { color: #94a3b8; }
+    .program-card { border: 1px solid var(--card-border); border-radius: 16px; padding: 22px; background: var(--card); transition: all .2s; display: flex; flex-direction: column; gap: 8px; }
+    .program-card:hover { transform: translateY(-4px); box-shadow: var(--shadow); border-color: var(--primary); }
+    .hero-bg { position: absolute; inset: 0; opacity: .08; font-size: 180px; display: flex; align-items: center; justify-content: center; }
+    @media (max-width:768px){ .site-hero h1{font-size:28px} .site-hero{padding:48px 18px} .site-container{padding:24px 16px} }
+  </style>
+</head>
+<body>
+<div class="site-topbar">
+  <div class="inner">
+    <a href="/site" class="site-logo" style="text-decoration:none;color:var(--text)">
+      <div class="logo-icon"><% if (data.logo) { %><img src="<%= data.logo %>" alt="logo" class="logo-img"><% } else { %><i class="fas fa-water"></i><% } %></div>
+      <div><b><%= data.siteName %></b><div style="font-size:12px;color:var(--text-muted)"><%= data.slogan %></div></div>
+    </a>
+    <nav class="site-nav">
+      <a href="/site" class="<%= page === 'home' ? 'active' : '' %>">الرئيسية</a>
+      <a href="/site/programs" class="<%= page === 'programs' ? 'active' : '' %>">البرامج</a>
+      <a href="/site/coaches" class="<%= page === 'coaches' ? 'active' : '' %>">الكباتن</a>
+      <a href="/site/announcements" class="<%= page === 'announcements' ? 'active' : '' %>">الإعلانات</a>
+      <a href="/site/contact" class="<%= page === 'contact' ? 'active' : '' %>">تواصل معنا</a>
+      <a href="/login" class="btn btn-primary btn-sm" style="margin-inline-start:8px"><i class="fas fa-right-to-bracket"></i> دخول الإدارة</a>
+    </nav>
+  </div>
+</div>

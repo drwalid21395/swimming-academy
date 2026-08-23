@@ -1,0 +1,61 @@
+<%- include('_head', { title: 'الرئيسية', page: 'home' }) %>
+<div class="site-hero">
+  <div class="hero-bg"><i class="fas fa-water"></i></div>
+  <h1><i class="fas fa-person-swimming"></i> <%= data.siteName %></h1>
+  <p><%= data.slogan %><br>نعلّم السباحة لجميع الأعمار من المبتدئين حتى المحترفين، مع نخبة من أمهر الكباتن.</p>
+  <a href="/site/contact" class="btn btn-lg" style="background:#fff;color:#0284c7"><i class="fas fa-calendar-check"></i> احجز مقعدًا للتجربة</a>
+</div>
+
+<div class="site-container">
+  <h2 style="text-align:center;margin-bottom:8px">برامجنا التدريبية</h2>
+  <p style="text-align:center;color:var(--text-muted);margin-bottom:28px">دورات مخصصة لكل مستوى وقدرة</p>
+  <div class="dash-grid">
+    <% programs.forEach(function (p) { %>
+      <a href="/site/programs/<%= p.id %>" class="program-card" style="text-decoration:none;color:var(--text)">
+        <div class="flex justify-between items-center">
+          <span class="badge badge-primary"><%= p.type %></span>
+          <span class="fw-700" style="color:var(--primary);font-size:18px"><%= money(p.price) %></span>
+        </div>
+        <b style="font-size:16px"><%= p.name %></b>
+        <div style="font-size:13px;color:var(--text-soft)"><%= p.description ? (p.description.length > 90 ? p.description.slice(0,90)+'...' : p.description) : 'دورة سباحة مكثفة' %></div>
+        <div style="font-size:12px;color:var(--text-muted)"><i class="fas fa-stopwatch"></i> <%= p.sessions_count %> حصة — <%= p.session_duration_min %> دقيقة · <i class="fas fa-users"></i> من <%= p.age_from %> حتى <%= p.age_to %> سنة</div>
+      </a>
+    <% }); %>
+  </div>
+  <div style="text-align:center;margin-top:24px"><a href="/site/programs" class="btn btn-outline">عرض كل البرامج <i class="fas fa-arrow-left"></i></a></div>
+
+  <h2 style="text-align:center;margin:44px 0 8px">لماذا <%= data.siteName %>؟</h2>
+  <p style="text-align:center;color:var(--text-muted);margin-bottom:28px">مميزات تعلم السباحة معنا</p>
+  <div class="dash-grid">
+    <div class="program-card"><div style="font-size:30px;color:#0284c7"><i class="fas fa-shield-halved"></i></div><b>السلامة أولًا</b><div style="font-size:13px;color:var(--text-soft)">منقذون معتمدون وإجراءات سلامة صارمة داخل حماماتنا.</div></div>
+    <div class="program-card"><div style="font-size:30px;color:#14b8a6"><i class="fas fa-user-graduate"></i></div><b>كباتن معتمدون</b><div style="font-size:13px;color:var(--text-soft)">كباتن حاصلون على شهادات دورية وفق أعلى المعايير والإشراف.</div></div>
+    <div class="program-card"><div style="font-size:30px;color:#8b5cf6"><i class="fas fa-layer-group"></i></div><b>مستويات مدرجة</b><div style="font-size:13px;color:var(--text-soft)">من أساسيات السباحة وتدريب الدورات والبطولات عبر مستويات واضحة.</div></div>
+    <div class="program-card"><div style="font-size:30px;color:#f59e0b"><i class="fas fa-chart-line"></i></div><b>متابعة التقدم</b><div style="font-size:13px;color:var(--text-soft)">تقارير دورية وتقييمات لأداء السباح، بالإضافة إلى متابعة كل مستوى.</div></div>
+  </div>
+
+  <h2 style="text-align:center;margin:44px 0 8px">آخر الإعلانات</h2>
+  <div class="dash-grid">
+    <% announcements.forEach(function (a) { %>
+      <div class="card">
+        <div class="card-header"><h3><i class="fas fa-bullhorn"></i> <%= a.title %></h3><span class="font-12 text-muted"><%= fmtDate(a.created_at) %></span></div>
+        <div class="card-body"><div class="font-13 text-soft"><%= a.body %></div></div>
+      </div>
+    <% }); %>
+    <% if (!announcements.length) { %><div class="card"><div class="card-body"><div class="empty-state"><p>لا توجد إعلانات حالياً</p></div></div></div><% } %>
+  </div>
+
+  <h2 style="text-align:center;margin:44px 0 8px">كادر الكباتن</h2>
+  <div class="dash-grid">
+    <% coaches.forEach(function (c) { %>
+      <div class="card" style="text-align:center">
+        <div class="card-body">
+          <div class="avatar-xl" style="margin:auto;background:linear-gradient(135deg,#0284c7,#06b6d4);color:#fff"><%= (c.full_name || 'ك').trim().charAt(0) %></div>
+          <b style="display:block;margin-top:10px"><%= c.full_name %></b>
+          <div class="badge badge-primary" style="margin-top:4px"><%= c.specialization || 'مدرب سباحة' %></div>
+          <div class="font-12 text-muted" style="margin-top:6px"><%= c.qualification || '' %> · خبرة <%= c.experience_years || 0 %> سنة</div>
+        </div>
+      </div>
+    <% }); %>
+  </div>
+</div>
+<%- include('_foot') %>

@@ -1,0 +1,62 @@
+<%- include('partials/layout_top', { title: 'نتائج البحث', active: 'dashboard' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-magnifying-glass"></i> نتائج البحث عن «<%= q %>»</div>
+    <div class="page-sub">نتائج سريعة عبر السباحين وأولياء الأمور والمدربين والبرامج</div>
+  </div>
+</div>
+
+<div class="dash-grid-3">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-person-swimming"></i> السباحون (<%= results.swimmers.length %>)</h3></div>
+    <div class="card-body">
+      <% results.swimmers.forEach(function (s) { %>
+        <div class="att-row">
+          <div class="flex items-center gap-1">
+            <div class="avatar-sm"><%= s.full_name.trim().charAt(0) %></div>
+            <div><b><%= s.full_name %></b><br><span class="font-11 text-muted"><%= s.membership_no %> · <%= s.level_name || '—' %></span></div>
+          </div>
+          <a href="/swimmers/<%= s.id %>" class="btn btn-ghost btn-sm"><i class="fas fa-arrow-left"></i> فتح</a>
+        </div>
+      <% }); %>
+      <% if (!results.swimmers.length) { %><div class="empty-state"><i class="fas fa-user-xmark"></i><p>لا نتائج</p></div><% } %>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-people-roof"></i> أولياء الأمور (<%= results.guardians.length %>)</h3></div>
+    <div class="card-body">
+      <% results.guardians.forEach(function (g) { %>
+        <div class="att-row"><b><%= g.full_name %></b><span class="text-muted font-11"><%= g.phone %></span></div>
+      <% }); %>
+      <% if (!results.guardians.length) { %><div class="empty-state"><i class="fas fa-user-xmark"></i><p>لا نتائج</p></div><% } %>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-user-tie"></i> المدربون (<%= results.coaches.length %>)</h3></div>
+    <div class="card-body">
+      <% results.coaches.forEach(function (c) { %>
+        <div class="att-row"><b><%= c.full_name %></b><span class="text-muted font-11"><%= c.phone %></span></div>
+      <% }); %>
+      <% if (!results.coaches.length) { %><div class="empty-state"><i class="fas fa-user-xmark"></i><p>لا نتائج</p></div><% } %>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-list-check"></i> البرامج (<%= results.programs.length %>)</h3></div>
+    <div class="card-body">
+      <% results.programs.forEach(function (p) { %>
+        <div class="att-row"><b><%= p.name %></b><span class="badge badge-primary"><%= p.type %></span></div>
+      <% }); %>
+      <% if (!results.programs.length) { %><div class="empty-state"><i class="fas fa-folder-xmark"></i><p>لا نتائج</p></div><% } %>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-people-group"></i> المجموعات (<%= results.groups.length %>)</h3></div>
+    <div class="card-body">
+      <% results.groups.forEach(function (g) { %>
+        <div class="att-row"><b><%= g.name %></b></div>
+      <% }); %>
+      <% if (!results.groups.length) { %><div class="empty-state"><i class="fas fa-folder-xmark"></i><p>لا نتائج</p></div><% } %>
+    </div>
+  </div>
+</div>
+<%- include('partials/layout_bottom') %>

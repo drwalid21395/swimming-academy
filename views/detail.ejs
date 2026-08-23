@@ -1,0 +1,24 @@
+<%- include('partials/layout_top', { title: page.title, active: page.active }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas <%= page.icon || 'fa-circle-info' %>"></i> <%= page.title %></div>
+    <div class="page-sub"><%= page.subtitle || '' %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="<%= page.backUrl || '/' %>" class="btn btn-outline"><i class="fas fa-arrow-right"></i> رجوع</a>
+    <% if (page.canEdit && page.editUrl) { %><a href="<%= page.editUrl %>" class="btn btn-primary"><i class="fas fa-pen"></i> تعديل</a><% } %>
+    <% if (page.canDelete && page.deleteUrl) { %>
+      <form method="POST" action="<%= page.deleteUrl %>" style="margin:0"><button type="submit" class="btn btn-outline-danger" data-confirm="هل أنت متأكد من الحذف؟" data-action="submit"><i class="fas fa-trash"></i> حذف</button></form>
+    <% } %>
+  </div>
+</div>
+<div class="detail-grid">
+  <% page.fields.forEach(function (f) { %>
+    <div class="detail-item">
+      <div class="dl"><%= f.label %></div>
+      <div class="dv"><%- f.value %></div>
+    </div>
+  <% }); %>
+</div>
+<%- include('partials/layout_bottom') %>

@@ -1,0 +1,18 @@
+    </main>
+    <footer style="padding: 14px 24px; border-top: 1px solid var(--card-border); color: var(--text-muted); font-size: 12px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+      <span>© <%= new Date().getFullYear() %> <b><%= siteName %></b> — جميع الحقوق محفوظة</span>
+      <span><i class="fas fa-water"></i> أفضل مكان لتعلم السباحة</span>
+    </footer>
+  </div>
+</div>
+<div class="toast-container">
+  <% if (typeof flash !== 'undefined' && flash) { %>
+    <div class="toast <%= flash.type %>"><i class="fas <%= flash.type === 'success' ? 'fa-circle-check' : flash.type === 'error' ? 'fa-circle-xmark' : 'fa-circle-info' %>"></i><span><%= flash.message %></span></div>
+  <% } %>
+</div>
+<script src="/vendor/chart.umd.js"></script>
+<script src="/js/app.js?v=8"></script>
+<% if (typeof pageScripts !== 'undefined' && pageScripts) { pageScripts.forEach(function (s) { %><script src="<%= s %>"></script><% }); } %>
+<% if (typeof inlineScript !== 'undefined' && inlineScript) { %><script><%= inlineScript %></script><% } %>
+</body>
+</html>

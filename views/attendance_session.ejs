@@ -1,0 +1,57 @@
+<%- include('partials/layout_top', { title: 'تسجيل الحضور', active: 'attendance' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-clipboard-user"></i> تسجيل الحضور</div>
+    <div class="page-sub"><b><%= s.group_name %></b> · <%= fmtDate(s.date) %> · <%= s.start_time %> — <%= s.end_time || '' %> · <%= s.coach_name || '—' %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="/attendance" class="btn btn-outline"><i class="fas fa-arrow-right"></i> الحضور اليومي</a>
+    <button class="btn btn-outline" data-print><i class="fas fa-print"></i> طباعة</button>
+  </div>
+</div>
+
+<div class="att-card card">
+  <div class="card-header">
+    <h3><i class="fas fa-users"></i> السباحون (<%= members.length %>)</h3>
+    <div class="flex gap-1">
+      <button class="btn btn-success btn-sm" data-mark-all="present" data-session="<%= s.id %>"><i class="fas fa-check"></i> الكل حاضر</button>
+      <button class="btn btn-outline-danger btn-sm" data-mark-all="absent" data-session="<%= s.id %>"><i class="fas fa-xmark"></i> الكل غائب</button>
+      <button class="btn btn-outline-warning btn-sm" data-mark-all="excused" data-session="<%= s.id %>"><i class="fas fa-book"></i> الكل معتذر</button>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="att-row" style="border-bottom-width:2px">
+      <div class="att-name"><b>السباح</b></div>
+      <div class="att-btns">
+        <span class="att-btn att-head" title="حاضر" style="cursor:default"><i class="fas fa-check"></i> <span>حاضر</span></span>
+        <span class="att-btn att-head" title="غائب" style="cursor:default"><i class="fas fa-xmark"></i> <span>غائب</span></span>
+        <span class="att-btn att-head" title="معتذر" style="cursor:default"><i class="fas fa-book"></i> <span>معتذر</span></span>
+        <span class="att-btn att-head" title="متأخر" style="cursor:default"><i class="fas fa-clock"></i> <span>متأخر</span></span>
+      </div>
+    </div>
+    <% members.forEach(function (m) { %>
+      <div class="att-row">
+        <div class="att-name">
+          <div class="flex items-center gap-1">
+            <div class="avatar-sm"><%= (m.full_name || 'س').trim().charAt(0) %></div>
+            <div>
+              <b><%= m.full_name %></b>
+              <div class="font-11 text-muted"><%= m.membership_no %></div>
+            </div>
+          </div>
+        </div>
+        <div class="att-btns">
+          <button class="att-btn <%= m.att_status === 'present' ? 'active-present' : '' %>" data-status="present" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="حاضر"><i class="fas fa-check"></i> <span>حاضر</span></button>
+          <button class="att-btn <%= m.att_status === 'absent' ? 'active-absent' : '' %>" data-status="absent" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="غائب"><i class="fas fa-xmark"></i> <span>غائب</span></button>
+          <button class="att-btn <%= m.att_status === 'excused' ? 'active-excused' : '' %>" data-status="excused" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="معتذر"><i class="fas fa-book"></i> <span>معتذر</span></button>
+          <button class="att-btn <%= m.att_status === 'late' ? 'active-late' : '' %>" data-status="late" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="متأخر"><i class="fas fa-clock"></i> <span>متأخر</span></button>
+        </div>
+      </div>
+    <% }); %>
+    <% if (!members.length) { %>
+      <div class="empty-state"><i class="fas fa-user-xmark"></i><p>لا يوجد سباحون مسجلون في هذه المجموعة</p></div>
+    <% } %>
+  </div>
+</div>
+<%- include('partials/layout_bottom') %>

@@ -1,0 +1,205 @@
+<%- include('../partials/layout_top', { title: 'بوابتي الشخصية', active: '' }) %>
+
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-house-user"></i> بوابة أولياء الأمور والسباحين</div>
+    <div class="page-sub">مرحباً <%= user.full_name %> — متابعة كاملة لبيانات أبنائك داخل الأكاديمية</div>
+  </div>
+</div>
+
+<% kids.forEach(function (k, idx) { %>
+  <div class="card mb-3" style="overflow:hidden">
+    <div class="profile-header" style="margin-bottom:0; border-radius:0;">
+      <div class="profile-avatar"><%= k.s.full_name.trim().charAt(0) %></div>
+      <div class="profile-info">
+        <h2><%= k.s.full_name %></h2>
+        <div class="sub"><i class="fas fa-id-card"></i> <%= k.s.membership_no %> · <i class="fas fa-cake-candles"></i> <%= fmtDate(k.s.birth_date) %> (<%= calcAge(k.s.birth_date) || '—' %> سنة) · <%= k.s.gender %></div>
+        <div class="sub mt-1">
+          <span class="badge badge-primary"><i class="fas fa-signal"></i> المستوى: <%= k.s.level_name || '—' %></span>
+          <span class="badge" style="background:rgba(255,255,255,.2);color:#fff"><i class="fas fa-layer-group"></i> <%= k.s.program_name || '—' %></span>
+          <span class="badge" style="background:rgba(255,255,255,.2);color:#fff"><i class="fas fa-user-tie"></i> <%= k.s.coach_name || '—' %></span>
+        </div>
+      </div>
+      <div class="profile-meta">
+        <div class="meta-chip"><div class="mc-val"><%= k.s.status %></div><div class="mc-lbl">الحالة</div></div>
+        <div class="meta-chip"><div class="mc-val"><%= k.attendance.pct %>%</div><div class="mc-lbl">نسبة الحضور</div></div>
+        <div class="meta-chip"><div class="mc-val"><%= k.remaining %></div><div class="mc-lbl">حصص متبقية</div></div>
+        <% if (k.sub) { %>
+          <div class="meta-chip"><div class="mc-val"><%= k.sub.remaining > 0 ? 'مستحق' : 'مسدد' %></div><div class="mc-lbl"><%= money(k.sub.remaining) %></div></div>
+        <% } %>
+      </div>
+    </div>
+
+    <div class="tabs" style="padding: 12px 20px 0; margin-bottom:0; border-bottom:1px solid var(--card-border);">
+      <div class="tab active" onclick="switchKidTab(<%= idx %>, 'overview', this)">نظرة عامة</div>
+      <div class="tab" onclick="switchKidTab(<%= idx %>, 'sessions', this)">الحصص القادمة</div>
+      <div class="tab" onclick="switchKidTab(<%= idx %>, 'assess', this)">التقييمات</div>
+      <div class="tab" onclick="switchKidTab(<%= idx %>, 'tests', this)">الاختبارات</div>
+      <div class="tab" onclick="switchKidTab(<%= idx %>, 'notes', this)">ملاحظات المدرب</div>
+    </div>
+
+    <div class="card-body">
+      <!-- نظرة عامة -->
+      <div class="kid-tab" data-kid="<%= idx %>" data-panel="overview">
+        <div class="detail-grid mb-2">
+          <div class="detail-item"><div class="dl">البرنامج المشترك</div><div class="dv"><%= k.s.program_name || '—' %></div></div>
+          <div class="detail-item"><div class="dl">المجموعة التدريبية</div><div class="dv"><%= k.s.group_name || '—' %></div></div>
+          <div class="detail-item"><div class="dl">المدرب المسؤول</div><div class="dv"><%= k.s.coach_name || '—' %></div></div>
+          <div class="detail-item"><div class="dl">المدرسة</div><div class="dv"><%= k.s.school || '—' %></div></div>
+          <div class="detail-item"><div class="dl">تاريخ التسجيل</div><div class="dv"><%= fmtDate(k.s.registration_date) %></div></div>
+          <div class="detail-item"><div class="dl">حالة الاشتراك</div><div class="dv">
+            <% if (k.sub) { %><span class="badge <%= k.sub.status === 'نشط' ? 'badge-success' : 'badge-warning' %>"><%= k.sub.status %></span>
+              حتى <%= fmtDate(k.sub.end_date) %><% } else { %>—<% } %>
+          </div></div>
+        </div>
+        <div class="detail-grid">
+          <div class="detail-item">
+            <div class="dl">الحصص المستخدمة / الكلية</div>
+            <div class="dv"><%= k.sub ? k.sub.sessions_used + ' / ' + k.sub.sessions_total : '—' %></div>
+            <div class="progress mt-1"><span style="width:<%= k.sub ? pct(k.sub.sessions_used, k.sub.sessions_total) : 0 %>%"></span></div>
+          </div>
+          <div class="detail-item"><div class="dl">نسبة الحضور</div><div class="dv"><%= k.attendance.pct %>%</div>
+            <div class="progress mt-1"><span style="width:<%= k.attendance.pct %>%"></span></div>
+          </div>
+          <div class="detail-item"><div class="dl">الاشتراك / المتبقي</div><div class="dv"><%= money(k.sub ? k.sub.total : 0) %> / <%= money(k.sub ? k.sub.remaining : 0) %></div></div>
+          <div class="detail-item"><div class="dl">آخر تقييم</div><div class="dv"><%= k.assessments.length ? k.assessments[0].overall_percent + '%' : '—' %></div></div>
+        </div>
+        <% if (k.levelProgress && k.levelProgress.length) { %>
+          <div class="form-section-title mt-2"><i class="fas fa-arrow-trend-up"></i> سجل الانتقال بين المستويات</div>
+          <div class="timeline mt-2">
+            <% k.levelProgress.forEach(function (lp) { %>
+              <div class="tl-item"><div class="tl-title"><i class="fas fa-circle-up text-success"></i> ترقية إلى <b><%= lp.to_level %></b></div><div class="tl-date"><%= fmtDate(lp.date) %> · <%= lp.reason %></div></div>
+            <% }); %>
+          </div>
+        <% } %>
+      </div>
+
+      <!-- الحصص القادمة -->
+      <div class="kid-tab" data-kid="<%= idx %>" data-panel="sessions" style="display:none">
+        <% if (k.nextSessions.length) { %>
+          <% k.nextSessions.forEach(function (s) { %>
+            <div class="attendance-session">
+              <div class="att-session-head">
+                <span class="time"><%= fmtDate(s.date) %></span>
+                <span class="time"><%= s.start_time %></span>
+                <b><%= s.group_name %></b>
+              </div>
+            </div>
+          <% }); %>
+        <% } else { %>
+          <div class="empty-state"><i class="fas fa-calendar-xmark"></i><p>لا توجد حصص قادمة</p></div>
+        <% } %>
+      </div>
+
+      <!-- التقييمات -->
+      <div class="kid-tab" data-kid="<%= idx %>" data-panel="assess" style="display:none">
+        <% if (k.assessments.length) { %>
+          <% k.assessments.forEach(function (a) { %>
+            <div class="attendance-session">
+              <div class="flex justify-between items-center">
+                <b><i class="fas fa-clipboard-check text-primary"></i> تقييم <%= fmtDate(a.date) %></b>
+                <span class="score-pill"><%= a.overall_percent %>%</span>
+              </div>
+              <div class="font-12 mt-1 text-soft">
+                <b>نقاط القوة:</b> <%= a.strengths || '—' %><br>
+                <b>نقاط التحسين:</b> <%= a.weaknesses || '—' %><br>
+                <b>التوصيات:</b> <%= a.recommendations || '—' %>
+              </div>
+              <div class="mt-1"><span class="badge <%= a.ready_to_advance ? 'badge-success' : 'badge-warning' %>"><%= a.ready_to_advance ? 'جاهز للانتقال للمستوى التالي' : 'يحتاج مزيداً من التدريب' %></span></div>
+            </div>
+          <% }); %>
+        <% } else { %>
+          <div class="empty-state"><i class="fas fa-clipboard"></i><p>لا توجد تقييمات بعد</p></div>
+        <% } %>
+      </div>
+
+      <!-- الاختبارات -->
+      <div class="kid-tab" data-kid="<%= idx %>" data-panel="tests" style="display:none">
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>التاريخ</th><th>النوع</th><th>المسافة</th><th>الزمن</th><th>النتيجة</th></tr></thead>
+            <tbody>
+              <% k.tests.forEach(function (t) { %>
+                <tr>
+                  <td><%= fmtDate(t.date) %></td>
+                  <td><%= t.type %></td>
+                  <td><%= t.distance_m ? t.distance_m + ' م' : '—' %></td>
+                  <td><%= t.time_seconds ? t.time_seconds + ' ث' : '—' %></td>
+                  <td><span class="badge <%= t.passed ? 'badge-success' : 'badge-danger' %>"><%= t.status %></span></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ملاحظات المدرب -->
+      <div class="kid-tab" data-kid="<%= idx %>" data-panel="notes" style="display:none">
+        <div class="timeline">
+          <% if (k.coachNotes.length) { %>
+            <% k.coachNotes.forEach(function (n) { %>
+              <div class="tl-item"><div class="tl-title"><i class="fas fa-note-sticky text-primary"></i> <%= n.coach_note %></div><div class="tl-date"><%= fmtDate(n.date) %></div></div>
+            <% }); %>
+          <% } else { %>
+            <div class="empty-state"><i class="fas fa-note-sticky"></i><p>لا توجد ملاحظات بعد</p></div>
+          <% } %>
+        </div>
+      </div>
+    </div>
+  </div>
+<% }); %>
+
+<div class="dash-grid mt-3">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-envelope-open-text"></i> رسائل الأكاديمية</h3></div>
+    <div class="card-body">
+      <% if (messages.length) { %>
+        <% messages.forEach(function (m) { %>
+          <div class="alert-item alert-info mb-1" style="margin-bottom:8px">
+            <i class="fas fa-envelope text-primary"></i>
+            <div>
+              <div class="a-title"><%= m.subject %></div>
+              <div class="a-sub"><%= m.body %> — <%= fmtDateTime(m.created_at) %></div>
+            </div>
+          </div>
+        <% }); %>
+      <% } else { %>
+        <div class="empty-state"><i class="fas fa-envelope-open"></i><p>لا توجد رسائل</p></div>
+      <% } %>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-bullhorn"></i> الإعلانات والتنبيهات</h3></div>
+    <div class="card-body">
+      <% announcements.forEach(function (a) { %>
+        <div class="alert-item alert-warn mb-1" style="margin-bottom:8px">
+          <i class="fas fa-bullhorn text-warning"></i>
+          <div>
+            <div class="a-title"><%= a.title %></div>
+            <div class="a-sub"><%= a.body %></div>
+          </div>
+        </div>
+      <% }); %>
+      <div class="form-section-title mt-2"><i class="fas fa-bell"></i> إشعاراتي</div>
+      <% myNotifications.forEach(function (n) { %>
+        <div class="alert-item mb-1" style="margin-bottom:6px">
+          <i class="fas fa-circle-info text-primary"></i>
+          <div>
+            <div class="a-title"><%= n.title %></div>
+            <div class="a-sub"><%= n.message %></div>
+          </div>
+        </div>
+      <% }); %>
+    </div>
+  </div>
+</div>
+
+<script>
+function switchKidTab(idx, panel, el) {
+  document.querySelectorAll('.kid-tab[data-kid="' + idx + '"]').forEach(function (t) { t.style.display = 'none'; });
+  document.querySelectorAll('.tabs .tab').forEach(function (t) { t.classList.remove('active'); });
+  document.querySelector('.kid-tab[data-kid="' + idx + '"][data-panel="' + panel + '"]').style.display = 'block';
+  el.classList.add('active');
+}
+</script>
+<%- include('../partials/layout_bottom') %>

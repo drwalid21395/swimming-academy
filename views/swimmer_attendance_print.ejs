@@ -1,0 +1,84 @@
+<%- include('partials/layout_top', { title: 'سجل حضور السباح', active: 'swimmers' }) %>
+<div class="page-head no-print">
+  <div>
+    <div class="page-title"><i class="fas fa-clipboard-user"></i> سجل الحضور والغياب</div>
+    <div class="page-sub"><%= s.full_name %> — جاهز للطباعة والتحميل PDF</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <button class="btn btn-primary" onclick="window.print()"><i class="fas fa-file-pdf"></i> طباعة / تحميل PDF</button>
+    <a href="/swimmers/<%= s.id %>" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> ملف السباح</a>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+  <div class="card-body">
+    <div class="report-swimmer">
+      <div class="report-sw-name">
+        <div class="avatar-md"><%= s.full_name.trim().charAt(0) %></div>
+        <div>
+          <div class="report-name"><%= s.full_name %></div>
+          <div class="report-sub"><i class="fas fa-id-card"></i> <%= s.membership_no %> · <i class="fas fa-signal"></i> <%= s.level_name || '—' %> · <i class="fas fa-user-tie"></i> <%= s.coach_name || '—' %></div>
+        </div>
+      </div>
+      <div class="kpi-row" style="margin-top:10px">
+        <div class="kpi"><div class="k-val"><%= stats.total %></div><div class="k-lbl">إجمالي الحصص</div></div>
+        <div class="kpi"><div class="k-val text-success"><%= stats.present %></div><div class="k-lbl">حاضر</div></div>
+        <div class="kpi"><div class="k-val text-danger"><%= stats.absent %></div><div class="k-lbl">غائب</div></div>
+        <div class="kpi"><div class="k-val text-warning"><%= stats.excused %></div><div class="k-lbl">معتذر</div></div>
+        <div class="kpi"><div class="k-val text-primary"><%= stats.late %></div><div class="k-lbl">متأخر</div></div>
+        <div class="kpi"><div class="k-val <%= stats.rate >= 80 ? 'text-success' : 'text-danger' %>"><%= stats.rate %>%</div><div class="k-lbl">نسبة الحضور</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table report-table">
+      <thead>
+        <tr><th>التاريخ</th><th>الحصة</th><th>الوقت</th><th>الحالة</th><th>السبب</th><th>ملاحظة المدرب</th></tr>
+      </thead>
+      <tbody>
+        <% records.forEach(function (r) { %>
+          <tr class="<%= r.status === 'absent' ? 'row-absent' : '' %>">
+            <td><b><%= fmtDate(r.date) %></b></td>
+            <td><%= r.title || '—' %></td>
+            <td><%= r.start_time || '—' %></td>
+            <td>
+              <% if (r.status === 'present') { %><span class="att-status present"><i class="fas fa-check"></i> حاضر</span>
+              <% } else if (r.status === 'absent') { %><span class="att-status absent"><i class="fas fa-xmark"></i> غائب</span>
+              <% } else if (r.status === 'excused') { %><span class="att-status excused"><i class="fas fa-book"></i> معتذر</span>
+              <% } else if (r.status === 'late') { %><span class="att-status late"><i class="fas fa-clock"></i> متأخر</span>
+              <% } else { %><span class="att-status pending"><%= r.status || '—' %></span><% } %>
+            </td>
+            <td><%= r.reason || '—' %></td>
+            <td><%= r.coach_note || '—' %></td>
+          </tr>
+        <% }); %>
+        <% if (!records.length) { %><tr><td colspan="6"><div class="empty-state"><i class="fas fa-clipboard-user"></i><p>لا توجد سجلات حضور لهذا السباح</p></div></td></tr><% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+  .report-table td, .report-table th { font-size: 13px; }
+  .report-swimmer { padding: 4px 0; }
+  .report-sw-name { display: flex; align-items: center; gap: 12px; }
+  .avatar-md { width: 52px; height: 52px; border-radius: 50%; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; }
+  .report-name { font-size: 17px; font-weight: 800; }
+  .report-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 4px; }
+  .att-status { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12.5px; padding: 3px 11px; border-radius: 999px; }
+  .att-status.present { background: rgba(16,185,129,.13); color: #059669; }
+  .att-status.absent { background: rgba(239,68,68,.13); color: #dc2626; }
+  .att-status.excused { background: rgba(245,158,11,.14); color: #d97706; }
+  .att-status.late { background: rgba(2,132,199,.13); color: #0284c7; }
+  .att-status.pending { background: rgba(100,116,139,.15); color: #64748b; }
+  .row-absent { background: rgba(239,68,68,.05); }
+  @media print {
+    .card { border-color: #cbd5e1; }
+    .att-status { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  }
+</style>
+<%- include('partials/layout_bottom') %>

@@ -1,0 +1,246 @@
+<%- include('partials/layout_top', { title: form.title, active: form.active }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas <%= form.icon || 'fa-pen-to-square' %>"></i> <%= form.title %></div>
+    <div class="page-sub"><%= form.subtitle || '' %></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <form method="POST" action="<%= form.action %>" novalidate>
+      <input type="hidden" name="_csrf" value="<%= form.csrf || '' %>">
+
+      <div class="form-group full">
+        <label>طريقة التطبيق</label>
+        <div class="flex gap-2">
+          <label class="mode-card" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:1px solid var(--card-border);border-radius:10px;">
+            <input type="radio" name="mode" value="single" id="modeSingle" checked> <i class="fas fa-user"></i> سباح واحد
+          </label>
+          <label class="mode-card" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:1px solid var(--card-border);border-radius:10px;">
+            <input type="radio" name="mode" value="group" id="modeGroup"> <i class="fas fa-people-group"></i> مجموعة كاملة
+          </label>
+        </div>
+      </div>
+
+      <!-- ===== سباح واحد ===== -->
+      <div id="panelSingle">
+        <div class="form-grid">
+          <% let lastSection = ''; %>
+          <% form.fields.forEach(function (f) { %>
+            <% if (f.key === 'level_id') return; %>
+            <% if (f.section && f.section !== lastSection) { %>
+              <div class="full form-section-title"><i class="fas <%= f.sectionIcon || 'fa-circle-info' %>"></i> <%= f.section %></div>
+              <% lastSection = f.section; %>
+            <% } %>
+            <div class="form-group <%= f.full ? 'full' : '' %>">
+              <label><%= f.label %><% if (f.required) { %> <span class="req">*</span><% } %></label>
+              <% const v = form.values[f.key] !== undefined ? form.values[f.key] : (f.value !== undefined ? f.value : ''); %>
+              <% if (f.type === 'textarea') { %>
+                <textarea class="form-control" name="<%= f.key %>" rows="<%= f.rows || 3 %>" placeholder="<%= f.placeholder || '' %>" <%= f.required ? 'required' : '' %>><%= v %></textarea>
+              <% } else if (f.type === 'select') { %>
+                <select class="form-control" name="<%= f.key %>" <%= f.required ? 'required' : '' %>>
+                  <option value="">— اختر —</option>
+                  <% (typeof f.options === 'function' ? f.options(form.values) : (f.options || [])).forEach(function (o) { %>
+                    <option value="<%= o.value %>" <%= String(v) === String(o.value) ? 'selected' : '' %>><%= o.label %></option>
+                  <% }); %>
+                </select>
+              <% } else if (f.type === 'checkbox') { %>
+                <label class="flex items-center gap-1" style="cursor:pointer; padding-top:8px;">
+                  <input type="hidden" name="<%= f.key %>" value="0">
+                  <input type="checkbox" name="<%= f.key %>" value="1" style="width:18px;height:18px;accent-color:var(--primary)" <%= v == 1 ? 'checked' : '' %>> <%= f.checkLabel || '' %>
+                </label>
+              <% } else { %>
+                <input type="<%= f.type || 'text' %>" class="form-control" name="<%= f.key %>" value="<%= v %>" placeholder="<%= f.placeholder || '' %>" <%= f.required ? 'required' : '' %> <%= f.step ? 'step="' + f.step + '"' : '' %>>
+              <% } %>
+            </div>
+          <% }); %>
+          <div class="full form-group" id="singleLevelWrap" style="display:none">
+            <label>المستويات للتقييم <span class="hint">(لاختبارات "مستوى" فقط)</span></label>
+            <div class="lvl-checks">
+              <% levelOptions.forEach(function (o) { %>
+                <label class="lvl-chip"><input type="checkbox" name="level_id" value="<%= o.value %>"> <%= o.label %></label>
+              <% }); %>
+            </div>
+            <div class="form-hint">اختر مستوى أو أكثر — يُحفظ سجل اختبار لكل مستوى. يظهر تلقائيًا عند اختيار نوع الاختبار "مستوى"</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== مجموعة كاملة ===== -->
+      <div id="panelGroup" style="display:none">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>المجموعة <span class="req">*</span></label>
+            <select id="testGroupSel" name="group_id" class="form-control">
+              <option value="">— اختر المجموعة —</option>
+              <% groups.forEach(function (g) { %>
+                <option value="<%= g.id %>"><%= g.name %> (<%= g.swimmers.length %> سباح)</option>
+              <% }); %>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>تاريخ الاختبار</label>
+            <input type="date" name="t_date" id="tDate" class="form-control" value="<%= new Date().toISOString().slice(0, 10) %>">
+          </div>
+          <div class="form-group">
+            <label>نوع الاختبار الافتراضي</label>
+            <select id="tDefaultType" class="form-control">
+              <% testTypes.forEach(function (t) { %><option value="<%= t %>"><%= t %></option><% }); %>
+            </select>
+            <div class="form-hint">يُطبق على الاختبارات الجديدة ويمكن تغييره لكل سباح</div>
+          </div>
+
+          <div class="full form-section-title"><i class="fas fa-person-swimming"></i> السباحون — سجّل النتائج لكل سباح ثم احفظ</div>
+          <div class="full" id="groupSwimmersWrap">
+            <div class="empty-state"><i class="fas fa-people-group"></i><p>اختر مجموعة لعرض السباحين وبدء تسجيل النتائج</p></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-info" style="margin:8px 0 0;background:rgba(16,185,129,.08);border:1px dashed rgba(16,185,129,.35);padding:10px 14px;border-radius:10px;font-size:13px">
+        <i class="fas fa-circle-info"></i> تُحفظ كل نتيجة كسجل مستقل لكل سباح وتظهر في صفحة <b>الاختبارات</b> وتبويب <b>التقييمات الفنية</b>.
+      </div>
+
+      <div class="form-actions" style="margin-top:18px">
+        <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> <%= form.submitLabel || 'حفظ' %></button>
+        <a href="<%= form.cancelUrl || '/' %>" class="btn btn-outline btn-lg"><i class="fas fa-xmark"></i> إلغاء</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  .gs-card { border:1px solid var(--card-border); border-radius:12px; margin-bottom:12px; overflow:hidden; }
+  .gs-head { display:flex; align-items:center; gap:10px; padding:10px 14px; background:rgba(99,102,241,.06); border-bottom:1px solid var(--card-border); }
+  .gs-name { font-weight:700; }
+  .gs-sub { color:var(--text-soft, #64748b); font-size:12px; }
+  .gs-table td, .gs-table th { padding:6px 8px; vertical-align:middle; }
+  .gs-actions { padding:8px 12px; text-align:left; }
+  .mode-card.selected { border-color:var(--primary)!important; background:rgba(99,102,241,.06); }
+  .lvl-checks { display:flex; flex-wrap:wrap; gap:8px; }
+  .lvl-chip { display:inline-flex; align-items:center; gap:6px; padding:8px 12px; border:1px solid var(--card-border); border-radius:8px; cursor:pointer; font-size:13px; background:var(--card-bg, #fff); }
+  .lvl-chip:hover { border-color:var(--primary); }
+  .lvl-chip input { width:16px; height:16px; accent-color:var(--primary); }
+</style>
+
+<script>
+(function () {
+  var groups = <%- JSON.stringify(groups) %>;
+  var testTypes = <%- JSON.stringify(testTypes) %>;
+  var levelsData = <%- JSON.stringify(levelOptions) %>;
+  var rowSeq = 0;
+  var wrap = document.getElementById('groupSwimmersWrap');
+  var groupSel = document.getElementById('testGroupSel');
+  var defaultTypeSel = document.getElementById('tDefaultType');
+
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+  function levelChecksHtml(idx) {
+    return levelsData.map(function (o) {
+      return '<label class="lvl-chip"><input type="checkbox" name="rows[' + idx + '][t_level][]" value="' + esc(String(o.value)) + '"> ' + esc(String(o.label)) + '</label>';
+    }).join('');
+  }
+
+  function typeOptions(selected) {
+    return testTypes.map(function (t) {
+      return '<option value="' + esc(t) + '"' + (t === selected ? ' selected' : '') + '>' + esc(t) + '</option>';
+    }).join('');
+  }
+
+  function testRowHtml(sid, idx) {
+    var defType = defaultTypeSel ? defaultTypeSel.value : '';
+    return '<tr>' +
+      '<td><input type="hidden" name="rows[' + idx + '][swimmer_id]" value="' + sid + '">' +
+        '<select class="form-control t_type_sel" name="rows[' + idx + '][t_type]" style="min-width:110px">' + typeOptions(defType) + '</select>' +
+        '<div class="t-level-pick" style="' + (defType === 'مستوى' ? '' : 'display:none;') + 'margin-top:6px">' +
+          levelChecksHtml(idx) +
+        '</div></td>' +
+      '<td><input type="text" class="form-control" name="rows[' + idx + '][t_race]" placeholder="اكتب السباق" style="min-width:90px"></td>' +
+      '<td><input type="number" min="0" class="form-control" name="rows[' + idx + '][t_distance]" placeholder="متر"></td>' +
+      '<td><input type="number" min="0" step="0.01" class="form-control" name="rows[' + idx + '][t_time]" placeholder="ثانية"></td>' +
+      '<td><input type="number" min="0" class="form-control" name="rows[' + idx + '][t_position]" placeholder="مركز"></td>' +
+      '<td><select class="form-control" name="rows[' + idx + '][t_passed]"><option value="1">اجتاز</option><option value="0" selected>لم يجتز</option></select></td>' +
+      '<td><input type="text" class="form-control" name="rows[' + idx + '][t_note]" placeholder="ملاحظة"></td>' +
+      '<td><button type="button" class="btn btn-ghost btn-sm del-test-row" title="حذف الاختبار"><i class="fas fa-xmark"></i></button></td>' +
+    '</tr>';
+  }
+
+  function swimmerCard(sw) {
+    return '<div class="gs-card" data-sid="' + sw.id + '">' +
+      '<div class="gs-head"><i class="fas fa-user-circle"></i><span class="gs-name">' + esc(sw.full_name) + '</span>' +
+      '<span class="gs-sub">' + esc(sw.membership_no || '') + (sw.level_name ? ' · ' + esc(sw.level_name) : '') + '</span></div>' +
+      '<div class="table-wrap"><table class="data-table gs-table"><thead><tr>' +
+      '<th>نوع الاختبار</th><th>نوع السباق</th><th>المسافة</th><th>الزمن</th><th>المركز</th><th>النتيجة</th><th>ملاحظة</th><th></th>' +
+      '</tr></thead><tbody>' + testRowHtml(sw.id, ++rowSeq) + '</tbody></table></div>' +
+      '<div class="gs-actions"><button type="button" class="btn btn-ghost btn-sm add-test-row" data-sid="' + sw.id + '"><i class="fas fa-plus"></i> إضافة اختبار</button></div>' +
+    '</div>';
+  }
+
+  function render() {
+    var gid = groupSel ? groupSel.value : '';
+    if (!gid) {
+      wrap.innerHTML = '<div class="empty-state"><i class="fas fa-people-group"></i><p>اختر مجموعة لعرض السباحين وبدء تسجيل النتائج</p></div>';
+      return;
+    }
+    var grp = groups.find(function (g) { return String(g.id) === String(gid); });
+    if (!grp || !grp.swimmers || !grp.swimmers.length) {
+      wrap.innerHTML = '<div class="empty-state"><i class="fas fa-users-slash"></i><p>لا يوجد سباحون في هذه المجموعة</p></div>';
+      return;
+    }
+    wrap.innerHTML = grp.swimmers.map(swimmerCard).join('');
+  }
+
+  wrap.addEventListener('click', function (e) {
+    var addBtn = e.target.closest('.add-test-row');
+    if (addBtn) {
+      var tbody = addBtn.closest('.gs-card').querySelector('tbody');
+      var tr = document.createElement('tr');
+      tr.innerHTML = testRowHtml(addBtn.getAttribute('data-sid'), ++rowSeq);
+      tbody.appendChild(tr);
+      tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    var delBtn = e.target.closest('.del-test-row');
+    if (delBtn) {
+      var tbody = delBtn.closest('tbody');
+      if (tbody && tbody.querySelectorAll('tr').length > 1) {
+        delBtn.closest('tr').remove();
+      }
+    }
+  });
+
+  if (groupSel) groupSel.addEventListener('change', render);
+
+  function syncLevelPick(typeSel) {
+    var pick = typeSel && typeSel.closest('td') ? typeSel.closest('td').querySelector('.t-level-pick') : null;
+    if (pick) pick.style.display = typeSel.value === 'مستوى' ? '' : 'none';
+  }
+
+  wrap.addEventListener('change', function (e) {
+    if (e.target.classList && e.target.classList.contains('t_type_sel')) syncLevelPick(e.target);
+  });
+
+  var singleTypeSel = document.querySelector('#panelSingle select[name="type"]');
+  var singleLevelWrap = document.getElementById('singleLevelWrap');
+  function syncSingleLevel() {
+    if (singleLevelWrap) singleLevelWrap.style.display = singleTypeSel && singleTypeSel.value === 'مستوى' ? '' : 'none';
+  }
+  if (singleTypeSel) singleTypeSel.addEventListener('change', syncSingleLevel);
+  syncSingleLevel();
+
+  var modeSingle = document.getElementById('modeSingle');
+  var modeGroup = document.getElementById('modeGroup');
+  function syncMode() {
+    document.getElementById('panelSingle').style.display = modeSingle.checked ? '' : 'none';
+    document.getElementById('panelGroup').style.display = modeGroup.checked ? '' : 'none';
+    document.querySelectorAll('.mode-card').forEach(function (c) {
+      c.classList.toggle('selected', c.querySelector('input').checked);
+    });
+  }
+  [modeSingle, modeGroup].forEach(function (r) { if (r) r.addEventListener('change', syncMode); });
+  syncMode();
+  render();
+})();
+</script>
+<%- include('partials/layout_bottom') %>

@@ -1,0 +1,16 @@
+<%- include('../partials/layout_top', { title: 'بوابتي الشخصية', active: '' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-house-user"></i> بوابتي الشخصية</div>
+    <div class="page-sub">مرحباً <%= user.full_name %></div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-body text-center" style="padding:60px 20px">
+    <i class="fas fa-users-slash" style="font-size:52px;color:var(--text-muted);opacity:.5"></i>
+    <h3 class="mt-2">لا يوجد أبناء مسجلون تحت هذا الحساب</h3>
+    <p class="text-soft">تواصل مع استقبال الأكاديمية لربط أبنائك بحسابك</p>
+    <a href="/logout" class="btn btn-outline mt-2"><i class="fas fa-right-from-bracket"></i> تسجيل الخروج</a>
+  </div>
+</div>
+<%- include('../partials/layout_bottom') %>

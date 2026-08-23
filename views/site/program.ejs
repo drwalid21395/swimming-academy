@@ -1,0 +1,31 @@
+<%- include('_head', { title: p.name, page: 'programs' }) %>
+<div class="site-container" style="max-width:900px">
+  <a href="/site/programs" class="btn btn-outline btn-sm" style="margin-bottom:16px"><i class="fas fa-arrow-right"></i> العودة للبرامج</a>
+  <div class="card">
+    <div class="card-body">
+      <div class="flex justify-between items-center" style="flex-wrap:wrap;gap:12px;margin-bottom:14px">
+        <div>
+          <h2 style="margin:0"><%= p.name %></h2>
+          <div class="badge badge-primary" style="margin-top:6px"><%= p.type %></div>
+        </div>
+        <div style="font-size:28px;font-weight:800;color:var(--primary)"><%= money(p.price) %></div>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-item"><div class="dl">عدد الحصص</div><div class="dv"><%= p.sessions_count %> حصة — <%= p.session_duration_min %> دقيقة</div></div>
+        <div class="detail-item"><div class="dl">المدة</div><div class="dv"><%= p.weeks_count %> أسابيع</div></div>
+        <div class="detail-item"><div class="dl">الفئة العمرية</div><div class="dv">من <%= p.age_from %> حتى <%= p.age_to %> سنة</div></div>
+        <div class="detail-item"><div class="dl">المستوى المطلوب</div><div class="dv"><%= p.level_required || 'بدون' %></div></div>
+        <div class="detail-item"><div class="dl">المواعيد</div><div class="dv"><%= p.schedule_note || '—' %></div></div>
+        <div class="detail-item"><div class="dl">السعة</div><div class="dv"><%= p.max_subscribers %> مشترك</div></div>
+      </div>
+      <% if (p.description) { %><p style="margin-top:14px;color:var(--text-soft)"><%= p.description %></p><% } %>
+      <% if (p.tests_required) { %><p style="margin-top:8px;font-size:14px"><b>الاختبارات المطلوبة:</b> <%= p.tests_required %></p><% } %>
+      <% if (p.success_conditions) { %><p style="margin-top:8px;font-size:14px"><b>شروط النجاح:</b> <%= p.success_conditions %></p><% } %>
+      <% if (p.certificate_name) { %><p style="margin-top:8px;font-size:14px"><b>الشهادة:</b> <%= p.certificate_name %></p><% } %>
+      <div style="margin-top:20px">
+        <a href="/site/contact" class="btn btn-primary btn-lg"><i class="fas fa-calendar-check"></i> سجل الآن</a>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('_foot') %>

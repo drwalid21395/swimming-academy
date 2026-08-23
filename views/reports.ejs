@@ -1,0 +1,55 @@
+<%- include('partials/layout_top', { title: 'التقارير', active: 'reports' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-chart-column"></i> التقارير</div>
+    <div class="page-sub">تقارير إحصائية ومالية قابلة للطباعة</div>
+  </div>
+</div>
+
+<div class="dash-grid">
+  <a href="/reports/financial" class="card report-card">
+    <div class="report-icon" style="background:rgba(16,185,129,.14);color:#059669"><i class="fas fa-scale-balanced"></i></div>
+    <div>
+      <div class="report-title">التقرير المالي</div>
+      <div class="report-sub">الإيرادات والمصروفات والصافي</div>
+    </div>
+  </a>
+  <a href="/reports/attendance" class="card report-card">
+    <div class="report-icon" style="background:rgba(2,132,199,.14);color:#0284c7"><i class="fas fa-clipboard-user"></i></div>
+    <div>
+      <div class="report-title">الحضور والغياب</div>
+      <div class="report-sub">نسب حضور كل سباح</div>
+    </div>
+  </a>
+  <a href="/reports/attendance/daily" class="card report-card">
+    <div class="report-icon" style="background:rgba(16,185,129,.14);color:#059669"><i class="fas fa-calendar-day"></i></div>
+    <div>
+      <div class="report-title">الحضور اليومي (PDF)</div>
+      <div class="report-sub">حضور وغياب جميع السباحين حسب التاريخ</div>
+    </div>
+  </a>
+  <a href="/reports/subscriptions" class="card report-card">
+    <div class="report-icon" style="background:rgba(139,92,246,.14);color:#8b5cf6"><i class="fas fa-file-contract"></i></div>
+    <div>
+      <div class="report-title">الاشتراكات</div>
+      <div class="report-sub">حالة الاشتراكات والمستحقات</div>
+    </div>
+  </a>
+  <a href="/reports/progress" class="card report-card">
+    <div class="report-icon" style="background:rgba(245,158,11,.14);color:#f59e0b"><i class="fas fa-chart-line"></i></div>
+    <div>
+      <div class="report-title">تقدم السباحين</div>
+      <div class="report-sub">المستويات والتقييمات والاختبارات</div>
+    </div>
+  </a>
+</div>
+
+<div class="kpi-row" style="margin-top:14px">
+  <div class="kpi"><div class="k-val text-primary"><%= counts.swimmers %></div><div class="k-lbl">إجمالي السباحين</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= counts.active %></div><div class="k-lbl">سباحين نشطين</div></div>
+  <div class="kpi"><div class="k-val"><%= counts.subsActive %></div><div class="k-lbl">اشتراكات نشطة</div></div>
+  <div class="kpi"><div class="k-val text-danger"><%= counts.subsDue %></div><div class="k-lbl">اشتراكات متأخرة</div></div>
+  <div class="kpi"><div class="k-val"><%= counts.sessions %></div><div class="k-lbl">إجمالي الحصص</div></div>
+  <div class="kpi"><div class="k-val text-warning"><%= counts.upcomingComps %></div><div class="k-lbl">بطولات قادمة</div></div>
+</div>
+<%- include('partials/layout_bottom') %>

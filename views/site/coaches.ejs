@@ -1,0 +1,19 @@
+<%- include('_head', { title: 'الكباتن', page: 'coaches' }) %>
+<div class="site-container" style="max-width:1000px">
+  <h2 style="margin-bottom:6px">كادر الكباتن</h2>
+  <p style="color:var(--text-muted);margin-bottom:28px">نخبة من الكباتن المعتمدين لتدريب جميع المستويات</p>
+  <div class="dash-grid">
+    <% coaches.forEach(function (c) { %>
+      <div class="card" style="text-align:center">
+        <div class="card-body">
+          <div class="avatar-xl" style="margin:auto;background:linear-gradient(135deg,#0284c7,#06b6d4);color:#fff"><%= (c.full_name || 'ك').trim().charAt(0) %></div>
+          <b style="display:block;margin-top:10px"><%= c.full_name %></b>
+          <div class="badge badge-primary" style="margin-top:4px"><%= c.specialization || 'مدرب سباحة' %></div>
+          <div class="font-12 text-muted" style="margin-top:6px"><%= c.qualification || '' %><% if (c.experience_years) { %> · خبرة <%= c.experience_years %> سنة<% } %></div>
+        </div>
+      </div>
+    <% }); %>
+    <% if (!coaches.length) { %><div class="card"><div class="card-body"><div class="empty-state"><p>لا يوجد كباتن معروضون حالياً</p></div></div></div><% } %>
+  </div>
+</div>
+<%- include('_foot') %>

@@ -1,0 +1,87 @@
+<%- include('partials/layout_top', { title: 'تفاصيل الاشتراك', active: 'subscriptions' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-file-contract"></i> تفاصيل الاشتراك #<%= s.id %></div>
+    <div class="page-sub"><b><%= s.swimmer_name || '—' %></b> · <%= s.program_name || '—' %> · <%= s.group_name || '' %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="/subscriptions" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل الاشتراكات</a>
+    <a href="/swimmers/<%= s.swimmer_id %>" class="btn btn-primary"><i class="fas fa-person-swimming"></i> ملف السباح</a>
+    <% if (canEdit) { %><a href="/subscriptions/<%= s.id %>/edit" class="btn btn-primary"><i class="fas fa-pen"></i> تعديل</a><% } %>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="k-val text-primary"><%= money(s.total) %></div><div class="k-lbl">الإجمالي</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= money(s.paid_amount) %></div><div class="k-lbl">المدفوع</div></div>
+  <div class="kpi"><div class="k-val <%= s.remaining > 0 ? 'text-danger' : 'text-success' %>"><%= money(s.remaining) %></div><div class="k-lbl">المتبقي</div></div>
+  <div class="kpi"><div class="k-val"><%= s.sessions_used %> / <%= s.sessions_total %></div><div class="k-lbl">الحصص المنفذة</div></div>
+</div>
+
+<div class="dash-grid">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-circle-info"></i> بيانات الاشتراك</h3></div>
+    <div class="card-body">
+      <div class="detail-grid">
+        <div class="detail-item"><div class="dl">السباح</div><div class="dv"><a href="/swimmers/<%= s.swimmer_id %>" class="link"><%= s.swimmer_name %></a> (<%= s.membership_no %>)</div></div>
+        <div class="detail-item"><div class="dl">البرنامج</div><div class="dv"><%= s.program_name || '—' %></div></div>
+        <div class="detail-item"><div class="dl">المجموعة</div><div class="dv"><%= s.group_name || '—' %></div></div>
+        <div class="detail-item"><div class="dl">الفترة</div><div class="dv"><%= fmtDate(s.start_date) %> — <%= fmtDate(s.end_date) %></div></div>
+        <div class="detail-item"><div class="dl">السعر</div><div class="dv"><%= money(s.price) %></div></div>
+        <div class="detail-item"><div class="dl">الخصم</div><div class="dv"><%= money(s.discount) %></div></div>
+        <div class="detail-item"><div class="dl">الضريبة</div><div class="dv"><%= s.tax ? money(s.tax) : '—' %></div></div>
+        <div class="detail-item"><div class="dl">طريقة الدفع</div><div class="dv"><%= s.payment_method %></div></div>
+        <div class="detail-item"><div class="dl">رقم الإيصال</div><div class="dv"><%= s.receipt_no || '—' %></div></div>
+        <div class="detail-item"><div class="dl">الحالة</div><div class="dv"><span class="badge <%= s.status === 'نشط' ? 'badge-success' : s.status === 'مكتمل' ? 'badge-primary' : s.status === 'منتهي' ? 'badge-gray' : s.status === 'مجمد' ? 'badge-info' : 'badge-danger' %>"><%= s.status %></span></div></div>
+        <div class="detail-item full"><div class="dl">ملاحظات</div><div class="dv"><%= s.notes || '—' %></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-money-bill-wave"></i> دفعات الاشتراك</h3></div>
+    <div class="card-body">
+      <% if (canAdd) { %>
+        <form method="POST" action="/payments/new" class="flex gap-1 mb-1">
+          <input type="hidden" name="swimmer_id" value="<%= s.swimmer_id %>">
+          <input type="hidden" name="subscription_id" value="<%= s.id %>">
+          <input type="hidden" name="method" value="<%= s.payment_method %>">
+          <input type="number" name="amount" class="form-control" placeholder="المبلغ" required style="max-width:130px">
+          <button class="btn btn-primary btn-sm" type="submit"><i class="fas fa-plus"></i> دفعة</button>
+        </form>
+      <% } %>
+      <div class="timeline">
+        <% payments.forEach(function (p) { %>
+          <div class="timeline-item">
+            <div class="flex justify-between">
+              <b><span class="text-success"><%= money(p.amount) %></span></b>
+              <span class="font-12 text-muted"><%= fmtDate(p.paid_date) %></span>
+            </div>
+            <div class="font-12 text-soft"><%= p.method %><%= p.receipt_no ? ' · إيصال ' + p.receipt_no : '' %></div>
+          </div>
+        <% }); %>
+        <% if (!payments.length) { %><div class="empty-state"><i class="fas fa-money-bill-wave"></i><p>لا توجد دفعات</p></div><% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h3><i class="fas fa-clock-rotate-left"></i> سجل الاشتراك</h3></div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>الإجراء</th><th>التفاصيل</th><th>بواسطة</th><th>التاريخ</th></tr></thead>
+      <tbody>
+        <% history.forEach(function (h) { %>
+          <tr>
+            <td><span class="badge badge-primary"><%= h.action %></span></td>
+            <td><%= h.details %></td>
+            <td><%= h.user_name %></td>
+            <td><%= fmtDateTime(h.created_at) %></td>
+          </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<%- include('partials/layout_bottom') %>

@@ -1,0 +1,109 @@
+<%- include('partials/layout_top', { title, active }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-clipboard-check"></i> <%= title %></div>
+    <div class="page-sub"><b><%= data.swimmer.full_name %></b> · تقييمات على <%= data.totalLevels %> مستوى</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="/swimmers/<%= data.swimmer.id %>/assessment-report/pdf" target="_blank" class="btn btn-primary"><i class="fas fa-file-pdf"></i> طباعة / تحميل PDF</a>
+    <a href="/swimmers/<%= data.swimmer.id %>" class="btn btn-outline"><i class="fas fa-person-swimming"></i> ملف السباح</a>
+    <a href="/assessments" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> كل التقييمات</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    <div class="avatar-lg">
+      <% if (data.swimmer.avatar) { %><img src="<%= data.swimmer.avatar %>" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%"><% } else { %><i class="fas fa-user"></i><% } %>
+    </div>
+    <div style="flex:1;min-width:220px">
+      <div style="font-size:18px;font-weight:800"><%= data.swimmer.full_name %> <%- statusBadge(data.swimmer.status) %></div>
+      <div class="page-sub"><i class="fas fa-id-card"></i> <%= data.swimmer.membership_no || '—' %> · <i class="fas fa-signal"></i> <%= data.swimmer.level_name || '—' %> · <i class="fas fa-users"></i> <%= data.swimmer.group_name || 'بدون مجموعة' %> · <i class="fas fa-user-tie"></i> <%= data.swimmer.coach_name || '—' %></div>
+    </div>
+    <div style="text-align:left">
+      <div style="font-size:26px;font-weight:900;color:var(--primary)"><%= data.grandAvg %>%</div>
+      <div class="page-sub">المتوسط العام</div>
+    </div>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="k-val text-primary"><%= data.totalLevels %></div><div class="k-lbl">المستويات المقيّمة</div></div>
+  <div class="kpi"><div class="k-val text-primary"><%= data.allSkills %></div><div class="k-lbl">عدد المهارات</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= data.grandSum %><span class="font-12 text-soft"> / <%= data.allSkills * 100 %></span></div><div class="k-lbl">مجموع كل النسب</div></div>
+  <div class="kpi"><div class="k-val"><%= data.grandAvg %>%</div><div class="k-lbl">المتوسط العام</div></div>
+  <div class="kpi"><div class="k-val text-primary"><%= data.swimmer.program_name || '—' %></div><div class="k-lbl">البرنامج</div></div>
+</div>
+
+<% data.levels.forEach(function (lvl, i) { %>
+  <div class="card" style="margin-top:14px">
+    <div class="card-header">
+      <h3><span class="level-badge" style="background:linear-gradient(135deg,var(--primary),#8b5cf6)"><%= i + 1 %></span> <%= lvl.assessment.level_name %> <span class="badge badge-gray"><i class="fas fa-calendar-day"></i> <%= fmtDate(lvl.assessment.date) %></span></h3>
+      <span class="badge <%= lvl.avg >= 80 ? 'badge-success' : lvl.avg >= 60 ? 'badge-warning' : 'badge-danger' %>" style="font-size:14px"><%= lvl.avg %>%</span>
+    </div>
+    <div class="card-body">
+      <table class="data-table">
+        <thead>
+          <tr><th>#</th><th>المهارة</th><th>النسبة</th><th style="width:40%">المستوى</th></tr>
+        </thead>
+        <tbody>
+          <% lvl.skills.forEach(function (sk, si) { %>
+            <tr>
+              <td><%= si + 1 %></td>
+              <td><%= sk.name %> <% if (sk.isGeneral) { %><span class="badge badge-warning" style="font-size:10px">عام</span><% } %></td>
+              <td><b><%= sk.score %>%</b></td>
+              <td>
+                <div class="progress-inline">
+                  <div class="progress-track"><div class="progress-fill" style="width:<%= sk.score %>%"></div></div>
+                </div>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+      <div class="flex justify-between" style="margin-top:10px;font-size:14px;flex-wrap:wrap;gap:8px">
+        <div>مجموع النسب: <b><%= lvl.total %> / <%= lvl.count * 100 %></b></div>
+        <div>متوسط المستوى: <b><%= lvl.avg %>%</b></div>
+        <div>الكابتن المقيّم: <b><%= lvl.assessment.coach_name || '—' %></b></div>
+        <% if (lvl.assessment.ready_to_advance) { %><span class="badge badge-success"><i class="fas fa-arrow-up"></i> جاهز للترقية</span><% } %>
+      </div>
+    </div>
+  </div>
+<% }); %>
+
+<% if (!data.levels.length) { %>
+  <% if (data.general && data.general.count) { %>
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><h3><span class="level-badge" style="background:linear-gradient(135deg,#f59e0b,#f97316)"><i class="fas fa-star"></i></span> المعايير العامة <span class="badge badge-warning"><i class="fas fa-calendar-day"></i> <%= fmtDate(data.general.assessment.date) %></span></h3>
+        <span class="badge <%= data.general.avg >= 80 ? 'badge-success' : data.general.avg >= 60 ? 'badge-warning' : 'badge-danger' %>" style="font-size:14px"><%= data.general.avg %>%</span></div>
+      <div class="card-body">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>المعيار العام</th><th>النسبة</th><th style="width:40%">المستوى</th></tr></thead>
+          <tbody>
+            <% data.general.skills.forEach(function (sk, si) { %>
+              <tr>
+                <td><%= si + 1 %></td>
+                <td><%= sk.name %> <span class="badge badge-warning" style="font-size:10px">عام</span></td>
+                <td><b><%= sk.score %>%</b></td>
+                <td><div class="progress-inline"><div class="progress-track"><div class="progress-fill" style="width:<%= sk.score %>%"></div></div></div></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  <% } else { %>
+    <div class="empty-state"><i class="fas fa-clipboard-check"></i><p>لا توجد تقييمات مسجلة لهذا السباح</p></div>
+  <% } %>
+<% } else { %>
+  <div class="card" style="margin-top:14px;border-color:var(--primary)">
+    <div class="card-header"><h3><i class="fas fa-gauge-high"></i> الملخص العام</h3></div>
+    <div class="card-body">
+      <div class="flex justify-between" style="padding:6px 0"><span>المستويات المقيّمة</span><b><%= data.totalLevels %></b></div>
+      <div class="flex justify-between" style="padding:6px 0"><span>مجموع كل النسب</span><b><%= data.grandSum %> / <%= data.allSkills * 100 %></b></div>
+      <div class="flex justify-between" style="padding:6px 0"><span>المتوسط العام (جميع المستويات)</span><b class="text-success" style="font-size:16px"><%= data.grandAvg %>%</b></div>
+    </div>
+  </div>
+<% } %>
+<%- include('partials/layout_bottom') %>

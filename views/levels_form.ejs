@@ -1,0 +1,144 @@
+<%- include('partials/layout_top', { title: title, active: 'levels' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas <%= values.id ? 'fa-pen' : 'fa-plus' %>"></i> <%= title %></div>
+    <div class="page-sub">المستوى التعليمي ومهاراته المطلوب إتقانها</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <form method="POST" action="<%= action %>">
+      <div class="form-grid">
+        <div class="full form-section-title"><i class="fas fa-signal"></i> بيانات المستوى</div>
+        <div class="form-group">
+          <label>اسم المستوى <span class="req">*</span></label>
+          <input type="text" class="form-control" name="name" required value="<%= values.name || '' %>">
+        </div>
+        <div class="form-group">
+          <label>الترتيب</label>
+          <input type="number" class="form-control" name="order_no" value="<%= values.order_no || '' %>">
+        </div>
+        <div class="form-group">
+          <label>اللون</label>
+          <input type="color" class="form-control" name="color" value="<%= values.color || '#0284c7' %>" style="height:42px;padding:4px">
+        </div>
+        <div class="form-group full">
+          <label>الوصف</label>
+          <textarea class="form-control" name="description" rows="2"><%= values.description || '' %></textarea>
+        </div>
+
+        <div class="full form-section-title"><i class="fas fa-sliders"></i> مهارات المستوى <span class="text-muted font-12">— اكتب مهارة ليظهر حقل جديد</span></div>
+        <div class="full" id="skillsWrap">
+          <% if (skills && skills.length) { %>
+            <% skills.forEach(function (s) { %>
+              <div class="skill-row">
+                <input type="text" class="form-control skill-name" name="skill_name" placeholder="اسم المهارة..." value="<%= s.name %>">
+                <select class="form-control skill-cat" name="skill_category" style="max-width:200px">
+                  <% ['مهارات أساسية', 'مهارات تقدمية', 'بطولة وفرق', 'سلامة وإنقاذ'].forEach(function (c) { %>
+                    <option value="<%= c %>" <%= s.category === c ? 'selected' : '' %>><%= c %></option>
+                  <% }); %>
+                </select>
+                <button type="button" class="btn btn-ghost btn-sm skill-remove" title="حذف المهارة">حذف</button>
+              </div>
+            <% }); %>
+          <% } %>
+          <div class="skill-row">
+            <input type="text" class="form-control skill-name" name="skill_name" placeholder="اسم المهارة...">
+            <select class="form-control skill-cat" name="skill_category" style="max-width:200px">
+              <option value="مهارات أساسية">مهارات أساسية</option>
+              <option value="مهارات تقدمية">مهارات تقدمية</option>
+              <option value="بطولة وفرق">بطولة وفرق</option>
+              <option value="سلامة وإنقاذ">سلامة وإنقاذ</option>
+            </select>
+            <button type="button" class="btn btn-ghost btn-sm skill-remove" title="حذف المهارة">حذف</button>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="addSkill"><i class="fas fa-plus"></i> إضافة مهارة</button>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> حفظ</button>
+        <a href="/levels" class="btn btn-outline btn-lg"><i class="fas fa-xmark"></i> إلغاء</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:14px">
+  <div class="card-body">
+  <div class="card-header"><h3><i class="fas fa-star text-warning"></i> المعايير العامة <span class="badge badge-warning">مشتركة لكل المستويات</span></h3></div>
+    <p class="page-sub">تُقيَّم مرة واحدة في قسم «معايير عامة» وتُضمَّن تلقائياً في كل المستويات — الحالية والتي ستضيفها لاحقاً. <b class="text-muted">(مثال: السرعة، الالتزام، الانضباط)</b></p>
+    <form method="POST" action="/levels/shared">
+      <div id="sharedWrap">
+        <% (sharedSkills || []).forEach(function (s) { %>
+          <div class="skill-row shared-row">
+            <input type="text" class="form-control skill-name" name="shared_name" placeholder="اسم المعيار العام..." value="<%= s.name %>">
+            <button type="button" class="btn btn-ghost btn-sm skill-remove" title="حذف المعيار">حذف</button>
+          </div>
+        <% }); %>
+        <div class="skill-row shared-row">
+          <input type="text" class="form-control skill-name" name="shared_name" placeholder="اسم المعيار العام...">
+          <button type="button" class="btn btn-ghost btn-sm skill-remove" title="حذف المعيار">حذف</button>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" id="addShared"><i class="fas fa-plus"></i> إضافة معيار عام</button>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary"><i class="fas fa-floppy-disk"></i> حفظ المعايير العامة</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+(function () {
+  function skillRow(withCat) {
+    const cat = withCat ? '<select class="form-control skill-cat" name="skill_category" style="max-width:200px">' +
+      '<option value="مهارات أساسية">مهارات أساسية</option>' +
+      '<option value="مهارات تقدمية">مهارات تقدمية</option>' +
+      '<option value="بطولة وفرق">بطولة وفرق</option>' +
+      '<option value="سلامة وإنقاذ">سلامة وإنقاذ</option>' +
+      '</select>' : '';
+    return '<div class="skill-row">' +
+      '<input type="text" class="form-control skill-name" name="' + (withCat ? 'skill_name' : 'shared_name') + '" placeholder="' + (withCat ? 'اسم المهارة...' : 'اسم المعيار العام...') + '">' +
+      cat +
+      '<button type="button" class="btn btn-ghost btn-sm skill-remove" title="حذف">حذف</button>' +
+      '</div>';
+  }
+  function setupWrap(wrapId, addId, withCat, maxRows) {
+    const wrap = document.getElementById(wrapId);
+    const addBtn = document.getElementById(addId);
+    function ensureTrailing() {
+      const rows = wrap.querySelectorAll('.skill-row');
+      const last = rows[rows.length - 1];
+      if (!last || (last.querySelector('.skill-name').value.trim() && rows.length < maxRows)) {
+        const div = document.createElement('div');
+        div.innerHTML = skillRow(withCat).trim();
+        wrap.insertBefore(div.firstChild, addBtn);
+      }
+    }
+    wrap.addEventListener('input', function (e) {
+      if (e.target.classList.contains('skill-name') && e.target.value.trim()) ensureTrailing();
+    });
+    wrap.addEventListener('click', function (e) {
+      const rm = e.target.closest('.skill-remove');
+      if (rm) {
+        const row = rm.closest('.skill-row');
+        const rows = wrap.querySelectorAll('.skill-row');
+        if (rows.length > 1) row.remove();
+        else row.querySelector('.skill-name').value = '';
+        ensureTrailing();
+      }
+    });
+    addBtn.addEventListener('click', function () {
+      const div = document.createElement('div');
+      div.innerHTML = skillRow(withCat).trim();
+      wrap.insertBefore(div.firstChild, addBtn);
+      const names = wrap.querySelectorAll('.skill-row .skill-name');
+      names[names.length - 1].focus();
+    });
+    ensureTrailing();
+  }
+  setupWrap('skillsWrap', 'addSkill', true, 25);
+  setupWrap('sharedWrap', 'addShared', false, 12);
+})();
+</script>
+<%- include('partials/layout_bottom') %>

@@ -1,0 +1,452 @@
+<%- include('partials/layout_top', { title: 'ملف السباح', active: 'swimmers' }) %>
+
+<div class="page-head">
+  <div class="flex items-center gap-1">
+    <a href="/swimmers" class="btn btn-outline btn-sm"><i class="fas fa-arrow-right"></i> السباحون</a>
+    <a href="/swimmers/<%= s.id %>/assessment-report" class="btn btn-primary btn-sm"><i class="fas fa-clipboard-check"></i> تقرير التقييمات</a>
+    <a href="/swimmers/<%= s.id %>/edit" class="btn btn-primary btn-sm"><i class="fas fa-pen"></i> تعديل</a>
+  </div>
+</div>
+
+<div class="profile-header">
+  <div class="profile-avatar <%= s.avatar ? 'profile-avatar-img' : '' %>"><% if (s.avatar) { %><img src="<%= s.avatar %>" alt=""><% } else { %><i class="fas fa-user"></i><% } %></div>
+  <div class="profile-info">
+    <h2><%= s.full_name %> <%- statusBadge(s.status) %></h2>
+    <div class="sub">
+      <i class="fas fa-id-card"></i> <%= s.membership_no %> ·
+      <i class="fas fa-cake-candles"></i> <%= fmtDate(s.birth_date) %> (<%= age %> سنة) ·
+      <%= s.gender %> ·
+      <i class="fas fa-signal"></i> <%= s.level_name || '—' %>
+    </div>
+    <div class="sub mt-1"><i class="fas fa-layer-group"></i> <%= s.program_name || '—' %> · <i class="fas fa-user-tie"></i> <%= s.coach_name || '—' %></div>
+  </div>
+  <div class="profile-meta">
+    <div class="meta-chip"><div class="mc-val"><%= activeSub ? activeSub.sessions_used + ' / ' + activeSub.sessions_total : '—' %></div><div class="mc-lbl">حصص مستخدمة / كلية</div></div>
+    <div class="meta-chip"><div class="mc-val"><%= attStats.total ? pct(attStats.present, attStats.total) : 0 %>%</div><div class="mc-lbl">نسبة الحضور</div></div>
+    <div class="meta-chip"><div class="mc-val"><%= activeSub ? Math.max(0, activeSub.sessions_total - activeSub.sessions_used) : 0 %></div><div class="mc-lbl">حصص متبقية</div></div>
+    <div class="meta-chip"><div class="mc-val"><%= activeSub && activeSub.remaining > 0 ? money(activeSub.remaining) : 'مسدد' %></div><div class="mc-lbl">المستحق</div></div>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="overview">نظرة عامة</div>
+  <div class="tab" data-tab="subs">الاشتراكات والمدفوعات</div>
+  <div class="tab" data-tab="att">الحضور والغياب</div>
+  <div class="tab" data-tab="assess">التقييمات والتطور</div>
+  <div class="tab" data-tab="tests">الاختبارات</div>
+  <div class="tab" data-tab="teams">الفرق والأزمنة</div>
+  <div class="tab" data-tab="docs">المستندات</div>
+  <div class="tab" data-tab="history">سجل النشاط</div>
+</div>
+
+<!-- ===== نظرة عامة ===== -->
+<div class="tab-panel" data-panel="overview">
+  <div class="dash-grid-3">
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-user"></i> البيانات الشخصية</h3></div>
+      <div class="card-body">
+        <div class="detail-grid">
+          <div class="detail-item"><div class="dl">الاسم بالكامل</div><div class="dv"><%= s.full_name %></div></div>
+          <div class="detail-item"><div class="dl">رقم العضوية</div><div class="dv"><%= s.membership_no %></div></div>
+          <div class="detail-item"><div class="dl">تاريخ الميلاد</div><div class="dv"><%= fmtDate(s.birth_date) %></div></div>
+          <div class="detail-item"><div class="dl">العمر</div><div class="dv"><%= age %> سنة</div></div>
+          <div class="detail-item"><div class="dl">النوع</div><div class="dv"><%= s.gender %></div></div>
+          <div class="detail-item"><div class="dl">الهاتف</div><div class="dv"><%= s.phone || '—' %></div></div>
+          <div class="detail-item"><div class="dl">العنوان</div><div class="dv"><%= s.address || '—' %></div></div>
+          <div class="detail-item"><div class="dl">المدرسة</div><div class="dv"><%= s.school || '—' %><% if (schoolInfo && schoolInfo.type && schoolInfo.type !== 'مدرسة') { %> <span class="badge badge-primary"><%= schoolInfo.type %></span><% } %></div></div>
+          <div class="detail-item"><div class="dl">تاريخ التسجيل</div><div class="dv"><%= fmtDate(s.registration_date) %></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-kit-medical"></i> الحالة الصحية</h3></div>
+      <div class="card-body">
+        <div class="detail-grid">
+          <div class="detail-item"><div class="dl">فصيلة الدم</div><div class="dv"><%= s.blood_type || '—' %></div></div>
+          <div class="detail-item"><div class="dl">الحساسية</div><div class="dv"><%= s.allergies || 'لا يوجد' %></div></div>
+          <div class="detail-item"><div class="dl">الأمراض المزمنة</div><div class="dv"><%= s.chronic_diseases || 'لا يوجد' %></div></div>
+          <div class="detail-item full" style="grid-column:1/-1"><div class="dl">ملاحظات طبية</div><div class="dv"><%= s.medical_note || '—' %></div></div>
+          <div class="detail-item"><div class="dl">جهة الطوارئ</div><div class="dv"><%= s.emergency_name || '—' %></div></div>
+          <div class="detail-item"><div class="dl">هاتف الطوارئ</div><div class="dv"><%= s.emergency_phone || '—' %></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-people-roof"></i> ولي الأمر</h3></div>
+      <div class="card-body">
+        <div class="detail-grid">
+          <div class="detail-item"><div class="dl">الاسم</div><div class="dv"><%= s.guardian_name || '—' %></div></div>
+          <div class="detail-item"><div class="dl">الهاتف</div><div class="dv"><%= s.guardian_phone || '—' %></div></div>
+          <div class="detail-item"><div class="dl">واتساب</div><div class="dv"><%= s.guardian_whatsapp || '—' %></div></div>
+          <div class="detail-item"><div class="dl">البريد الإلكتروني</div><div class="dv"><%= s.guardian_email || '—' %></div></div>
+        </div>
+        <% if (s.guardian_name) { %>
+          <a href="/guardians/<%= s.guardian_id %>" class="btn btn-outline btn-sm mt-2"><i class="fas fa-eye"></i> ملف ولي الأمر</a>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <div class="dash-grid">
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-calendar-week"></i> أيام ومواعيد التدريب</h3></div>
+      <div class="card-body">
+        <% if (groupSchedule.length) { %>
+          <div class="detail-grid">
+            <% groupSchedule.forEach(function (sl) { %>
+              <div class="detail-item"><div class="dl"><%= dayAr(sl.day) %></div><div class="dv"><%= sl.start %> — <%= sl.end %></div></div>
+            <% }); %>
+          </div>
+        <% } else { %>
+          <div class="empty-state"><i class="fas fa-calendar-xmark"></i><p>لا يوجد جدول محدد</p></div>
+        <% } %>
+        <div class="form-section-title mt-2"><i class="fas fa-calendar-day"></i> الحصص القادمة</div>
+        <% nextSessions.forEach(function (ns) { %>
+          <div class="att-row"><span class="fw-700"><%= fmtDate(ns.date) %></span><span class="badge badge-primary"><%= ns.start_time %> — <%= ns.end_time %></span><span class="text-soft font-11"><%= ns.group_name %></span></div>
+        <% }); %>
+        <% if (!nextSessions.length) { %><div class="text-muted font-12 mt-1">لا توجد حصص قادمة</div><% } %>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-file-contract"></i> الاشتراك الحالي</h3></div>
+      <div class="card-body">
+        <% if (activeSub) { %>
+          <div class="kpi-row">
+            <div class="kpi"><div class="k-val"><%= activeSub.sessions_used %></div><div class="k-lbl">حصص منفذة</div></div>
+            <div class="kpi"><div class="k-val"><%= Math.max(0, activeSub.sessions_total - activeSub.sessions_used) %></div><div class="k-lbl">حصص متبقية</div></div>
+            <div class="kpi"><div class="k-val"><%= money(activeSub.total) %></div><div class="k-lbl">قيمة الاشتراك</div></div>
+            <div class="kpi"><div class="k-val"><%= money(activeSub.remaining) %></div><div class="k-lbl">المتبقي</div></div>
+          </div>
+          <div class="detail-grid">
+            <div class="detail-item"><div class="dl">البرنامج</div><div class="dv"><%= activeSub.program_name || '—' %></div></div>
+            <div class="detail-item"><div class="dl">بداية الاشتراك</div><div class="dv"><%= fmtDate(activeSub.start_date) %></div></div>
+            <div class="detail-item"><div class="dl">النهاية</div><div class="dv"><%= fmtDate(activeSub.end_date) %></div></div>
+            <div class="detail-item"><div class="dl">طريقة الدفع</div><div class="dv"><%= activeSub.payment_method %></div></div>
+            <div class="detail-item"><div class="dl">الحالة</div><div class="dv"><span class="badge badge-success"><%= activeSub.status %></span></div></div>
+            <div class="detail-item"><div class="dl">الإيصال</div><div class="dv"><%= activeSub.receipt_no %></div></div>
+          </div>
+        <% } else { %>
+          <div class="empty-state"><i class="fas fa-file-contract"></i><p>لا يوجد اشتراك نشط حالياً</p></div>
+          <a href="/subscriptions/new?swimmer=<%= s.id %>" class="btn btn-primary btn-block"><i class="fas fa-plus"></i> إنشاء اشتراك جديد</a>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mt-2">
+    <div class="card-header"><h3><i class="fas fa-right-left"></i> نقل السباح إلى مجموعة / كابتن آخر</h3></div>
+    <div class="card-body">
+      <form method="post" action="/swimmers/<%= s.id %>/transfer" class="grid-2" style="align-items:end" data-confirm="تأكيد نقل السباح إلى المجموعة والكابتن الجديد؟ ستبقى كل بياناته (الحضور، التقييمات، الاشتراكات) كما هي.">
+        <div class="field">
+          <label>المجموعة الجديدة</label>
+          <select name="group_id" id="transferGroup" required>
+            <option value="">— اختر المجموعة —</option>
+            <% allGroups.forEach(function (g) { %>
+              <option value="<%= g.id %>" data-coach="<%= g.coach_id || '' %>" <%= s.group_id === g.id ? 'selected' : '' %>><%= g.name %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div class="field">
+          <label>الكابتن <span class="text-soft font-11">(تلقائياً من المجموعة)</span></label>
+          <input type="hidden" name="coach_id" id="transferCoach">
+          <div class="coach-lock">
+            <i class="fas fa-user-tie"></i>
+            <span id="transferCoachName">— كابتن المجموعة —</span>
+            <i class="fas fa-lock text-soft" title="الكابتن مرتبط بالمجموعة ولا يُعدَّل هنا"></i>
+          </div>
+          <div class="hint"><i class="fas fa-circle-info"></i> عند اختيار المجموعة يُحدَّد الكابتن تلقائياً — لتغييره عدّل إعدادات المجموعة</div>
+        </div>
+        <div class="field">
+          <label>ملاحظة على النقل (اختياري)</label>
+          <input type="text" name="note" placeholder="مثال: انتقال بسبب تغيير المستوى">
+        </div>
+        <div class="field">
+          <button type="submit" class="btn btn-primary"><i class="fas fa-right-left"></i> نقل السباح</button>
+        </div>
+      </form>
+      <% if (transfers.length) { %>
+        <div class="form-section-title mt-2"><i class="fas fa-clock-rotate-left"></i> آخر عمليات النقل</div>
+        <div class="timeline">
+          <% transfers.forEach(function (t) { %>
+            <div class="tl-item"><div class="tl-title"><i class="fas fa-right-left text-primary"></i> <%= t.from_group || '—' %> <span class="text-soft">(<%= t.from_coach || '—' %>)</span> ← <%= t.to_group %> <span class="text-soft">(<%= t.to_coach || '—' %>)</span></div><div class="tl-date"><%= fmtDateTime(t.created_at) %> · <%= t.by_user || '—' %><% if (t.note) { %> · <%= t.note %><% } %></div></div>
+          <% }); %>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</div>
+<div class="tab-panel" data-panel="subs" style="display:none">
+  <div class="flex mb-2"><a href="/subscriptions/new?swimmer=<%= s.id %>" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> اشتراك جديد</a></div>
+  <div class="dash-grid">
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-file-contract"></i> سجل الاشتراكات</h3></div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>البرنامج</th><th>الفترة</th><th>الحصص</th><th>المبلغ</th><th>المدفوع</th><th>المتبقي</th><th>الحالة</th><th></th></tr></thead>
+          <tbody>
+            <% subs.forEach(function (sub, i) { %>
+              <tr>
+                <td><%= sub.id %></td>
+                <td><b><%= sub.program_name || '—' %></b></td>
+                <td><span class="font-11"><%= fmtDate(sub.start_date) %><br>إلى <%= fmtDate(sub.end_date) %></span></td>
+                <td><%= sub.sessions_used %> / <%= sub.sessions_total %></td>
+                <td><%= money(sub.total) %></td>
+                <td class="text-success fw-700"><%= money(sub.paid_amount) %></td>
+                <td class="<%= sub.remaining > 0 ? 'text-danger fw-700' : '' %>"><%= money(sub.remaining) %></td>
+                <td><span class="badge <%= sub.status === 'نشط' ? 'badge-success' : sub.status === 'مجمد' ? 'badge-info' : sub.status === 'مكتمل' ? 'badge-purple' : 'badge-gray' %>"><%= sub.status %></span></td>
+                <td><a href="/subscriptions/<%= sub.id %>" class="btn btn-ghost btn-sm"><i class="fas fa-eye"></i> عرض</a></td>
+              </tr>
+            <% }); %>
+            <% if (!subs.length) { %><tr><td colspan="9"><div class="empty-state"><i class="fas fa-file-contract"></i><p>لا توجد اشتراكات</p></div></td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-money-bill-wave"></i> المدفوعات</h3></div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>التاريخ</th><th>المبلغ</th><th>الطريقة</th><th>الإيصال</th></tr></thead>
+          <tbody>
+            <% payments.forEach(function (p) { %>
+              <tr><td><%= fmtDate(p.paid_date) %></td><td class="fw-700 text-success"><%= money(p.amount) %></td><td><span class="badge badge-primary"><%= p.method %></span></td><td><%= p.receipt_no %></td></tr>
+            <% }); %>
+            <% if (!payments.length) { %><tr><td colspan="4"><div class="empty-state"><i class="fas fa-money-bill-wave"></i><p>لا توجد مدفوعات</p></div></td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== الحضور والغياب ===== -->
+<div class="tab-panel" data-panel="att" style="display:none">
+  <div class="kpi-row">
+    <div class="kpi"><div class="k-val"><%= attStats.total || 0 %></div><div class="k-lbl">إجمالي الحصص المحسوبة</div></div>
+    <div class="kpi"><div class="k-val text-success"><%= attStats.present || 0 %></div><div class="k-lbl">حاضر</div></div>
+    <div class="kpi"><div class="k-val text-danger"><%= attStats.absent || 0 %></div><div class="k-lbl">غائب</div></div>
+    <div class="kpi"><div class="k-val text-warning"><%= attStats.excused || 0 %></div><div class="k-lbl">معتذر</div></div>
+    <div class="kpi"><div class="k-val text-primary"><%= attStats.total ? pct(attStats.present, attStats.total) : 0 %>%</div><div class="k-lbl">نسبة الحضور</div></div>
+  </div>
+  <div class="flex mb-2"><a href="/swimmers/<%= s.id %>/attendance-print" class="btn btn-primary btn-sm"><i class="fas fa-file-pdf"></i> طباعة سجل الحضور (PDF)</a></div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-clipboard-user"></i> سجل الحضور</h3></div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>التاريخ</th><th>الحصة</th><th>الحالة</th><th>السبب</th><th>ملاحظة المدرب</th></tr></thead>
+        <tbody>
+          <% attRecords.forEach(function (a) { %>
+            <tr>
+              <td><%= fmtDate(a.date) %></td>
+              <td><%= a.title || '—' %></td>
+              <td><span class="badge <%= a.status === 'present' ? 'badge-success' : a.status === 'absent' ? 'badge-danger' : a.status === 'excused' ? 'badge-warning' : 'badge-info' %>"><%= a.status === 'present' ? 'حاضر' : a.status === 'absent' ? 'غائب' : a.status === 'excused' ? 'معتذر' : 'متأخر' %></span></td>
+              <td><%= a.reason || '—' %></td>
+              <td><%= a.coach_note || '—' %></td>
+            </tr>
+          <% }); %>
+          <% if (!attRecords.length) { %><tr><td colspan="5"><div class="empty-state"><i class="fas fa-clipboard-user"></i><p>لا توجد سجلات حضور</p></div></td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== التقييمات والتطور ===== -->
+<div class="tab-panel" data-panel="assess" style="display:none">
+  <div class="kpi-row">
+    <div class="kpi"><div class="k-val text-primary"><%= assessCount %></div><div class="k-lbl">عدد التقييمات</div></div>
+    <div class="kpi"><div class="k-val text-success"><%= assessTotal %>%</div><div class="k-lbl">مجموع نسب المستويات</div></div>
+    <div class="kpi"><div class="k-val text-warning"><%= assessFinal %>%</div><div class="k-lbl">مجموع النسب النهائي (المتوسط)</div></div>
+  </div>
+  <div class="dash-grid">
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-arrow-trend-up"></i> تطور المستوى</h3></div>
+      <div class="card-body"><div class="chart-box"><canvas id="progressChart"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-route"></i> سجل الانتقال بين المستويات</h3></div>
+      <div class="card-body">
+        <div class="timeline">
+          <% progress.forEach(function (p) { %>
+            <div class="tl-item"><div class="tl-title"><i class="fas fa-arrow-up text-success"></i> <%= p.from_level || 'بداية' %> → <%= p.to_level %></div><div class="tl-date"><%= fmtDate(p.date) %> · <%= p.reason %></div></div>
+          <% }); %>
+          <% if (!progress.length) { %><div class="empty-state"><i class="fas fa-route"></i><p>لا يوجد سجل انتقالات</p></div><% } %>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card mt-2">
+    <div class="card-header"><h3><i class="fas fa-clipboard-check"></i> جميع التقييمات</h3></div>
+    <div class="card-body">
+      <% assessments.forEach(function (a) { %>
+        <div class="attendance-session">
+          <div class="flex justify-between items-center">
+            <b><i class="fas fa-calendar-check text-primary"></i> <%= fmtDate(a.date) %></b>
+            <span class="score-pill"><%= a.overall_percent %>%</span>
+          </div>
+          <div class="font-12 mt-1 text-soft">
+            <b>الكابتن:</b> <%= a.coach_name || '—' %> · <b>المستوى:</b> <%= a.level_name || '—' %><br>
+            <b>نقاط القوة:</b> <%= a.strengths || '—' %><br>
+            <b>نقاط الضعف:</b> <%= a.weaknesses || '—' %><br>
+            <b>التوصيات:</b> <%= a.recommendations || '—' %>
+          </div>
+          <div class="mt-1 flex gap-1">
+            <span class="badge <%= a.ready_to_advance ? 'badge-success' : 'badge-warning' %>"><%= a.ready_to_advance ? 'جاهز للانتقال' : 'يحتاج تحسيناً' %></span>
+            <% if (a.next_assessment_date) { %><span class="badge badge-info">التقييم القادم: <%= fmtDate(a.next_assessment_date) %></span><% } %>
+          </div>
+        </div>
+      <% }); %>
+      <% if (!assessments.length) { %><div class="empty-state"><i class="fas fa-clipboard-check"></i><p>لا توجد تقييمات</p></div><% } %>
+    </div>
+  </div>
+</div>
+
+<!-- ===== الاختبارات ===== -->
+<div class="tab-panel" data-panel="tests" style="display:none">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-vial-circle-check"></i> نتائج الاختبارات</h3></div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>التاريخ</th><th>النوع</th><th>المسافة</th><th>الزمن</th><th>المركز</th><th>النتيجة</th><th>ملاحظات</th></tr></thead>
+        <tbody>
+          <% tests.forEach(function (t) { %>
+            <tr>
+              <td><%= fmtDate(t.date) %></td>
+              <td><span class="badge badge-info"><%= t.type %></span></td>
+              <td><%= t.distance_m ? t.distance_m + ' م' : '—' %></td>
+              <td class="fw-700"><%= t.time_seconds ? t.time_seconds + ' ث' : '—' %></td>
+              <td><%= t.position ? t.position : '—' %></td>
+              <td><span class="badge <%= t.passed ? 'badge-success' : 'badge-danger' %>"><%= t.status %></span></td>
+              <td><%= t.result_note || '—' %></td>
+            </tr>
+          <% }); %>
+          <% if (!tests.length) { %><tr><td colspan="7"><div class="empty-state"><i class="fas fa-vial-circle-check"></i><p>لا توجد اختبارات</p></div></td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== الفرق والأزمنة ===== -->
+<div class="tab-panel" data-panel="teams" style="display:none">
+  <div class="dash-grid">
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-flag-checkered"></i> الفرق (<%= teamRows.length %>)</h3></div>
+      <div class="card-body">
+        <% teamRows.forEach(function (t) { %>
+          <div class="att-row"><b><i class="fas fa-flag text-primary"></i> <%= t.name %></b></div>
+        <% }); %>
+        <% if (!teamRows.length) { %><div class="empty-state"><i class="fas fa-flag-checkered"></i><p>غير مسجل في أي فريق</p></div><% } %>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-stopwatch"></i> قياسات الأزمنة (أفضل زمن شخصي)</h3></div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>التاريخ</th><th>النوع</th><th>المسافة</th><th>الزمن</th></tr></thead>
+          <tbody>
+            <% pbs.forEach(function (p) { %>
+              <tr><td><%= fmtDate(p.date) %></td><td><span class="badge badge-primary"><%= p.race_type %></span></td><td><%= p.distance_m %> م</td><td class="fw-700"><%= p.time_seconds %> ث</td></tr>
+            <% }); %>
+            <% if (!pbs.length) { %><tr><td colspan="4"><div class="empty-state"><i class="fas fa-stopwatch"></i><p>لا توجد قياسات</p></div></td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="card mt-2">
+    <div class="card-header"><h3><i class="fas fa-trophy"></i> نتائج البطولات</h3></div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>البطولة</th><th>النوع</th><th>المسافة</th><th>الزمن</th><th>الزمن السابق</th><th>المركز</th><th>ميدالية</th><th>تأهل</th></tr></thead>
+        <tbody>
+          <% compResults.forEach(function (c) { %>
+            <tr>
+              <td><b><%= c.comp_name %></b></td>
+              <td><span class="badge badge-info"><%= c.race_type %></span></td>
+              <td><%= c.distance_m %> م</td>
+              <td class="fw-700"><%= c.time_seconds %> ث</td>
+              <td><%= c.previous_time_seconds ? c.previous_time_seconds + ' ث' : '—' %></td>
+              <td><%= c.position ? c.position : '—' %></td>
+              <td>
+                <% if (c.position == 1) { %><i class="fas fa-medal text-warning"></i><% } else if (c.position == 2) { %><i class="fas fa-medal" style="color:#94a3b8"></i><% } else if (c.position == 3) { %><i class="fas fa-medal" style="color:#b45309"></i><% } else { %>—<% } %>
+              </td>
+              <td><%= c.qualified ? '<span class="badge badge-success">تأهل</span>' : '—' %></td>
+            </tr>
+          <% }); %>
+          <% if (!compResults.length) { %><tr><td colspan="8"><div class="empty-state"><i class="fas fa-trophy"></i><p>لا توجد نتائج بطولات</p></div></td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== المستندات ===== -->
+<div class="tab-panel" data-panel="docs" style="display:none">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-folder-open"></i> مستندات السباح</h3></div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>النوع</th><th>العنوان</th><th>الملف</th><th>الصلاحية</th><th>تاريخ الرفع</th></tr></thead>
+        <tbody>
+          <% docs.forEach(function (d) { %>
+            <tr>
+              <td><span class="badge badge-primary"><%= d.doc_type %></span></td>
+              <td><b><%= d.title %></b></td>
+              <td><%= d.file_name || '—' %></td>
+              <td><span class="badge badge-gray"><%= d.visibility === 'guardian' ? 'ولي الأمر' : d.visibility === 'coach' ? 'المدربون' : 'الموظفون' %></span></td>
+              <td><%= fmtDate(d.created_at) %></td>
+            </tr>
+          <% }); %>
+          <% if (!docs.length) { %><tr><td colspan="5"><div class="empty-state"><i class="fas fa-folder-open"></i><p>لا توجد مستندات</p></div></td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== سجل النشاط ===== -->
+<div class="tab-panel" data-panel="history" style="display:none">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-clock-rotate-left"></i> سجل الاشتراكات والعمليات</h3></div>
+    <div class="card-body">
+      <div class="timeline">
+        <% history.forEach(function (h) { %>
+          <div class="tl-item"><div class="tl-title"><%= h.action %> — <%= h.details %></div><div class="tl-date"><%= fmtDateTime(h.created_at) %> · <%= h.user_name %></div></div>
+        <% }); %>
+        <% transfers.forEach(function (t) { %>
+          <div class="tl-item"><div class="tl-title"><i class="fas fa-right-left text-primary"></i> نقل: <%= t.from_group || '—' %> ← <%= t.to_group %></div><div class="tl-date"><%= fmtDateTime(t.created_at) %> · <%= t.by_user || '—' %><% if (t.note) { %> · <%= t.note %><% } %></div></div>
+        <% }); %>
+        <% if (!history.length && !transfers.length) { %><div class="empty-state"><i class="fas fa-clock-rotate-left"></i><p>لا يوجد سجل</p></div><% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.tabs .tab').forEach(function (tab) {
+  tab.addEventListener('click', function () {
+    document.querySelectorAll('.tabs .tab').forEach(function (t) { t.classList.remove('active'); });
+    tab.classList.add('active');
+    document.querySelectorAll('.tab-panel').forEach(function (p) { p.style.display = 'none'; });
+    document.querySelector('.tab-panel[data-panel="' + tab.getAttribute('data-tab') + '"]').style.display = 'block';
+  });
+});
+var tg = document.getElementById('transferGroup');
+var tc = document.getElementById('transferCoach');
+var coachNames = { <% allCoaches.forEach(function (c) { %>'<%= c.id %>':'<%= c.full_name.replace(/'/g, "\\'") %>',<% }); %> };
+function syncCoach() {
+  var opt = tg ? tg.options[tg.selectedIndex] : null;
+  var cid = opt ? (opt.getAttribute('data-coach') || '') : '';
+  if (tc) tc.value = cid;
+  var view = document.getElementById('transferCoachName');
+  if (view) view.textContent = (cid && coachNames[cid]) ? coachNames[cid] : '— كابتن المجموعة —';
+}
+if (tg) {
+  tg.addEventListener('change', syncCoach);
+  syncCoach();
+}
+</script>
+<%- include('partials/layout_bottom') %>

@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: swimming-academy
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true

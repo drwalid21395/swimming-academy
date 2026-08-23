@@ -1,0 +1,93 @@
+<%- include('partials/layout_top', { title: title, active: active }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-calendar-plus"></i> توليد الحصص / حصة جديدة</div>
+    <div class="page-sub">إضافة حصة واحدة أو توليد الجدول الأسبوعي لمجموعة</div>
+  </div>
+  <a href="/sessions" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل الحصص</a>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header"><i class="fas fa-plus-circle"></i> إضافة حصة واحدة</div>
+    <div class="card-body">
+      <form method="POST" action="/sessions/generate" novalidate>
+        <input type="hidden" name="action" value="one">
+        <div class="form-grid">
+          <div class="form-group full">
+            <label>المجموعة <span class="req">*</span></label>
+            <select name="group_id" class="form-control" required>
+              <option value="">— اختر المجموعة —</option>
+              <% groups.forEach(function (g) { %>
+                <option value="<%= g.id %>"><%= g.name %> (<%= g.day_label || '' %>)</option>
+              <% }); %>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>التاريخ <span class="req">*</span></label>
+            <input type="date" name="date" class="form-control" value="<%= today %>" required>
+          </div>
+          <div class="form-group">
+            <label>بداية <span class="req">*</span></label>
+            <input type="time" name="start_time" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label>نهاية <span class="req">*</span></label>
+            <input type="time" name="end_time" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label>الكابتن</label>
+            <select name="coach_id" class="form-control">
+              <option value="">— تلقائي من المجموعة —</option>
+              <% coaches.forEach(function (c) { %><option value="<%= c.id %>"><%= c.full_name %></option><% }); %>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>الحمام</label>
+            <select name="pool_id" class="form-control">
+              <option value="">— تلقائي من المجموعة —</option>
+              <% pools.forEach(function (p) { %><option value="<%= p.id %>"><%= p.name %></option><% }); %>
+            </select>
+          </div>
+          <div class="form-group">
+            <label style="padding-top:8px;"><input type="checkbox" name="is_compensatory" value="1" style="width:18px;height:18px;accent-color:var(--primary)"> حصة تعويضية</label>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-plus"></i> إضافة الحصة</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><i class="fas fa-calendar-week"></i> توليد الجدول الأسبوعي</div>
+    <div class="card-body">
+      <form method="POST" action="/sessions/generate" novalidate>
+        <input type="hidden" name="action" value="weeks">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>المجموعة <span class="req">*</span></label>
+            <select name="group_id" class="form-control" required>
+              <option value="">— اختر المجموعة —</option>
+              <% groups.forEach(function (g) { %>
+                <option value="<%= g.id %>"><%= g.name %></option>
+              <% }); %>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>عدد الأسابيع <span class="req">*</span></label>
+            <input type="number" name="weeks" class="form-control" min="1" max="12" value="4" required>
+          </div>
+          <div class="form-group full">
+            <div class="form-hint"><i class="fas fa-circle-info"></i> يتم توليد الحصص حسب جدول المجموعة الأسبوعي مع تجاهل أي حصص متعارضة مع كابتن أو حمام آخر. مدة الدورة 8 أسابيع افتراضياً.</div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-wand-magic-sparkles"></i> توليد الحصص</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<%- include('partials/layout_bottom') %>

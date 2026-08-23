@@ -1,0 +1,56 @@
+<%- include('partials/layout_top', { title: 'التقرير المالي', active: 'reports' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-scale-balanced"></i> التقرير المالي</div>
+    <div class="page-sub">من <%= fmtDate(from) %> إلى <%= fmtDate(to) %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <form method="get" action="/reports/financial" class="flex gap-1">
+      <input type="date" name="from" class="form-control" value="<%= from %>">
+      <input type="date" name="to" class="form-control" value="<%= to %>">
+      <button class="btn btn-outline" type="submit">تصفية</button>
+    </form>
+    <button class="btn btn-outline" data-print><i class="fas fa-print"></i> طباعة</button>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="k-val text-success"><%= money(revTotal) %></div><div class="k-lbl">الإيرادات</div></div>
+  <div class="kpi"><div class="k-val text-danger"><%= money(expTotal) %></div><div class="k-lbl">المصروفات</div></div>
+  <div class="kpi"><div class="k-val <%= net >= 0 ? 'text-success' : 'text-danger' %>"><%= money(net) %></div><div class="k-lbl">الصافي</div></div>
+</div>
+
+<div class="dash-grid">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-arrow-up-right-dots"></i> الإيرادات حسب الفئة</h3></div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>الفئة</th><th>المبلغ</th></tr></thead>
+        <tbody>
+          <% revRows.forEach(function (r) { %>
+            <tr><td><span class="badge badge-success"><%= r.category %></span></td><td class="fw-700 text-success"><%= money(r.total) %></td></tr>
+          <% }); %>
+          <% if (!revRows.length) { %><tr><td colspan="2"><div class="empty-state"><p>لا توجد إيرادات في هذه الفترة</p></div></td></tr><% } %>
+        </tbody>
+        <% if (revRows.length) { %><tfoot><tr><td><b>الإجمالي</b></td><td class="fw-700 text-success"><%= money(revTotal) %></td></tr></tfoot><% } %>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-arrow-down-right-dots"></i> المصروفات حسب الفئة</h3></div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>الفئة</th><th>المبلغ</th></tr></thead>
+        <tbody>
+          <% expRows.forEach(function (r) { %>
+            <tr><td><span class="badge badge-danger"><%= r.category %></span></td><td class="fw-700 text-danger"><%= money(r.total) %></td></tr>
+          <% }); %>
+          <% if (!expRows.length) { %><tr><td colspan="2"><div class="empty-state"><p>لا توجد مصروفات في هذه الفترة</p></div></td></tr><% } %>
+        </tbody>
+        <% if (expRows.length) { %><tfoot><tr><td><b>الإجمالي</b></td><td class="fw-700 text-danger"><%= money(expTotal) %></td></tr></tfoot><% } %>
+      </table>
+    </div>
+  </div>
+</div>
+<%- include('partials/layout_bottom') %>
