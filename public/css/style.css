@@ -907,3 +907,114 @@ i[class*="fa-"], i.fa, i.fas, i.far, i.fab { display: none !important; }
 .criteria-num { width: 62px; text-align: center; font-weight: 700; color: var(--primary); border: 1px solid var(--input-border); border-radius: 8px; padding: 3px 4px; background: var(--input-bg); font-size: 14px; }
 .criteria-num:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px rgba(2,132,199,.12); }
 .criteria-pct { font-weight: 700; color: var(--text-muted); font-size: 13px; }
+
+/* ============================= التجاوب مع الشاشات الكبيرة ============================= */
+@media (max-width: 1280px) {
+  .dash-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  .topbar { padding: 0 16px; }
+}
+
+/* ============================= التجاوب مع الشاشات المتوسطة (تابلت) ============================= */
+@media (max-width: 992px) {
+  .topbar { gap: 10px; padding: 0 12px; }
+  .topbar .icon-btn.with-label .btn-text { display: none; }
+  .topbar .icon-btn.with-label { width: 38px; padding: 0; justify-content: center; }
+  .user-chip .uname { display: none; }
+  .main-content { padding: 16px; }
+  .page-header { flex-wrap: wrap; gap: 10px; }
+  .page-actions { flex-wrap: wrap; }
+  .filters-bar { flex-wrap: wrap; }
+  .filters-bar .filter-search { flex: 1 1 100%; min-width: 0; }
+}
+
+/* ============================= التجاوب مع الهواتف ============================= */
+@media (max-width: 768px) {
+  /* مظلل خلف القائمة الجانبية لإغلاقها عند النقر خارجها */
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.45);
+    z-index: 99;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .25s ease, visibility .25s ease;
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+  }
+  .sidebar.open ~ .sidebar-overlay { opacity: 1; visibility: visible; }
+
+  /* القائمة الجانبية: إخفاء زر القائمة واستخدامه */
+  .sidebar { width: 280px; }
+
+  /* الشريط العلوي */
+  .topbar { gap: 8px; padding: 0 10px; min-height: var(--topbar-h); }
+  .topbar-right { display: flex; align-items: center; gap: 6px; }
+  .main-content { padding: 12px 10px; }
+
+  /* العناوين والأزرار */
+  .page-title { font-size: 18px; }
+  .page-header { flex-direction: column; align-items: stretch; }
+  .page-actions { width: 100%; }
+  .page-actions .btn, .page-actions .btn-block { font-size: 13px; }
+
+  /* البطاقات والحشو */
+  .card-body { padding: 14px; }
+  .card-header { padding: 12px 14px; }
+  .card-header h3 { font-size: 14px; }
+
+  /* الجداول: جعلها قابلة للتمرير الأفقي داخل حاوية */
+  .table-wrap { -webkit-overflow-scrolling: touch; }
+  table { min-width: 640px; }
+  .table-wrap table.compact-table { min-width: 460px; }
+
+  /* إحصائيات */
+  .stats-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .stat-card { padding: 12px; gap: 10px; }
+  .stat-icon { width: 42px; height: 42px; font-size: 18px; }
+  .stat-info .stat-value { font-size: 20px; }
+
+  /* النماذج */
+  .form-grid { grid-template-columns: 1fr; gap: 12px; }
+  .form-actions { flex-direction: column; align-items: stretch; }
+  .form-actions .btn { width: 100%; justify-content: center; }
+
+  /* شريط الفلاتر */
+  .filters-bar { flex-direction: column; align-items: stretch; }
+  .filters-bar .filter-search { min-width: 0; }
+
+  /* صفوف الحضور */
+  .att-row { flex-wrap: wrap; gap: 10px; }
+  .att-name { font-size: 13px; flex: 1 1 100%; }
+  .att-btns { flex: 1 1 100%; justify-content: flex-start; }
+
+  /* التفاصيل */
+  .detail-grid { grid-template-columns: 1fr; gap: 10px; }
+  .kpi-row { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+
+  /* معلومات الملف الشخصي */
+  .profile-header { gap: 14px; }
+  .profile-avatar { width: 72px; height: 72px; font-size: 26px; }
+
+  /* الحاوية العامة للموقع العام */
+  .site-container { padding: 0 14px; }
+  .site-hero { padding: 32px 16px; }
+  .site-hero h1 { font-size: 24px; }
+  .site-hero p { font-size: 14px; }
+
+  /* الرسائل والتنبيهات */
+  .toast-container { width: auto; inset-inline: 10px; }
+
+  /* صفقات التقييم */
+  .level-block-body { grid-template-columns: 1fr; }
+  .criteria-input-group { flex-wrap: wrap; }
+}
+
+/* ============================= التجاوب مع الشاشات الصغيرة جداً ============================= */
+@media (max-width: 400px) {
+  .stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat-card { flex-direction: column; text-align: center; }
+  .btn.with-label .btn-text { display: none; }
+  .user-chip { max-width: 120px; }
+  .card-body { padding: 12px; }
+  .grand-block { min-width: 110px; }
+}

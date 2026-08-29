@@ -26,10 +26,21 @@
     /* ---------- فتح/إغلاق القائمة الجانبية ---------- */
     const menuToggle = document.getElementById('menuToggle');
     const sidebar = document.getElementById('sidebar');
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
     if (menuToggle && sidebar) {
       menuToggle.addEventListener('click', function () {
         if (window.innerWidth <= 768) sidebar.classList.toggle('open');
         else document.body.classList.toggle('sidebar-collapsed');
+      });
+      if (sidebarOverlay) {
+        sidebarOverlay.addEventListener('click', function () {
+          sidebar.classList.remove('open');
+        });
+      }
+      sidebar.querySelectorAll('a').forEach(function (a) {
+        a.addEventListener('click', function () {
+          if (window.innerWidth <= 768) sidebar.classList.remove('open');
+        });
       });
     }
 
