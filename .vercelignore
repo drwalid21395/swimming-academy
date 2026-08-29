@@ -1,0 +1,17 @@
+data.db
+data.db-shm
+data.db-wal
+uploads/
+logs/
+docs/
+node_modules/
+.vercel/
+.env.local
+*.log
+*.bat
+*.html.bak
+server_out.log
+server_err.log
+render.yaml
+tmp_*
+

@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "views/**/*;public/**/*;lib/**/*;routes/**/*;db/**/*;src/**/*"
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index" }
+  ]
+}

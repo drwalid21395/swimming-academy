@@ -2,6 +2,7 @@ node_modules/
 data.db
 data.db-shm
 data.db-wal
+data/
 uploads/*
 !uploads/.gitkeep
 *.log
@@ -9,3 +10,6 @@ uploads/*
 tmp_*
 .DS_Store
 Thumbs.db
+
+.vercel
+.env*

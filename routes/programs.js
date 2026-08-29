@@ -2,6 +2,7 @@
 const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, dayAr, parseJSON, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
+const { setFlash } = require('../lib/auth-cookie');
 const crud = require('../lib/crud');
 const router = express.Router();
 
@@ -9,24 +10,24 @@ const PROGRAM_TYPES_DEFAULT = ['تعليم سباحة', 'تدريب سباحة',
 const PROGRAM_STATUS = ['متاح', 'مكتمل العدد', 'متوقف', 'منتهي'];
 
 /* أنواع البرامج تأتي من الإعدادات (قابلة للإضافة والتعديل من تبويب «أنواع البرامج») */
-function programTypes() {
-  const v = (db.prepare("SELECT value FROM settings WHERE key = 'program_types'").get() || {}).value;
+async function programTypes() {
+  const v = (await db.prepare("SELECT value FROM settings WHERE key = 'program_types'").get() || {}).value;
   try { const a = JSON.parse(v || '[]'); return Array.isArray(a) && a.length ? a : PROGRAM_TYPES_DEFAULT; } catch (e) { return PROGRAM_TYPES_DEFAULT; }
 }
 
 /* ============================================================== */
 /*                           المستويات                            */
 /* ============================================================== */
-router.get('/levels', function (req, res) {
+router.get('/levels', async function (req, res) {
   if (!canView(req.currentUser, 'levels')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const levels = db.prepare(`SELECT l.*, (SELECT COUNT(*) FROM assessment_criteria c WHERE c.level_id = l.id) AS skills_count,
+  const levels = await db.prepare(`SELECT l.*, (SELECT COUNT(*) FROM assessment_criteria c WHERE c.level_id = l.id) AS skills_count,
     (SELECT COUNT(*) FROM swimmers s WHERE s.level_id = l.id) AS swimmers_count FROM levels l ORDER BY l.order_no`).all();
   const skillsByLevel = {};
-  db.prepare('SELECT level_id, name FROM assessment_criteria ORDER BY order_no, id').all().forEach(c => {
+  (await db.prepare('SELECT level_id, name FROM assessment_criteria ORDER BY order_no, id').all()).forEach(c => {
     (skillsByLevel[c.level_id] = skillsByLevel[c.level_id] || []).push(c.name);
   });
   const rows = levels.map(l => ({ ...l, skills: skillsByLevel[l.id] || [] }));
-  const sharedCount = db.prepare('SELECT COUNT(*) c FROM assessment_criteria WHERE level_id IS NULL').get().c;
+  const sharedCount = (await db.prepare('SELECT COUNT(*) c FROM assessment_criteria WHERE level_id IS NULL').get()).c;
   const page = {
     title: 'المستويات والمهارات', subtitle: 'المستويات التعليمية مع مهارات كل مستوى' + (sharedCount ? ' — ' + sharedCount + ' معيار عام مشترك يُضمَّن تلقائياً في كل المستويات' : ''), icon: 'fa-layer-group', module: 'levels', active: 'levels',
     columns: [
@@ -48,101 +49,105 @@ router.get('/levels', function (req, res) {
   res.render('list', { page });
 });
 
-function levelForm(values, skills) {
-  const sharedSkills = db.prepare('SELECT * FROM assessment_criteria WHERE level_id IS NULL ORDER BY order_no, id').all();
+async function levelForm(values, skills) {
+  const sharedSkills = await db.prepare('SELECT * FROM assessment_criteria WHERE level_id IS NULL ORDER BY order_no, id').all();
   return { title: values.id ? 'تعديل المستوى' : 'مستوى جديد', subtitle: values.id ? values.name : 'إضافة مستوى جديد بمهاراته', icon: values.id ? 'fa-pen' : 'fa-plus', active: 'levels', action: values.id ? '/levels/' + values.id + '/edit' : '/levels/new', values, skills, sharedSkills, submitLabel: 'حفظ', cancelUrl: '/levels' };
 }
 
-router.get('/levels/new', function (req, res) {
+router.get('/levels/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'levels')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  res.render('levels_form', levelForm({ order_no: db.prepare('SELECT COALESCE(MAX(order_no),0)+1 n FROM levels').get().n }, []));
+  res.render('levels_form', await levelForm({ order_no: (await db.prepare('SELECT COALESCE(MAX(order_no),0)+1 n FROM levels').get()).n }, []));
 });
-router.post('/levels/new', function (req, res) {
+router.post('/levels/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'levels')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
-  const info = db.prepare('INSERT INTO levels (name, order_no, color, description) VALUES (?,?,?,?)')
+  const info = await db.prepare('INSERT INTO levels (name, order_no, color, description) VALUES (?,?,?,?)')
     .run((b.name || '').trim(), Number(b.order_no || 1), b.color || '#0284c7', b.description || '');
-  saveSkills(info.lastInsertRowid, b);
+  await saveSkills(info.lastInsertRowid, b);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'levels', info.lastInsertRowid, 'مستوى جديد: ' + b.name, req);
-  req.session.flash = { type: 'success', message: 'تم حفظ المستوى ومهاراته' };
+  setFlash(res, { type: 'success', message: 'تم حفظ المستوى ومهاراته' });
   res.redirect('/levels');
 });
-router.get('/levels/:id/edit', function (req, res) {
+router.get('/levels/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'levels')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const row = db.prepare('SELECT * FROM levels WHERE id = ?').get(Number(req.params.id));
+  const row = await db.prepare('SELECT * FROM levels WHERE id = ?').get(Number(req.params.id));
   if (!row) return res.redirect('/levels');
-  const skills = db.prepare('SELECT * FROM assessment_criteria WHERE level_id = ? ORDER BY order_no').all(row.id);
-  res.render('levels_form', levelForm(row, skills));
+  const skills = await db.prepare('SELECT * FROM assessment_criteria WHERE level_id = ? ORDER BY order_no').all(row.id);
+  res.render('levels_form', await levelForm(row, skills));
 });
-router.post('/levels/:id/edit', function (req, res) {
+router.post('/levels/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'levels')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
   const b = req.body;
-  db.prepare('UPDATE levels SET name=?, order_no=?, color=?, description=? WHERE id=?')
+  await db.prepare('UPDATE levels SET name=?, order_no=?, color=?, description=? WHERE id=?')
     .run((b.name || '').trim(), Number(b.order_no || 1), b.color || '#0284c7', b.description || '', id);
-  saveSkills(id, b);
+  await saveSkills(id, b);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'levels', id, 'تعديل مستوى: ' + b.name, req);
-  req.session.flash = { type: 'success', message: 'تم حفظ التعديلات' };
+  setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/levels');
 });
-router.post('/levels/:id/delete', function (req, res) {
+router.post('/levels/:id/delete', async function (req, res) {
   if (!canDel(req.currentUser, 'levels')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
-  const levelName = db.prepare('SELECT name FROM levels WHERE id=?').get(id);
-  const swimmersMoved = db.prepare('SELECT COUNT(*) c FROM swimmers WHERE level_id=?').get(id).c;
-  db.prepare('DELETE FROM assessment_criteria WHERE level_id = ?').run(id);
-  db.prepare('UPDATE swimmers SET level_id = NULL WHERE level_id = ?').run(id);
-  db.prepare('DELETE FROM assessments WHERE level_id = ?').run(id);
-  db.prepare('DELETE FROM level_progress WHERE to_level_id = ?').run(id);
-  db.prepare('DELETE FROM levels WHERE id = ?').run(id);
+  const levelName = await db.prepare('SELECT name FROM levels WHERE id=?').get(id);
+  const swimmersMoved = (await db.prepare('SELECT COUNT(*) c FROM swimmers WHERE level_id=?').get(id)).c;
+  await db.prepare('DELETE FROM assessment_criteria WHERE level_id = ?').run(id);
+  await db.prepare('UPDATE swimmers SET level_id = NULL WHERE level_id = ?').run(id);
+  await db.prepare('DELETE FROM assessments WHERE level_id = ?').run(id);
+  await db.prepare('DELETE FROM level_progress WHERE to_level_id = ?').run(id);
+  await db.prepare('DELETE FROM levels WHERE id = ?').run(id);
   audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'levels', id, 'حذف مستوى', req);
-  req.session.flash = {
+  setFlash(res, {
     type: 'success',
     message: 'تم حذف المستوى' + (swimmersMoved ? ' (' + swimmersMoved + ' سباح رُفع مستواهم وأصبح بدون مستوى)' : '')
-  };
+  });
   res.redirect('/levels');
 });
 
 /* حفظ مهارات المستوى: يحذف القديمة ويضيف الجديدة ديناميكياً */
-function saveSkills(levelId, b) {
+async function saveSkills(levelId, b) {
   const names = Array.isArray(b.skill_name) ? b.skill_name : (b.skill_name ? [b.skill_name] : []);
   const cats = Array.isArray(b.skill_category) ? b.skill_category : (b.skill_category ? [b.skill_category] : []);
-  db.prepare('DELETE FROM assessment_criteria WHERE level_id = ?').run(levelId);
-  const ins = db.prepare('INSERT INTO assessment_criteria (name, category, program_type, order_no, level_id) VALUES (?,?,?,?,?)');
-  names.forEach(function (n, i) {
+  await db.prepare('DELETE FROM assessment_criteria WHERE level_id = ?').run(levelId);
+  const ins = await db.prepare('INSERT INTO assessment_criteria (name, category, program_type, order_no, level_id) VALUES (?,?,?,?,?)');
+  let i = 0;
+  for (const n of names) {
     const name = String(n || '').trim();
-    if (!name) return;
-    ins.run(name, String(cats[i] || 'مهارات أساسية'), 'all', i + 1, levelId);
-  });
+    if (!name) continue;
+    await ins.run(name, String(cats[i] || 'مهارات أساسية'), 'all', i + 1, levelId);
+    i++;
+  }
 }
 
 /* حفظ المعايير العامة (مشتركة تلقائياً في كل المستويات) */
-router.post('/levels/shared', function (req, res) {
+router.post('/levels/shared', async function (req, res) {
   if (!canEdit(req.currentUser, 'levels')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
   const names = Array.isArray(b.shared_name) ? b.shared_name : (b.shared_name ? [b.shared_name] : []);
-  db.prepare('DELETE FROM assessment_criteria WHERE level_id IS NULL').run();
-  const ins = db.prepare('INSERT INTO assessment_criteria (name, category, program_type, order_no, level_id) VALUES (?,?,?,?,NULL)');
-  names.forEach(function (n, i) {
+  await db.prepare('DELETE FROM assessment_criteria WHERE level_id IS NULL').run();
+  const ins = await db.prepare('INSERT INTO assessment_criteria (name, category, program_type, order_no, level_id) VALUES (?,?,?,?,NULL)');
+  let i = 0;
+  for (const n of names) {
     const name = String(n || '').trim();
-    if (!name) return;
-    ins.run(name, 'معايير عامة', 'all', i + 1);
-  });
+    if (!name) continue;
+    await ins.run(name, 'معايير عامة', 'all', i + 1);
+    i++;
+  }
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'levels', 0, 'تعديل المعايير العامة', req);
-  req.session.flash = { type: 'success', message: 'تم حفظ المعايير العامة — تُضمَّن تلقائياً في كل المستويات' };
+  setFlash(res, { type: 'success', message: 'تم حفظ المعايير العامة — تُضمَّن تلقائياً في كل المستويات' });
   res.redirect(req.get('Referer') || '/levels');
 });
 
 /* ============================================================== */
 /*                           البرامج                              */
 /* ============================================================== */
-const programFields = function (values) {
-  const coaches = db.prepare('SELECT * FROM coaches').all().map(c => ({ value: c.id, label: c.full_name }));
-  const pools = db.prepare('SELECT * FROM pools').all().map(p => ({ value: p.id, label: p.name }));
-  const branches = db.prepare('SELECT * FROM branches').all().map(b => ({ value: b.id, label: b.name }));
+const programFields = async function (values) {
+  const coaches = (await db.prepare('SELECT * FROM coaches').all()).map(c => ({ value: c.id, label: c.full_name }));
+  const pools = (await db.prepare('SELECT * FROM pools').all()).map(p => ({ value: p.id, label: p.name }));
+  const branches = (await db.prepare('SELECT * FROM branches').all()).map(b => ({ value: b.id, label: b.name }));
   return [
     { key: 'name', label: 'اسم البرنامج', type: 'text', required: true, section: 'البيانات الأساسية', sectionIcon: 'fa-file-lines' },
-    { key: 'type', label: 'نوع البرنامج', type: 'select', required: true, options: programTypes().map(v => ({ value: v, label: v })) },
+    { key: 'type', label: 'نوع البرنامج', type: 'select', required: true, options: (await programTypes()).map(v => ({ value: v, label: v })) },
     { key: 'status', label: 'الحالة', type: 'select', options: PROGRAM_STATUS.map(v => ({ value: v, label: v })) },
     { key: 'description', label: 'وصف البرنامج', type: 'textarea', full: true },
     { key: 'age_from', label: 'السن من', type: 'number', number: true, section: 'الفئة والمستوى', sectionIcon: 'fa-users' },
@@ -183,8 +188,8 @@ function collectProgramSchedule(b) {
   return JSON.stringify(sched);
 }
 
-router.get('/programs', function (req, res) {
-  const rows = db.prepare(`SELECT p.*, c.full_name AS coach_name, b.name AS branch_name, pool.name AS pool_name,
+router.get('/programs', async function (req, res) {
+  const rows = await db.prepare(`SELECT p.*, c.full_name AS coach_name, b.name AS branch_name, pool.name AS pool_name,
     (SELECT COUNT(*) FROM swimmers s WHERE s.program_id = p.id) AS enrolled
     FROM programs p LEFT JOIN coaches c ON c.id = p.coach_id LEFT JOIN branches b ON b.id = p.branch_id LEFT JOIN pools pool ON pool.id = p.pool_id
     ORDER BY p.id`).all();
@@ -201,8 +206,8 @@ router.get('/programs', function (req, res) {
     ],
     rows,
     filters: [
-      { name: 'type', label: 'النوع', options: programTypes().map(v => ({ value: v, label: v })) },
-      { name: 'coach_id', label: 'الكابتن', options: db.prepare('SELECT * FROM coaches ORDER BY full_name').all().map(c => ({ value: c.id, label: c.full_name })) },
+      { name: 'type', label: 'النوع', options: (await programTypes()).map(v => ({ value: v, label: v })) },
+      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT * FROM coaches ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
       { name: 'status', label: 'الحالة', options: PROGRAM_STATUS.map(v => ({ value: v, label: v })) }
     ],
     canAdd: true, addUrl: '/programs/new', addLabel: 'برنامج جديد',
@@ -215,35 +220,35 @@ router.get('/programs', function (req, res) {
   res.render('list', { page });
 });
 
-router.get('/programs/new', function (req, res) {
-  res.render('form', { form: { title: 'برنامج جديد', subtitle: 'إنشاء برنامج أو دورة جديدة', icon: 'fa-plus', active: 'programs', action: '/programs/new', fields: programFields({}), values: {}, submitLabel: 'إنشاء البرنامج', cancelUrl: '/programs', csrf: '' } });
+router.get('/programs/new', async function (req, res) {
+  res.render('form', { form: { title: 'برنامج جديد', subtitle: 'إنشاء برنامج أو دورة جديدة', icon: 'fa-plus', active: 'programs', action: '/programs/new', fields: await programFields({}), values: {}, submitLabel: 'إنشاء البرنامج', cancelUrl: '/programs', csrf: '' } });
 });
-router.post('/programs/new', function (req, res) {
+router.post('/programs/new', async function (req, res) {
   const b = req.body;
   const cols = PROGRAM_COLS.concat(['schedule']);
   const vals = programVals(b).concat([collectProgramSchedule(b)]);
-  const info = db.prepare(`INSERT INTO programs (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...vals);
+  const info = await db.prepare(`INSERT INTO programs (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...vals);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'programs', info.lastInsertRowid, 'برنامج جديد: ' + b.name, req);
-  req.session.flash = { type: 'success', message: 'تم إنشاء البرنامج بنجاح' };
+  setFlash(res, { type: 'success', message: 'تم إنشاء البرنامج بنجاح' });
   res.redirect('/programs');
 });
-router.get('/programs/:id/edit', function (req, res) {
-  const row = db.prepare('SELECT * FROM programs WHERE id = ?').get(Number(req.params.id));
+router.get('/programs/:id/edit', async function (req, res) {
+  const row = await db.prepare('SELECT * FROM programs WHERE id = ?').get(Number(req.params.id));
   if (!row) return res.redirect('/programs');
   const values = { ...row };
   parseJSON(row.schedule, []).forEach(function (s) { values['day_' + s.day + '_start'] = s.start; values['day_' + s.day + '_end'] = s.end; });
-  res.render('form', { form: { title: 'تعديل البرنامج', subtitle: row.name, icon: 'fa-pen', active: 'programs', action: '/programs/' + row.id + '/edit', fields: programFields(row), values, submitLabel: 'حفظ التعديلات', cancelUrl: '/programs', csrf: '' } });
+  res.render('form', { form: { title: 'تعديل البرنامج', subtitle: row.name, icon: 'fa-pen', active: 'programs', action: '/programs/' + row.id + '/edit', fields: await programFields(row), values, submitLabel: 'حفظ التعديلات', cancelUrl: '/programs', csrf: '' } });
 });
-router.post('/programs/:id/edit', function (req, res) {
+router.post('/programs/:id/edit', async function (req, res) {
   const id = Number(req.params.id);
   const b = req.body;
   const sets = PROGRAM_COLS.map(c => `${c} = ?`).join(', ');
-  db.prepare(`UPDATE programs SET ${sets}, schedule = ? WHERE id = ?`).run(...programVals(b), collectProgramSchedule(b), id);
+  await db.prepare(`UPDATE programs SET ${sets}, schedule = ? WHERE id = ?`).run(...programVals(b), collectProgramSchedule(b), id);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'programs', id, 'تعديل: ' + b.name, req);
-  req.session.flash = { type: 'success', message: 'تم حفظ التعديلات' };
+  setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/programs');
 });
-router.post('/programs/:id/delete', function (req, res) {
+router.post('/programs/:id/delete', async function (req, res) {
   audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'programs', Number(req.params.id), 'حذف برنامج', req);
   res.redirect('/programs');
 });
@@ -251,14 +256,14 @@ router.post('/programs/:id/delete', function (req, res) {
 /* ============================================================== */
 /*                           المجموعات                            */
 /* ============================================================== */
-router.get('/groups', function (req, res) {
+router.get('/groups', async function (req, res) {
   const prog = req.query.program;
   let rows;
-  if (prog) rows = db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name, pool.name AS pool_name, b.name AS branch_name,
+  if (prog) rows = await db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name, pool.name AS pool_name, b.name AS branch_name,
     (SELECT COUNT(*) FROM swimmers s WHERE s.group_id = g.id) AS members FROM groups g
     LEFT JOIN programs p ON p.id = g.program_id LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools pool ON pool.id = g.pool_id
     LEFT JOIN branches b ON b.id = g.branch_id WHERE g.program_id = ? ORDER BY g.id`).all(prog);
-  else rows = db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name, pool.name AS pool_name, b.name AS branch_name,
+  else rows = await db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name, pool.name AS pool_name, b.name AS branch_name,
     (SELECT COUNT(*) FROM swimmers s WHERE s.group_id = g.id) AS members FROM groups g
     LEFT JOIN programs p ON p.id = g.program_id LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools pool ON pool.id = g.pool_id
     LEFT JOIN branches b ON b.id = g.branch_id ORDER BY g.id`).all();
@@ -274,8 +279,8 @@ router.get('/groups', function (req, res) {
     ],
     rows,
     filters: [
-      { name: 'program_id', label: 'البرنامج', options: db.prepare('SELECT * FROM programs ORDER BY name').all().map(p => ({ value: p.id, label: p.name })) },
-      { name: 'coach_id', label: 'الكابتن', options: db.prepare('SELECT * FROM coaches ORDER BY full_name').all().map(c => ({ value: c.id, label: c.full_name })) },
+      { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) },
+      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT * FROM coaches ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
       { name: 'status', label: 'الحالة', options: [{ value: 'نشطة', label: 'نشطة' }, { value: 'متوقفة', label: 'متوقفة' }] }
     ],
     canAdd: true, addUrl: '/groups/new', addLabel: 'مجموعة جديدة',
@@ -290,87 +295,87 @@ router.get('/groups', function (req, res) {
 });
 
 /* مزامنة أعضاء المجموعة من السباحين المرتبطين بها */
-router.post('/groups/:id/sync', function (req, res) {
+router.post('/groups/:id/sync', async function (req, res) {
   const id = Number(req.params.id);
-  db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) SELECT id, ? FROM swimmers WHERE group_id = ?').run(id, id);
-  db.prepare('DELETE FROM swimmer_group WHERE group_id = ? AND swimmer_id NOT IN (SELECT id FROM swimmers WHERE group_id = ?)').run(id, id);
-  const count = db.prepare('SELECT COUNT(*) c FROM swimmer_group WHERE group_id = ?').get(id).c;
+  await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) SELECT id, ? FROM swimmers WHERE group_id = ?').run(id, id);
+  await db.prepare('DELETE FROM swimmer_group WHERE group_id = ? AND swimmer_id NOT IN (SELECT id FROM swimmers WHERE group_id = ?)').run(id, id);
+  const count = (await db.prepare('SELECT COUNT(*) c FROM swimmer_group WHERE group_id = ?').get(id)).c;
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'groups', id, 'مزامنة أعضاء المجموعة (' + count + ')', req);
-  req.session.flash = { type: 'success', message: 'تمت المزامنة — ' + count + ' عضو' };
+  setFlash(res, { type: 'success', message: 'تمت المزامنة — ' + count + ' عضو' });
   res.redirect('/groups');
 });
 
-router.get('/groups/new', function (req, res) {
-  renderGroupEdit(req, res, { row: null, values: {}, members: [], allSwimmers: [], editMode: false });
+router.get('/groups/new', async function (req, res) {
+  await renderGroupEdit(req, res, { row: null, values: {}, members: [], allSwimmers: [], editMode: false });
 });
-router.post('/groups/new', function (req, res) {
+router.post('/groups/new', async function (req, res) {
   const b = req.body;
   const schedule = collectSchedule(b);
-  const info = db.prepare('INSERT INTO groups (name, program_id, coach_id, pool_id, branch_id, capacity, schedule, sessions_count, status, notes) VALUES (?,?,?,?,?,?,?,?,?,?)')
+  const info = await db.prepare('INSERT INTO groups (name, program_id, coach_id, pool_id, branch_id, capacity, schedule, sessions_count, status, notes) VALUES (?,?,?,?,?,?,?,?,?,?)')
     .run(b.name, b.program_id || null, b.coach_id || null, b.pool_id || null, b.branch_id || null, b.capacity || 12, JSON.stringify(schedule), b.sessions_count || 8, b.status || 'نشطة', b.notes || '');
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'groups', info.lastInsertRowid, 'مجموعة جديدة: ' + b.name, req);
-  req.session.flash = { type: 'success', message: 'تم إنشاء المجموعة — يمكنك الآن إضافة الأعضاء' };
+  setFlash(res, { type: 'success', message: 'تم إنشاء المجموعة — يمكنك الآن إضافة الأعضاء' });
   res.redirect('/groups/' + info.lastInsertRowid + '/edit');
 });
-router.get('/groups/:id/edit', function (req, res) {
-  const row = db.prepare('SELECT * FROM groups WHERE id = ?').get(Number(req.params.id));
+router.get('/groups/:id/edit', async function (req, res) {
+  const row = await db.prepare('SELECT * FROM groups WHERE id = ?').get(Number(req.params.id));
   if (!row) return res.redirect('/groups');
   const values = { ...row };
   parseJSON(row.schedule, []).forEach(function (s) { values['day_' + s.day + '_start'] = s.start; values['day_' + s.day + '_end'] = s.end; });
-  const members = db.prepare(`SELECT s.id, s.full_name, s.membership_no, l.name AS level_name FROM swimmer_group sg JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN levels l ON l.id = s.level_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(row.id);
-  const allSwimmers = db.prepare(`SELECT s.id, s.full_name, s.membership_no, s.gender, s.birth_date FROM swimmers s WHERE s.id NOT IN (SELECT swimmer_id FROM swimmer_group WHERE group_id = ?) ORDER BY s.full_name`).all(row.id);
-  renderGroupEdit(req, res, { row, values, members, allSwimmers, editMode: true });
+  const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, l.name AS level_name FROM swimmer_group sg JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN levels l ON l.id = s.level_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(row.id);
+  const allSwimmers = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, s.gender, s.birth_date FROM swimmers s WHERE s.id NOT IN (SELECT swimmer_id FROM swimmer_group WHERE group_id = ?) ORDER BY s.full_name`).all(row.id);
+  await renderGroupEdit(req, res, { row, values, members, allSwimmers, editMode: true });
 });
-router.post('/groups/:id/edit', function (req, res) {
+router.post('/groups/:id/edit', async function (req, res) {
   const id = Number(req.params.id);
   const b = req.body;
   const schedule = collectSchedule(b);
-  db.prepare('UPDATE groups SET name=?, program_id=?, coach_id=?, pool_id=?, branch_id=?, capacity=?, schedule=?, sessions_count=?, status=?, notes=? WHERE id=?')
+  await db.prepare('UPDATE groups SET name=?, program_id=?, coach_id=?, pool_id=?, branch_id=?, capacity=?, schedule=?, sessions_count=?, status=?, notes=? WHERE id=?')
     .run(b.name, b.program_id || null, b.coach_id || null, b.pool_id || null, b.branch_id || null, b.capacity || 12, JSON.stringify(schedule), b.sessions_count || 8, b.status || 'نشطة', b.notes || '', id);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'groups', id, 'تعديل: ' + b.name, req);
-  req.session.flash = { type: 'success', message: 'تم حفظ التعديلات' };
+  setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/groups/' + id + '/edit');
 });
 
 /* إضافة سباح إلى المجموعة (يُحدّث group_id ويتمّت المزامنة تلقائياً) */
-router.post('/groups/:id/members/add', function (req, res) {
+router.post('/groups/:id/members/add', async function (req, res) {
   const id = Number(req.params.id);
   const swimmerId = Number(req.body.swimmer_id || 0);
-  const g = db.prepare('SELECT capacity FROM groups WHERE id = ?').get(id);
+  const g = await db.prepare('SELECT capacity FROM groups WHERE id = ?').get(id);
   const cap = (g && Number(g.capacity)) || 12;
-  if (swimmerId && db.prepare('SELECT COUNT(*) c FROM swimmer_group WHERE group_id = ?').get(id).c >= cap) {
+  if (swimmerId && (await db.prepare('SELECT COUNT(*) c FROM swimmer_group WHERE group_id = ?').get(id)).c >= cap) {
     const full = { type: 'error', message: 'المجموعة ممتلئة — العدد الأقصى ' + cap + ' عضو' };
     if (req.xhr) return res.status(400).json({ ok: false, error: full.message });
-    req.session.flash = full;
+    setFlash(res, full);
     return res.redirect('/groups/' + id + '/edit');
   }
   if (swimmerId) {
-    db.prepare('UPDATE swimmers SET group_id = ? WHERE id = ?').run(id, swimmerId);
+    await db.prepare('UPDATE swimmers SET group_id = ? WHERE id = ?').run(id, swimmerId);
     audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'groups', id, 'إضافة سباح #' + swimmerId + ' إلى المجموعة', req);
   }
   const flash = { type: 'success', message: 'تمت إضافة السباح إلى المجموعة' };
   if (req.xhr) {
-    const row = swimmerId ? db.prepare(`SELECT s.id, s.full_name, s.membership_no, l.name AS level_name FROM swimmers s LEFT JOIN levels l ON l.id = s.level_id WHERE s.id = ?`).get(swimmerId) : null;
+    const row = swimmerId ? await db.prepare(`SELECT s.id, s.full_name, s.membership_no, l.name AS level_name FROM swimmers s LEFT JOIN levels l ON l.id = s.level_id WHERE s.id = ?`).get(swimmerId) : null;
     return res.json({ ok: true, message: flash.message, member: row, group_id: id });
   }
-  req.session.flash = flash;
+  setFlash(res, flash);
   res.redirect('/groups/' + id + '/edit');
 });
 
 /* إزالة سباح من المجموعة */
-router.post('/groups/:id/members/remove', function (req, res) {
+router.post('/groups/:id/members/remove', async function (req, res) {
   const id = Number(req.params.id);
   const swimmerId = Number(req.body.swimmer_id || 0);
   if (swimmerId) {
-    db.prepare('UPDATE swimmers SET group_id = NULL WHERE id = ? AND group_id = ?').run(swimmerId, id);
+    await db.prepare('UPDATE swimmers SET group_id = NULL WHERE id = ? AND group_id = ?').run(swimmerId, id);
     audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'groups', id, 'إزالة سباح #' + swimmerId + ' من المجموعة', req);
   }
   const flash = { type: 'success', message: 'تمت إزالة السباح من المجموعة' };
   if (req.xhr) {
-    const sw = swimmerId ? db.prepare('SELECT full_name, membership_no FROM swimmers WHERE id = ?').get(swimmerId) : null;
+    const sw = swimmerId ? await db.prepare('SELECT full_name, membership_no FROM swimmers WHERE id = ?').get(swimmerId) : null;
     return res.json({ ok: true, message: flash.message, swimmer_id: swimmerId, removed_name: sw ? sw.full_name : '', removed_membership: sw ? sw.membership_no : '' });
   }
-  req.session.flash = flash;
+  setFlash(res, flash);
   res.redirect('/groups/' + id + '/edit');
 });
 
@@ -384,11 +389,11 @@ function collectSchedule(b) {
   return schedule;
 }
 
-function renderGroupEdit(req, res, o) {
-  const programs = db.prepare('SELECT * FROM programs ORDER BY name').all();
-  const coaches = db.prepare('SELECT * FROM coaches ORDER BY full_name').all();
-  const pools = db.prepare('SELECT * FROM pools ORDER BY name').all();
-  const branches = db.prepare('SELECT * FROM branches ORDER BY name').all();
+async function renderGroupEdit(req, res, o) {
+  const programs = await db.prepare('SELECT * FROM programs ORDER BY name').all();
+  const coaches = await db.prepare('SELECT * FROM coaches ORDER BY full_name').all();
+  const pools = await db.prepare('SELECT * FROM pools ORDER BY name').all();
+  const branches = await db.prepare('SELECT * FROM branches ORDER BY name').all();
   const days = [
     { k: 'sunday', a: 'الأحد' }, { k: 'monday', a: 'الإثنين' }, { k: 'tuesday', a: 'الثلاثاء' },
     { k: 'wednesday', a: 'الأربعاء' }, { k: 'thursday', a: 'الخميس' }, { k: 'friday', a: 'الجمعة' }, { k: 'saturday', a: 'السبت' }
@@ -401,7 +406,7 @@ function renderGroupEdit(req, res, o) {
     cancelUrl: '/groups'
   });
 }
-router.post('/groups/:id/delete', function (req, res) {
+router.post('/groups/:id/delete', async function (req, res) {
   audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'groups', Number(req.params.id), 'حذف مجموعة', req);
   res.redirect('/groups');
 });
@@ -437,17 +442,23 @@ crud(router, '/pools', {
   table: 'pools', module: 'pools', entity: 'pools',
   title: 'حمامات السباحة', singular: 'حمام سباحة', plural: 'حمامات السباحة', icon: 'fa-person-swimming',
   orderBy: 'name',
+  beforeRender: async function (rows) {
+    const bs = await db.prepare('SELECT id, name FROM branches').all();
+    const m = {};
+    bs.forEach(b => { m[b.id] = b.name; });
+    return rows.map(r => ({ ...r, branch_name: m[r.branch_id] || '—' }));
+  },
   columns: [
     { key: 'name', label: 'اسم الحمام', html: row => `<b><i class="fas fa-water text-primary"></i> ${row.name}</b>` },
-    { key: 'branch_name', label: 'الفرع', html: row => { const b = db.prepare('SELECT name FROM branches WHERE id=?').get(row.branch_id); return b ? b.name : '—'; } },
+    { key: 'branch_name', label: 'الفرع' },
     { key: 'lanes_count', label: 'عدد الممرات', html: row => `${row.lanes_count} ممرات` },
     { key: 'length_m', label: 'الطول', html: row => `${row.length_m} م` },
     { key: 'depth_m', label: 'العمق', html: row => `${row.depth_m} م` }
   ],
-  filters: [{ name: 'branch_id', label: 'الفرع', options: db.prepare('SELECT * FROM branches ORDER BY name').all().map(b => ({ value: b.id, label: b.name })) }],
-  fields: [
+  filters: async () => [{ name: 'branch_id', label: 'الفرع', options: (await db.prepare('SELECT * FROM branches ORDER BY name').all()).map(b => ({ value: b.id, label: b.name })) }],
+  fields: async () => [
     { key: 'name', label: 'اسم الحمام', type: 'text', required: true },
-    { key: 'branch_id', label: 'الفرع', type: 'select', options: db.prepare('SELECT * FROM branches').all().map(b => ({ value: b.id, label: b.name })) },
+    { key: 'branch_id', label: 'الفرع', type: 'select', options: (await db.prepare('SELECT * FROM branches').all()).map(b => ({ value: b.id, label: b.name })) },
     { key: 'lanes_count', label: 'عدد الممرات', type: 'number', number: true },
     { key: 'length_m', label: 'الطول (متر)', type: 'number', number: true },
     { key: 'depth_m', label: 'العمق (متر)', type: 'number', number: true, step: '0.1' },

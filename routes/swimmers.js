@@ -2,8 +2,9 @@
 const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON, today, canView } = require('../lib/helpers');
+const { setFlash } = require('../lib/auth-cookie');
 const crud = require('../lib/crud');
-const { upload, removeUploaded } = require('../lib/upload');
+const { uploadAndStore, removeUploaded } = require('../lib/upload');
 const pdfmake = require('../lib/pdf');
 const router = express.Router();
 
@@ -126,9 +127,9 @@ crud(router, '/staff', {
     { key: 'cv', label: 'السيرة الذاتية', html: row => cvLink(row.cv) },
     { key: 'status', label: 'الحالة', html: row => `<span class="badge ${row.status === 'active' ? 'badge-success' : 'badge-danger'}">${row.status === 'active' ? 'نشط' : 'متوقف'}</span>` }
   ],
-  filters: [
+  filters: async () => [
     { name: 'status', label: 'الحالة', options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'متوقف' }] },
-    { name: 'branch_id', label: 'الفرع', options: db.prepare('SELECT * FROM branches ORDER BY name').all().map(b => ({ value: b.id, label: b.name })) }
+    { name: 'branch_id', label: 'الفرع', options: (await db.prepare('SELECT * FROM branches ORDER BY name').all()).map(b => ({ value: b.id, label: b.name })) }
   ],
   fields: [
     { key: 'full_name', label: 'الاسم الكامل', type: 'text', required: true },
@@ -160,18 +161,21 @@ crud(router, '/staff', {
 const SW_STATUS = ['نشط', 'متوقف مؤقتاً', 'مجمد', 'منسحب', 'خريج'];
 const SW_GENDER = ['ذكر', 'أنثى'];
 
-const swimmerFields = function (values) {
-  const levels = db.prepare('SELECT * FROM levels ORDER BY order_no').all().map(l => ({ value: l.id, label: l.name }));
-  const groups = db.prepare('SELECT * FROM groups').all().map(g => ({ value: g.id, label: g.name, coach: g.coach_id }));
-  const coaches = db.prepare('SELECT * FROM coaches').all().map(c => ({ value: c.id, label: c.full_name }));
-  const programs = db.prepare('SELECT * FROM programs').all().map(p => ({ value: p.id, label: p.name }));
-  const guardians = db.prepare('SELECT id, full_name FROM guardians ORDER BY full_name').all();
+const swimmerFields = async function (values) {
+  const levels = (await db.prepare('SELECT * FROM levels ORDER BY order_no').all()).map(l => ({ value: l.id, label: l.name }));
+  const groups = (await db.prepare('SELECT * FROM groups').all()).map(g => ({ value: g.id, label: g.name, coach: g.coach_id }));
+  const coaches = (await db.prepare('SELECT * FROM coaches').all()).map(c => ({ value: c.id, label: c.full_name }));
+  const programs = (await db.prepare('SELECT * FROM programs').all()).map(p => ({ value: p.id, label: p.name }));
+  const guardians = await db.prepare('SELECT id, full_name FROM guardians ORDER BY full_name').all();
   const blood = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(v => ({ value: v, label: v }));
   let guardianName = '';
   if (values && values.guardian_id) {
-    const g = db.prepare('SELECT full_name, phone FROM guardians WHERE id = ?').get(values.guardian_id);
+    const g = await db.prepare('SELECT full_name, phone FROM guardians WHERE id = ?').get(values.guardian_id);
     if (g) { guardianName = g.full_name; if (!values.guardian_phone) values.guardian_phone = g.phone; }
   }
+  const schoolList = (await db.prepare('SELECT * FROM schools ORDER BY name').all()).map(s => ({ value: s.name, label: s.name + (s.type && s.type !== 'مدرسة' ? ' (' + s.type + ')' : '') }));
+  if (values && values.school && !schoolList.some(o => o.value === values.school)) schoolList.unshift({ value: values.school, label: values.school + ' (أخرى)' });
+  schoolList.unshift({ value: '', label: '— لا توجد —' });
   return [
     { key: 'full_name', label: 'الاسم بالكامل', type: 'text', required: true, section: 'البيانات الشخصية', sectionIcon: 'fa-user', full: true },
     { key: 'membership_no', label: 'رقم العضوية', type: 'text', hint: 'يُترك فارغاً لإنشائه تلقائياً', value: values.membership_no || '' },
@@ -180,12 +184,7 @@ const swimmerFields = function (values) {
     { key: 'phone', label: 'رقم هاتف السباح', type: 'tel' },
     { key: 'address', label: 'العنوان', type: 'text' },
     { key: 'avatar', label: 'الصورة الشخصية', type: 'file', accept: 'image/*', hint: 'صورة شخصية للسباح (JPG/PNG)', preview: true, initial: (values && values.full_name ? values.full_name.trim().charAt(0) : 'س') },
-    { key: 'school', label: 'المدرسة / جهة الدراسة', type: 'select', options: function (values) {
-      const list = db.prepare('SELECT * FROM schools ORDER BY name').all().map(s => ({ value: s.name, label: s.name + (s.type && s.type !== 'مدرسة' ? ' (' + s.type + ')' : '') }));
-      if (values && values.school && !list.some(o => o.value === values.school)) list.unshift({ value: values.school, label: values.school + ' (أخرى)' });
-      list.unshift({ value: '', label: '— لا توجد —' });
-      return list;
-    } },
+    { key: 'school', label: 'المدرسة / جهة الدراسة', type: 'select', options: schoolList },
     { key: 'blood_type', label: 'فصيلة الدم', type: 'select', options: blood },
     { key: 'registration_date', label: 'تاريخ التسجيل', type: 'date' },
     { key: 'guardian_name', label: 'اسم ولي الأمر', type: 'text', value: guardianName, datalist: guardians.map(g => g.full_name), hint: 'يُقترح الاسم تلقائياً من أولياء الأمور المسجلين، ويُسجَّل ولي أمر جديد تلقائياً عند الإضافة', section: 'ولي الأمر', sectionIcon: 'fa-people-roof', full: true },
@@ -211,7 +210,7 @@ const swimmerFields = function (values) {
 };
 
 /* القائمة */
-router.get('/swimmers', function (req, res) {
+router.get('/swimmers', async function (req, res) {
   const { status, program, level, q } = req.query;
   let sql = `SELECT s.*, g.full_name AS guardian_name, l.name AS level_name, gr.name AS group_name, c.full_name AS coach_name, p.name AS program_name,
     COALESCE((SELECT sub.sessions_used FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1),0) AS used,
@@ -228,7 +227,7 @@ router.get('/swimmers', function (req, res) {
   if (level) { sql += ' AND s.level_id = ?'; params.push(level); }
   if (q) { sql += ' AND (s.full_name LIKE ? OR s.membership_no LIKE ? OR s.phone LIKE ?)'; const like = '%' + q + '%'; params.push(like, like, like); }
   sql += ' ORDER BY s.id DESC';
-  const rows = db.prepare(sql).all(...params);
+  const rows = await db.prepare(sql).all(...params);
 
   const page = {
     title: 'السباحون واللاعبون', subtitle: 'إدارة الملفات الكاملة للسباحين', icon: 'fa-person-swimming', module: 'swimmers', active: 'swimmers',
@@ -244,9 +243,9 @@ router.get('/swimmers', function (req, res) {
     rows,
     filters: [
       { name: 'status', label: 'الحالة', options: SW_STATUS.map(v => ({ value: v, label: v })) },
-      { name: 'program_id', label: 'البرنامج', options: db.prepare('SELECT * FROM programs ORDER BY name').all().map(p => ({ value: p.id, label: p.name })) },
-      { name: 'level_id', label: 'المستوى', options: db.prepare('SELECT * FROM levels ORDER BY order_no').all().map(l => ({ value: l.id, label: l.name })) },
-      { name: 'coach_id', label: 'الكابتن', options: db.prepare('SELECT * FROM coaches ORDER BY full_name').all().map(c => ({ value: c.id, label: c.full_name })) }
+      { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) },
+      { name: 'level_id', label: 'المستوى', options: (await db.prepare('SELECT * FROM levels ORDER BY order_no').all()).map(l => ({ value: l.id, label: l.name })) },
+      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT * FROM coaches ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) }
     ],
     canAdd: true,
     addUrl: '/swimmers/new',
@@ -265,19 +264,19 @@ router.get('/swimmers', function (req, res) {
 });
 
 /* نموذج إضافة/تعديل */
-router.get('/swimmers/new', function (req, res) {
-  res.render('form', { form: { title: 'تسجيل سباح جديد', subtitle: 'إنشاء ملف متكامل لسباح جديد', icon: 'fa-user-plus', active: 'swimmers', action: '/swimmers/new', encType: 'multipart/form-data', fields: swimmerFields({}), values: {}, submitLabel: 'تسجيل السباح', cancelUrl: '/swimmers', csrf: '' } });
+router.get('/swimmers/new', async function (req, res) {
+  res.render('form', { form: { title: 'تسجيل سباح جديد', subtitle: 'إنشاء ملف متكامل لسباح جديد', icon: 'fa-user-plus', active: 'swimmers', action: '/swimmers/new', encType: 'multipart/form-data', fields: await swimmerFields({}), values: {}, submitLabel: 'تسجيل السباح', cancelUrl: '/swimmers', csrf: '' } });
 });
 
 const SW_FK_COLS = ['guardian_id', 'level_id', 'group_id', 'coach_id', 'program_id'];
 
-function resolveGuardian(b) {
+async function resolveGuardian(b) {
   const name = (b.guardian_name || '').trim();
   if (b.guardian_id) return Number(b.guardian_id);
   if (!name) return null;
-  const existing = db.prepare('SELECT id FROM guardians WHERE full_name = ?').get(name);
+  const existing = await db.prepare('SELECT id FROM guardians WHERE full_name = ?').get(name);
   if (existing) return existing.id;
-  const info = db.prepare('INSERT INTO guardians (full_name, relation, phone) VALUES (?,?,?)')
+  const info = await db.prepare('INSERT INTO guardians (full_name, relation, phone) VALUES (?,?,?)')
     .run(name, b.guardian_relation || 'أب', b.guardian_phone || null);
   return info.lastInsertRowid;
 }
@@ -290,42 +289,42 @@ function swimmerVal(c, b, avatar, guardianId) {
   return v;
 }
 
-function syncSwimmerGroups(swimmerId, groupId) {
-  db.prepare('DELETE FROM swimmer_group WHERE swimmer_id = ?').run(swimmerId);
-  if (groupId) db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) VALUES (?,?)').run(swimmerId, groupId);
+async function syncSwimmerGroups(swimmerId, groupId) {
+  await db.prepare('DELETE FROM swimmer_group WHERE swimmer_id = ?').run(swimmerId);
+  if (groupId) await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) VALUES (?,?)').run(swimmerId, groupId);
 }
 
-router.post('/swimmers/new', upload.single('avatar'), function (req, res) {
+router.post('/swimmers/new', uploadAndStore('avatar'), async function (req, res) {
   const b = req.body;
-  const membership = b.membership_no || nextMembership();
-  const guardianId = resolveGuardian(b);
+  const membership = b.membership_no || await nextMembership();
+  const guardianId = await resolveGuardian(b);
   const avatar = req.file ? '/uploads/' + req.file.filename : null;
   const cols = ['membership_no','full_name','birth_date','gender','phone','address','school','guardian_id','blood_type','emergency_name','emergency_phone','allergies','chronic_diseases','medical_note','level_id','program_id','group_id','coach_id','registration_date','status','notes','avatar'];
   const vals = cols.map(c => swimmerVal(c, b, avatar, guardianId));
   if (!vals[1]) return res.status(400).send('الاسم مطلوب');
   vals[18] = b.registration_date || today();
   vals[19] = b.status || 'نشط';
-  const info = db.prepare(`INSERT INTO swimmers (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(membership, ...vals.slice(1));
-  syncSwimmerGroups(info.lastInsertRowid, b.group_id);
+  const info = await db.prepare(`INSERT INTO swimmers (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(membership, ...vals.slice(1));
+  await syncSwimmerGroups(info.lastInsertRowid, b.group_id);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'swimmers', info.lastInsertRowid, 'تسجيل سباح جديد: ' + b.full_name, req);
-  req.session.flash = { type: 'success', message: 'تم تسجيل السباح بنجاح' };
+  setFlash(res, { type: 'success', message: 'تم تسجيل السباح بنجاح' });
   res.redirect('/swimmers/' + info.lastInsertRowid);
 });
 
-router.get('/swimmers/:id/edit', function (req, res) {
-  const row = db.prepare('SELECT * FROM swimmers WHERE id = ?').get(Number(req.params.id));
+router.get('/swimmers/:id/edit', async function (req, res) {
+  const row = await db.prepare('SELECT * FROM swimmers WHERE id = ?').get(Number(req.params.id));
   if (!row) return res.redirect('/swimmers');
-  const tg = db.prepare('SELECT g.*, c.full_name AS coach_name FROM groups g LEFT JOIN coaches c ON c.id = g.coach_id ORDER BY g.name').all();
-  const tc = db.prepare('SELECT id, full_name FROM coaches ORDER BY full_name').all();
-  const curG = row.group_id ? db.prepare('SELECT name FROM groups WHERE id = ?').get(row.group_id) : null;
-  const curC = row.coach_id ? db.prepare('SELECT full_name FROM coaches WHERE id = ?').get(row.coach_id) : null;
-  res.render('form', { form: { title: 'تعديل ملف السباح', subtitle: row.full_name, icon: 'fa-user-pen', active: 'swimmers', action: '/swimmers/' + row.id + '/edit', encType: 'multipart/form-data', fields: swimmerFields(row), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/swimmers/' + row.id, csrf: '', transfer: { action: '/swimmers/' + row.id + '/transfer', groups: tg, coaches: tc, current_group: row.group_id, current_group_name: curG ? curG.name : 'بدون مجموعة', current_coach_name: curC ? curC.full_name : '—' } } });
+  const tg = await db.prepare('SELECT g.*, c.full_name AS coach_name FROM groups g LEFT JOIN coaches c ON c.id = g.coach_id ORDER BY g.name').all();
+  const tc = await db.prepare('SELECT id, full_name FROM coaches ORDER BY full_name').all();
+  const curG = row.group_id ? await db.prepare('SELECT name FROM groups WHERE id = ?').get(row.group_id) : null;
+  const curC = row.coach_id ? await db.prepare('SELECT full_name FROM coaches WHERE id = ?').get(row.coach_id) : null;
+  res.render('form', { form: { title: 'تعديل ملف السباح', subtitle: row.full_name, icon: 'fa-user-pen', active: 'swimmers', action: '/swimmers/' + row.id + '/edit', encType: 'multipart/form-data', fields: await swimmerFields(row), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/swimmers/' + row.id, csrf: '', transfer: { action: '/swimmers/' + row.id + '/transfer', groups: tg, coaches: tc, current_group: row.group_id, current_group_name: curG ? curG.name : 'بدون مجموعة', current_coach_name: curC ? curC.full_name : '—' } } });
 });
-router.post('/swimmers/:id/edit', upload.single('avatar'), function (req, res) {
+router.post('/swimmers/:id/edit', uploadAndStore('avatar'), async function (req, res) {
   const id = Number(req.params.id);
   const b = req.body;
-  const old = db.prepare('SELECT avatar, guardian_id FROM swimmers WHERE id = ?').get(id);
-  const guardianId = resolveGuardian(b);
+  const old = await db.prepare('SELECT avatar, guardian_id FROM swimmers WHERE id = ?').get(id);
+  const guardianId = await resolveGuardian(b);
   let avatar = old ? old.avatar : null;
   if (req.file) {
     if (old && old.avatar) removeUploaded(old.avatar);
@@ -334,69 +333,69 @@ router.post('/swimmers/:id/edit', upload.single('avatar'), function (req, res) {
   const cols = ['full_name','birth_date','gender','phone','address','school','guardian_id','blood_type','emergency_name','emergency_phone','allergies','chronic_diseases','medical_note','level_id','program_id','group_id','coach_id','registration_date','status','notes','avatar'];
   const sets = cols.map(c => `${c} = ?`).join(', ');
   const vals = cols.map(c => swimmerVal(c, b, avatar, guardianId));
-  db.prepare(`UPDATE swimmers SET ${sets} WHERE id = ?`).run(...vals, id);
-  syncSwimmerGroups(id, b.group_id);
+  await db.prepare(`UPDATE swimmers SET ${sets} WHERE id = ?`).run(...vals, id);
+  await syncSwimmerGroups(id, b.group_id);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'swimmers', id, 'تعديل ملف: ' + b.full_name, req);
-  req.session.flash = { type: 'success', message: 'تم حفظ التعديلات' };
+  setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/swimmers/' + id);
 });
 
 /* نسبة آخر تقييم للمستوى المحدد (تعرض في نموذج السباح) */
-router.get('/api/swimmers/level-percent', function (req, res) {
+router.get('/api/swimmers/level-percent', async function (req, res) {
   const level = Number(req.query.level_id || 0);
   const swimmer = Number(req.query.swimmer_id || 0);
   if (!level) return res.json({ percent: null, skills: 0 });
   let percent = null;
   if (swimmer) {
-    const a = db.prepare('SELECT overall_percent FROM assessments WHERE level_id = ? AND swimmer_id = ? ORDER BY date DESC, id DESC LIMIT 1').get(level, swimmer);
+    const a = await db.prepare('SELECT overall_percent FROM assessments WHERE level_id = ? AND swimmer_id = ? ORDER BY date DESC, id DESC LIMIT 1').get(level, swimmer);
     if (a && a.overall_percent !== null && a.overall_percent !== undefined) percent = a.overall_percent;
   }
-  const skills = db.prepare('SELECT COUNT(*) c FROM assessment_criteria WHERE level_id = ?').get(level).c;
+  const skills = (await db.prepare('SELECT COUNT(*) c FROM assessment_criteria WHERE level_id = ?').get(level)).c;
   res.json({ percent, skills });
 });
 
-router.post('/swimmers/:id/delete', function (req, res) {
+router.post('/swimmers/:id/delete', async function (req, res) {
   const id = Number(req.params.id);
   audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'swimmers', id, 'حذف سباح', req);
   res.redirect('/swimmers');
 });
 
 /* الملف الشامل */
-router.get('/swimmers/:id', function (req, res) {
+router.get('/swimmers/:id', async function (req, res) {
   const id = Number(req.params.id);
-  const s = db.prepare(`SELECT s.*, g.full_name AS guardian_name, g.phone AS guardian_phone, g.whatsapp AS guardian_whatsapp, g.email AS guardian_email, l.name AS level_name, gr.name AS group_name, gr.schedule AS group_schedule, c.full_name AS coach_name, p.name AS program_name, p.type AS program_type FROM swimmers s
+  const s = await db.prepare(`SELECT s.*, g.full_name AS guardian_name, g.phone AS guardian_phone, g.whatsapp AS guardian_whatsapp, g.email AS guardian_email, l.name AS level_name, gr.name AS group_name, gr.schedule AS group_schedule, c.full_name AS coach_name, p.name AS program_name, p.type AS program_type FROM swimmers s
     LEFT JOIN guardians g ON g.id = s.guardian_id LEFT JOIN levels l ON l.id = s.level_id
     LEFT JOIN groups gr ON gr.id = s.group_id LEFT JOIN coaches c ON c.id = s.coach_id
     LEFT JOIN programs p ON p.id = s.program_id WHERE s.id = ?`).get(id);
   if (!s) return res.redirect('/swimmers');
   const age = calcAge(s.birth_date);
 
-  const subs = db.prepare(`SELECT sub.*, p.name AS program_name FROM subscriptions sub LEFT JOIN programs p ON p.id = sub.program_id WHERE sub.swimmer_id = ? ORDER BY sub.id DESC`).all(id);
-  const payments = db.prepare('SELECT * FROM payments WHERE swimmer_id = ? ORDER BY paid_date DESC LIMIT 12').all(id);
-  const assessments = db.prepare(`SELECT a.*, c.full_name AS coach_name, l.name AS level_name FROM assessments a LEFT JOIN coaches c ON c.id=a.coach_id LEFT JOIN levels l ON l.id=a.level_id WHERE a.swimmer_id = ? ORDER BY a.date DESC`).all(id);
-  const tests = db.prepare('SELECT * FROM tests WHERE swimmer_id = ? ORDER BY date DESC').all(id);
-  const attRecords = db.prepare(`SELECT a.*, s.date, s.title, s.status AS session_status FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE a.swimmer_id = ? ORDER BY s.date DESC LIMIT 15`).all(id);
-  const attStats = db.prepare(`SELECT COUNT(*) total, SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) present, SUM(CASE WHEN a.status='absent' THEN 1 ELSE 0 END) absent, SUM(CASE WHEN a.status='excused' THEN 1 ELSE 0 END) excused FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE a.swimmer_id=?`).get(id);
-  const nextSessions = db.prepare(`SELECT se.*, gr.name AS group_name FROM sessions se JOIN groups gr ON gr.id = se.group_id WHERE gr.id = ? AND se.date >= ? AND se.status='scheduled' ORDER BY se.date, se.start_time LIMIT 6`).all(s.group_id, today());
-  const docs = db.prepare("SELECT * FROM documents WHERE owner_type='swimmer' AND owner_id = ?").all(id);
-  const progress = db.prepare(`SELECT lp.*, fl.name AS from_level, tl.name AS to_level FROM level_progress lp LEFT JOIN levels fl ON fl.id=lp.from_level_id LEFT JOIN levels tl ON tl.id=lp.to_level_id WHERE lp.swimmer_id = ? ORDER BY lp.date`).all(id);
-  const teamRows = db.prepare(`SELECT t.name FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.swimmer_id = ?`).all(id);
-  const pbs = db.prepare('SELECT * FROM player_measurements WHERE swimmer_id = ? ORDER BY date').all(id);
-  const compResults = db.prepare(`SELECT cr.*, c.name AS comp_name FROM competition_results cr JOIN competitions c ON c.id = cr.competition_id WHERE cr.swimmer_id = ? ORDER BY c.date DESC`).all(id);
-  const history = db.prepare('SELECT * FROM subscription_history WHERE swimmer_id = ? ORDER BY created_at DESC LIMIT 12').all(id);
-  const transfers = db.prepare(`SELECT t.*, fg.name AS from_group, fc.full_name AS from_coach, tg.name AS to_group, tc.full_name AS to_coach, u.full_name AS by_user
+  const subs = await db.prepare(`SELECT sub.*, p.name AS program_name FROM subscriptions sub LEFT JOIN programs p ON p.id = sub.program_id WHERE sub.swimmer_id = ? ORDER BY sub.id DESC`).all(id);
+  const payments = await db.prepare('SELECT * FROM payments WHERE swimmer_id = ? ORDER BY paid_date DESC LIMIT 12').all(id);
+  const assessments = await db.prepare(`SELECT a.*, c.full_name AS coach_name, l.name AS level_name FROM assessments a LEFT JOIN coaches c ON c.id=a.coach_id LEFT JOIN levels l ON l.id=a.level_id WHERE a.swimmer_id = ? ORDER BY a.date DESC`).all(id);
+  const tests = await db.prepare('SELECT * FROM tests WHERE swimmer_id = ? ORDER BY date DESC').all(id);
+  const attRecords = await db.prepare(`SELECT a.*, s.date, s.title, s.status AS session_status FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE a.swimmer_id = ? ORDER BY s.date DESC LIMIT 15`).all(id);
+  const attStats = await db.prepare(`SELECT COUNT(*) total, SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) present, SUM(CASE WHEN a.status='absent' THEN 1 ELSE 0 END) absent, SUM(CASE WHEN a.status='excused' THEN 1 ELSE 0 END) excused FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE a.swimmer_id=?`).get(id);
+  const nextSessions = await db.prepare(`SELECT se.*, gr.name AS group_name FROM sessions se JOIN groups gr ON gr.id = se.group_id WHERE gr.id = ? AND se.date >= ? AND se.status='scheduled' ORDER BY se.date, se.start_time LIMIT 6`).all(s.group_id, today());
+  const docs = await db.prepare("SELECT * FROM documents WHERE owner_type='swimmer' AND owner_id = ?").all(id);
+  const progress = await db.prepare(`SELECT lp.*, fl.name AS from_level, tl.name AS to_level FROM level_progress lp LEFT JOIN levels fl ON fl.id=lp.from_level_id LEFT JOIN levels tl ON tl.id=lp.to_level_id WHERE lp.swimmer_id = ? ORDER BY lp.date`).all(id);
+  const teamRows = await db.prepare(`SELECT t.name FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.swimmer_id = ?`).all(id);
+  const pbs = await db.prepare('SELECT * FROM player_measurements WHERE swimmer_id = ? ORDER BY date').all(id);
+  const compResults = await db.prepare(`SELECT cr.*, c.name AS comp_name FROM competition_results cr JOIN competitions c ON c.id = cr.competition_id WHERE cr.swimmer_id = ? ORDER BY c.date DESC`).all(id);
+  const history = await db.prepare('SELECT * FROM subscription_history WHERE swimmer_id = ? ORDER BY created_at DESC LIMIT 12').all(id);
+  const transfers = await db.prepare(`SELECT t.*, fg.name AS from_group, fc.full_name AS from_coach, tg.name AS to_group, tc.full_name AS to_coach, u.full_name AS by_user
     FROM swimmer_transfers t
     LEFT JOIN groups fg ON fg.id = t.from_group_id LEFT JOIN coaches fc ON fc.id = t.from_coach_id
     LEFT JOIN groups tg ON tg.id = t.to_group_id LEFT JOIN coaches tc ON tc.id = t.to_coach_id
     LEFT JOIN users u ON u.id = t.created_by
     WHERE t.swimmer_id = ? ORDER BY t.id DESC LIMIT 10`).all(id);
   const activeSub = subs.find(x => x.status === 'نشط');
-  const allGroups = db.prepare('SELECT * FROM groups ORDER BY name').all();
-  const allCoaches = db.prepare('SELECT * FROM coaches ORDER BY full_name').all();
+  const allGroups = await db.prepare('SELECT * FROM groups ORDER BY name').all();
+  const allCoaches = await db.prepare('SELECT * FROM coaches ORDER BY full_name').all();
 
   /* بيانات التقييم للتخطيط */
   const assessHistory = assessments.slice().reverse().map(a => ({ date: a.date, percent: a.overall_percent }));
-  const schoolInfo = s.school ? db.prepare('SELECT * FROM schools WHERE name = ?').get(s.school) : null;
+  const schoolInfo = s.school ? await db.prepare('SELECT * FROM schools WHERE name = ?').get(s.school) : null;
   const assessTotal = assessments.reduce((sum, a) => sum + Number(a.overall_percent || 0), 0);
   const assessCount = assessments.length;
   const assessFinal = assessCount ? Math.round((assessTotal / assessCount) * 10) / 10 : 0;
@@ -414,38 +413,38 @@ router.get('/swimmers/:id', function (req, res) {
 });
 
 /* نقل السباح إلى مجموعة/كابتن آخر (تبقى كل بياناته من تقييمات وحضور واشتراكات) */
-router.post('/swimmers/:id/transfer', function (req, res) {
+router.post('/swimmers/:id/transfer', async function (req, res) {
   const id = Number(req.params.id);
-  const s = db.prepare('SELECT * FROM swimmers WHERE id = ?').get(id);
+  const s = await db.prepare('SELECT * FROM swimmers WHERE id = ?').get(id);
   if (!s) return res.redirect('/swimmers');
   const toGroup = Number(req.body.group_id || 0);
   let toCoach = Number(req.body.coach_id || 0);
   if (!toGroup) {
-    req.session.flash = { type: 'error', message: 'اختر المجموعة الجديدة' };
+    setFlash(res, { type: 'error', message: 'اختر المجموعة الجديدة' });
     return res.redirect('/swimmers/' + id);
   }
   if (!toCoach) {
-    const g = db.prepare('SELECT coach_id FROM groups WHERE id = ?').get(toGroup);
+    const g = await db.prepare('SELECT coach_id FROM groups WHERE id = ?').get(toGroup);
     toCoach = g && g.coach_id ? g.coach_id : s.coach_id;
   }
-  db.prepare('UPDATE swimmers SET group_id = ?, coach_id = ? WHERE id = ?').run(toGroup, toCoach, id);
-  syncSwimmerGroups(id, toGroup);
-  db.prepare('INSERT INTO swimmer_transfers (swimmer_id, from_group_id, from_coach_id, to_group_id, to_coach_id, note, created_by) VALUES (?,?,?,?,?,?,?)')
+  await db.prepare('UPDATE swimmers SET group_id = ?, coach_id = ? WHERE id = ?').run(toGroup, toCoach, id);
+  await syncSwimmerGroups(id, toGroup);
+  await db.prepare('INSERT INTO swimmer_transfers (swimmer_id, from_group_id, from_coach_id, to_group_id, to_coach_id, note, created_by) VALUES (?,?,?,?,?,?,?)')
     .run(id, s.group_id, s.coach_id, toGroup, toCoach, req.body.note || null, req.currentUser.id);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'swimmers', id, 'نقل السباح ' + s.full_name + ' إلى مجموعة/كابتن جديد', req);
-  req.session.flash = { type: 'success', message: 'تم نقل السباح إلى المجموعة والكابتن الجديد مع الاحتفاظ بكل بياناته' };
+  setFlash(res, { type: 'success', message: 'تم نقل السباح إلى المجموعة والكابتن الجديد مع الاحتفاظ بكل بياناته' });
   res.redirect('/swimmers/' + id);
 });
 
 /* نسخة طباعة سجل الحضور والغياب لسباح واحد */
-router.get('/swimmers/:id/attendance-print', function (req, res) {
+router.get('/swimmers/:id/attendance-print', async function (req, res) {
   const id = Number(req.params.id);
-  const s = db.prepare(`SELECT s.*, g.full_name AS guardian_name, l.name AS level_name, gr.name AS group_name, c.full_name AS coach_name, p.name AS program_name FROM swimmers s
+  const s = await db.prepare(`SELECT s.*, g.full_name AS guardian_name, l.name AS level_name, gr.name AS group_name, c.full_name AS coach_name, p.name AS program_name FROM swimmers s
     LEFT JOIN guardians g ON g.id = s.guardian_id LEFT JOIN levels l ON l.id = s.level_id
     LEFT JOIN groups gr ON gr.id = s.group_id LEFT JOIN coaches c ON c.id = s.coach_id
     LEFT JOIN programs p ON p.id = s.program_id WHERE s.id = ?`).get(id);
   if (!s) return res.redirect('/swimmers');
-  const records = db.prepare(`SELECT a.*, se.date, se.title, se.start_time FROM attendance a JOIN sessions se ON se.id = a.session_id WHERE a.swimmer_id = ? ORDER BY se.date DESC, se.start_time`).all(id);
+  const records = await db.prepare(`SELECT a.*, se.date, se.title, se.start_time FROM attendance a JOIN sessions se ON se.id = a.session_id WHERE a.swimmer_id = ? ORDER BY se.date DESC, se.start_time`).all(id);
   const stats = {
     total: records.length,
     present: records.filter(r => r.status === 'present').length,
@@ -478,15 +477,15 @@ function buildSkills(sc, criteriaMap) {
   return { skills, total, avg, count: skills.length };
 }
 
-function swimmerAssessmentReport(swimmerId) {
-  const swimmer = db.prepare(`SELECT s.*, l.name AS level_name, gr.name AS group_name, c.full_name AS coach_name, p.name AS program_name FROM swimmers s
+async function swimmerAssessmentReport(swimmerId) {
+  const swimmer = await db.prepare(`SELECT s.*, l.name AS level_name, gr.name AS group_name, c.full_name AS coach_name, p.name AS program_name FROM swimmers s
     LEFT JOIN levels l ON l.id = s.level_id LEFT JOIN groups gr ON gr.id = s.group_id
     LEFT JOIN coaches c ON c.id = s.coach_id LEFT JOIN programs p ON p.id = s.program_id WHERE s.id = ?`).get(swimmerId);
   if (!swimmer) return null;
   const criteriaMap = {};
-  db.prepare('SELECT * FROM assessment_criteria').all().forEach(c => { criteriaMap[c.id] = c; });
+  (await db.prepare('SELECT * FROM assessment_criteria').all()).forEach(c => { criteriaMap[c.id] = c; });
   /* أحدث تقييم للمعايير العامة (مستوى NULL) — مصدر واحد يُضمَّن في كل المستويات */
-  const genRow = db.prepare(`SELECT a.*, c.full_name AS coach_name FROM assessments a LEFT JOIN coaches c ON c.id = a.coach_id
+  const genRow = await db.prepare(`SELECT a.*, c.full_name AS coach_name FROM assessments a LEFT JOIN coaches c ON c.id = a.coach_id
     WHERE a.swimmer_id = ? AND a.level_id IS NULL ORDER BY a.date DESC, a.id DESC`).get(swimmerId);
   let gen = { skills: [], total: 0, avg: 0, count: 0 };
   if (genRow) {
@@ -495,7 +494,7 @@ function swimmerAssessmentReport(swimmerId) {
     gen = buildSkills(sc, criteriaMap);
     gen.assessment = genRow;
   }
-  const raw = db.prepare(`SELECT a.*, l.name AS level_name, l.order_no AS level_order, c.full_name AS coach_name FROM assessments a
+  const raw = await db.prepare(`SELECT a.*, l.name AS level_name, l.order_no AS level_order, c.full_name AS coach_name FROM assessments a
     LEFT JOIN levels l ON l.id = a.level_id LEFT JOIN coaches c ON c.id = a.coach_id
     WHERE a.swimmer_id = ? AND a.level_id IS NOT NULL ORDER BY a.date DESC, a.id DESC`).all(swimmerId);
   const seen = {};
@@ -519,9 +518,9 @@ function swimmerAssessmentReport(swimmerId) {
 }
 
 /* تقرير شامل: تقييمات السباح على كل المستويات (مستوى ← مهارات + نسب) */
-router.get('/swimmers/:id/assessment-report', function (req, res) {
+router.get('/swimmers/:id/assessment-report', async function (req, res) {
   if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const data = swimmerAssessmentReport(Number(req.params.id));
+  const data = await swimmerAssessmentReport(Number(req.params.id));
   if (!data) return res.redirect('/swimmers');
   res.render('assessment_report', {
     title: 'تقرير تقييمات السباح', active: 'assessments', data,
@@ -679,9 +678,9 @@ function buildReportPdf(data, todayStr) {
 }
 
 /* توليد ملف PDF حقيقي منسق (يُفتح في تبويب جديد / يُحمّل مباشرة) */
-router.get('/swimmers/:id/assessment-report/pdf', function (req, res) {
+router.get('/swimmers/:id/assessment-report/pdf', async function (req, res) {
   if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const data = swimmerAssessmentReport(Number(req.params.id));
+  const data = await swimmerAssessmentReport(Number(req.params.id));
   if (!data) return res.redirect('/swimmers');
   const doc = buildReportPdf(data, today());
   pdfmake.createPdf(doc).getBuffer().then(function (buf) {
@@ -694,10 +693,10 @@ router.get('/swimmers/:id/assessment-report/pdf', function (req, res) {
   });
 });
 
-function swimmerReportBlock(s) {
-  const guardian = db.prepare('SELECT full_name, phone, whatsapp, email FROM guardians WHERE id = ?').get(s.guardian_id);
-  const docs = db.prepare("SELECT * FROM documents WHERE owner_type = 'swimmer' AND owner_id = ? ORDER BY id DESC").all(s.id);
-  const assessments = db.prepare(`SELECT a.date, a.overall_percent, a.ready_to_advance, a.next_assessment_date, l.name AS level_name, c.full_name AS coach_name
+async function swimmerReportBlock(s) {
+  const guardian = await db.prepare('SELECT full_name, phone, whatsapp, email FROM guardians WHERE id = ?').get(s.guardian_id);
+  const docs = await db.prepare("SELECT * FROM documents WHERE owner_type = 'swimmer' AND owner_id = ? ORDER BY id DESC").all(s.id);
+  const assessments = await db.prepare(`SELECT a.date, a.overall_percent, a.ready_to_advance, a.next_assessment_date, l.name AS level_name, c.full_name AS coach_name
     FROM assessments a LEFT JOIN levels l ON l.id = a.level_id LEFT JOIN coaches c ON c.id = a.coach_id
     WHERE a.swimmer_id = ? ORDER BY a.date DESC, a.id DESC`).all(s.id);
   return {
@@ -709,31 +708,36 @@ function swimmerReportBlock(s) {
   };
 }
 
-function buildSwimmerReport(groupRows) {
-  return groupRows.map(function (g) {
-    const members = db.prepare('SELECT * FROM swimmers WHERE group_id = ? ORDER BY full_name').all(g.id);
-    const swimmers = members.map(swimmerReportBlock);
-    return { id: g.id, name: g.name, coach_name: g.coach_name || '', schedule: parseJSON(g.schedule, []), swimmerCount: swimmers.length, swimmers };
-  });
+async function buildSwimmerReport(groupRows) {
+  const result = [];
+  for (const g of groupRows) {
+    const members = await db.prepare('SELECT * FROM swimmers WHERE group_id = ? ORDER BY full_name').all(g.id);
+    const swimmers = [];
+    for (const m of members) swimmers.push(await swimmerReportBlock(m));
+    result.push({ id: g.id, name: g.name, coach_name: g.coach_name || '', schedule: parseJSON(g.schedule, []), swimmerCount: swimmers.length, swimmers });
+  }
+  return result;
 }
 
-function unassignedSwimmerBlock() {
-  const rows = db.prepare(`SELECT s.*, l.name AS level_name, c.full_name AS coach_name FROM swimmers s
+async function unassignedSwimmerBlock() {
+  const rows = await db.prepare(`SELECT s.*, l.name AS level_name, c.full_name AS coach_name FROM swimmers s
     LEFT JOIN levels l ON l.id = s.level_id LEFT JOIN coaches c ON c.id = s.coach_id
     WHERE s.group_id IS NULL ORDER BY s.full_name`).all();
-  return rows.map(swimmerReportBlock);
+  const blocks = [];
+  for (const r of rows) blocks.push(await swimmerReportBlock(r));
+  return blocks;
 }
 
-function reportGroupsSql(where, params) {
+async function reportGroupsSql(where, params) {
   const sql = `SELECT g.*, c.full_name AS coach_name FROM groups g LEFT JOIN coaches c ON c.id = g.coach_id ${where} ORDER BY g.name`;
-  return db.prepare(sql).all(...params);
+  return await db.prepare(sql).all(...params);
 }
 
 /* طباعة ملف السباحين — كل المجاميع */
-router.get('/reports/swimmers-print', function (req, res) {
+router.get('/reports/swimmers-print', async function (req, res) {
   if (!canView(req.currentUser, 'swimmers')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const data = buildSwimmerReport(reportGroupsSql('', []));
-  const un = unassignedSwimmerBlock();
+  const data = await buildSwimmerReport(await reportGroupsSql('', []));
+  const un = await unassignedSwimmerBlock();
   if (un.length) data.push({ id: 0, name: 'بدون مجموعة', coach_name: '', schedule: [], swimmerCount: un.length, swimmers: un });
   res.render('swimmer_report_print', {
     title: 'ملف السباحين الشامل', active: 'swimmers', mode: 'all',
@@ -743,11 +747,11 @@ router.get('/reports/swimmers-print', function (req, res) {
 });
 
 /* طباعة ملف السباحين — مجموعة واحدة */
-router.get('/groups/:id/swimmers-print', function (req, res) {
+router.get('/groups/:id/swimmers-print', async function (req, res) {
   if (!canView(req.currentUser, 'swimmers')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const g = db.prepare('SELECT g.*, c.full_name AS coach_name FROM groups g LEFT JOIN coaches c ON c.id = g.coach_id WHERE g.id = ?').get(Number(req.params.id));
+  const g = await db.prepare('SELECT g.*, c.full_name AS coach_name FROM groups g LEFT JOIN coaches c ON c.id = g.coach_id WHERE g.id = ?').get(Number(req.params.id));
   if (!g) return res.redirect('/groups');
-  const data = buildSwimmerReport([g]);
+  const data = await buildSwimmerReport([g]);
   res.render('swimmer_report_print', {
     title: 'ملف سباحي المجموعة — ' + g.name, active: 'groups', mode: 'group',
     groups: data, total: data[0].swimmerCount, today: today(), fmtDate
@@ -804,7 +808,7 @@ function sendXls(res, groups, total, filename) {
 }
 
 /* Excel ملف السباحين — كل المجاميع */
-router.get('/reports/swimmers.xls', function (req, res) {
+router.get('/reports/swimmers.xls', async function (req, res) {
   if (!canView(req.currentUser, 'swimmers')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const data = buildSwimmerReport(reportGroupsSql('', []));
   const un = unassignedSwimmerBlock();
@@ -813,9 +817,9 @@ router.get('/reports/swimmers.xls', function (req, res) {
 });
 
 /* Excel ملف السباحين — مجموعة واحدة */
-router.get('/groups/:id/swimmers.xls', function (req, res) {
+router.get('/groups/:id/swimmers.xls', async function (req, res) {
   if (!canView(req.currentUser, 'swimmers')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const g = db.prepare('SELECT g.*, c.full_name AS coach_name FROM groups g LEFT JOIN coaches c ON c.id = g.coach_id WHERE g.id = ?').get(Number(req.params.id));
+  const g = await db.prepare('SELECT g.*, c.full_name AS coach_name FROM groups g LEFT JOIN coaches c ON c.id = g.coach_id WHERE g.id = ?').get(Number(req.params.id));
   if (!g) return res.redirect('/groups');
   sendXls(res, buildSwimmerReport([g]), 0, 'مجموعة-' + g.name + '.xls');
 });
@@ -826,8 +830,8 @@ function statusBadge(st) {
   return `<span class="badge ${m[0]}"><i class="fas ${m[1]}"></i> ${st}</span>`;
 }
 
-function nextMembership() {
-  const last = db.prepare('SELECT membership_no FROM swimmers ORDER BY id DESC LIMIT 1').get();
+async function nextMembership() {
+  const last = await db.prepare('SELECT membership_no FROM swimmers ORDER BY id DESC LIMIT 1').get();
   if (!last) return 'SW-0001';
   const num = parseInt(last.membership_no.replace(/\D/g, ''), 10) || 0;
   return 'SW-' + String(num + 1).padStart(4, '0');

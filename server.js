@@ -1,9 +1,9 @@
 /** نقطة التشغيل الرئيسية لنظام إدارة أكاديمية السباحة */
 const path = require('node:path');
 const express = require('express');
-const session = require('express-session');
-const { db } = require('./lib/db');
+const { db, client, ready } = require('./lib/db');
 const { canView, canAdd, canEdit, canDel, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON } = require('./lib/helpers');
+const { getAuth, takeFlash } = require('./lib/auth-cookie');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,76 +15,83 @@ if (IS_PROD) app.set('view cache', true);
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json({ limit: '4mb' }));
+app.use(express.json({ limit: '12mb' }));
+
+/* الملفات الثابتة + المرفقات المخزنة داخل قاعدة البيانات */
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(process.env.UPLOAD_DIR || path.join(__dirname, 'uploads')));
-
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'swim-academy-secret-key-2026',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { maxAge: 1000 * 60 * 60 * 12, httpOnly: true, sameSite: 'lax', secure: IS_PROD }
-}));
-
-/* تهيئة البيانات التجريبية تلقائياً عند أول تشغيل (قاعدة بيانات فارغة) */
-try {
-  if (db.prepare('SELECT COUNT(*) c FROM users').get().c === 0) {
-    console.log('قاعدة بيانات فارغة — جاري تهيئة البيانات التجريبية...');
-    require('./db/seed');
-  }
-} catch (e) { console.error('تعذر فحص/تهيئة قاعدة البيانات:', e.message); }
-
-function loadSettings() {
-  const s = {};
-  try { db.prepare('SELECT * FROM settings').all().forEach(r => { s[r.key] = r.value; }); } catch (e) { }
-  return s;
-}
-
-function currentUser(req) {
-  if (!req.session.userId) return null;
+app.get('/uploads/:name', async function (req, res) {
   try {
-    const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+    const row = await db.prepare('SELECT mime, data FROM file_blobs WHERE name = ?').get(String(req.params.name));
+    if (!row) {
+      /* الرجوع للملفات القديمة على القرص */
+      const p = path.join(__dirname, 'uploads', path.basename(String(req.params.name)));
+      if (require('node:fs').existsSync(p)) return res.sendFile(p);
+      return res.status(404).send('الملف غير موجود');
+    }
+    if (row.mime) res.setHeader('Content-Type', row.mime);
+    if (IS_PROD && req.get('Origin')) res.setHeader('Access-Control-Allow-Origin', '*');
+    res.end(Buffer.from(row.data));
+  } catch (e) { res.status(500).send('خطأ في جلب الملف'); }
+});
+
+async function currentUser(req) {
+  const uid = getAuth(req);
+  if (!uid) return null;
+  try {
+    const u = await db.prepare('SELECT * FROM users WHERE id = ?').get(Number(uid));
     if (!u || u.status !== 'active') return null;
-    const role = db.prepare('SELECT * FROM roles WHERE id = ?').get(u.role_id);
+    const role = await db.prepare('SELECT * FROM roles WHERE id = ?').get(u.role_id);
     u.role_name = role ? role.name : u.user_type;
+    let perms = {};
+    try { perms = JSON.parse((role && role.permissions) || '{}'); } catch (e) { perms = {}; }
+    if (u.user_type === 'system') {
+      perms = {};
+      const MODULES = require('./lib/helpers').MODULES;
+      MODULES.forEach(m => { perms[m] = { view: 1, add: 1, edit: 1, del: 1 }; });
+    }
+    u.perms = perms;
     return u;
   } catch (e) { return null; }
 }
 
 /* توفير المتغيرات العامة لكل الصفحات */
-app.use(function (req, res, next) {
-  res.set('Cache-Control', 'no-store');
-  const settings = loadSettings();
-  res.locals.siteName = settings.site_name || 'أكاديمية السباحة';
-  res.locals.siteLogo = settings.site_logo || '';
-  res.locals.settings = settings;
-  res.locals.canView = canView;
-  res.locals.canAdd = canAdd;
-  res.locals.canEdit = canEdit;
-  res.locals.canDel = canDel;
-  res.locals.money = money;
-  res.locals.fmtDate = fmtDate;
-  res.locals.fmtDateTime = fmtDateTime;
-  res.locals.dayAr = dayAr;
-  res.locals.calcAge = calcAge;
-  res.locals.pct = pct;
-  res.locals.parseJSON = parseJSON;
-  res.locals.statusBadge = function (st) {
-    const map = { 'نشط': ['badge-success', 'fa-user-check'], 'متوقف مؤقتاً': ['badge-warning', 'fa-pause'], 'مجمد': ['badge-info', 'fa-snowflake'], 'منسحب': ['badge-danger', 'fa-user-minus'], 'خريج': ['badge-purple', 'fa-graduation-cap'] };
-    const m = map[st] || ['badge-gray', 'fa-circle'];
-    return `<span class="badge ${m[0]}"><i class="fas ${m[1]}"></i> ${st}</span>`;
-  };
-  res.locals.flash = req.session.flash;
-  delete req.session.flash;
-  const user = currentUser(req);
-  res.locals.user = user;
-  res.locals.isAuth = !!user;
-  if (user) {
-    res.locals.unreadCount = db.prepare('SELECT COUNT(*) c FROM notification_recipients r JOIN notifications n ON n.id = r.notification_id WHERE r.user_id = ? AND r.is_read = 0').get(user.id).c;
-  }
-  req.currentUser = user;
-  req.session.user = user;
-  next();
+app.use(async function (req, res, next) {
+  try {
+    await ready();
+    res.set('Cache-Control', 'no-store');
+    const settingsRows = await db.all('SELECT * FROM settings');
+    const settings = {};
+    settingsRows.forEach(r => { settings[r.key] = r.value; });
+    res.locals.siteName = settings.site_name || 'أكاديمية السباحة';
+    res.locals.siteLogo = settings.site_logo || '';
+    res.locals.settings = settings;
+    res.locals.canView = canView;
+    res.locals.canAdd = canAdd;
+    res.locals.canEdit = canEdit;
+    res.locals.canDel = canDel;
+    res.locals.money = money;
+    res.locals.fmtDate = fmtDate;
+    res.locals.fmtDateTime = fmtDateTime;
+    res.locals.dayAr = dayAr;
+    res.locals.calcAge = calcAge;
+    res.locals.pct = pct;
+    res.locals.parseJSON = parseJSON;
+    res.locals.statusBadge = function (st) {
+      const map = { 'نشط': ['badge-success', 'fa-user-check'], 'متوقف مؤقتاً': ['badge-warning', 'fa-pause'], 'مجمد': ['badge-info', 'fa-snowflake'], 'منسحب': ['badge-danger', 'fa-user-minus'], 'خريج': ['badge-purple', 'fa-graduation-cap'] };
+      const m = map[st] || ['badge-gray', 'fa-circle'];
+      return `<span class="badge ${m[0]}"><i class="fas ${m[1]}"></i> ${st}</span>`;
+    };
+    res.locals.flash = takeFlash(req, res);
+    const user = await currentUser(req);
+    res.locals.user = user;
+    res.locals.isAuth = !!user;
+    if (user) {
+      const ur = await db.prepare('SELECT COUNT(*) c FROM notification_recipients r JOIN notifications n ON n.id = r.notification_id WHERE r.user_id = ? AND r.is_read = 0').get(user.id);
+      res.locals.unreadCount = ur.c;
+    }
+    req.currentUser = user;
+    next();
+  } catch (err) { next(err); }
 });
 
 /* منع الوصول للوحة بدون تسجيل دخول */
@@ -120,10 +127,20 @@ app.use(function (err, req, res, next) {
   res.status(500).send('حدث خطأ داخلي في النظام: ' + err.message);
 });
 
-app.listen(PORT, () => {
-  console.log('============================================');
-  console.log('  نظام إدارة أكاديمية السباحة يعمل الآن');
-  console.log('  الرابط:  http://localhost:' + PORT);
-  console.log('  الموقع التعريفي:  /site');
-  console.log('============================================');
+/* التهيئة عند بدء التشغيل المحلي (على Vercel تعمل تلقائياً مع أول طلب) */
+ready().then(() => {
+  if (!process.env.VERCEL) {
+    app.listen(PORT, () => {
+      console.log('============================================');
+      console.log('  نظام إدارة أكاديمية السباحة يعمل الآن');
+      console.log('  الرابط:  http://localhost:' + PORT);
+      console.log('  قاعدة البيانات: ' + (process.env.DB_URL || 'محلي (data.db)'));
+      console.log('============================================');
+    });
+  }
+}).catch(e => {
+  console.error('تعذر تشغيل النظام:', e.message);
+  process.exit(1);
 });
+
+module.exports = app;
