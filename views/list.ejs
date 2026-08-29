@@ -5,7 +5,7 @@
     <div class="page-sub"><%= page.subtitle || '' %></div>
   </div>
   <div class="spacer"></div>
-  <div class="flex gap-1">
+  <div class="flex flex-wrap gap-1" style="align-items:center">
     <% if (page.filters) { page.filters.forEach(function (f) { %>
       <select class="form-control" data-filter-target="<%= f.name %>" style="min-width:150px">
         <option value=""><%= f.label %></option>

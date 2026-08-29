@@ -884,9 +884,8 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
   .user-chip .uname { display: none; }
 }
 
-/* ============================= إزالة الأيقونات ============================= */
-/* إخفاء جميع أيقونات Font Awesome من الموقع، وترك النصوص فقط */
-i[class*="fa-"], i.fa, i.fas, i.far, i.fab { display: none !important; }
+/* ============================= الأيقونات ============================= */
+/* إظهار جميع أيقونات Font Awesome */
 
 /* تقييم جميع المستويات */
 .level-block { grid-column: 1 / -1; border: 1px solid var(--card-border); border-radius: 14px; overflow: hidden; background: var(--card); margin-top: 10px; transition: box-shadow .15s, border-color .15s; }
@@ -957,6 +956,20 @@ i[class*="fa-"], i.fa, i.fas, i.far, i.fab { display: none !important; }
   .page-actions { width: 100%; }
   .page-actions .btn, .page-actions .btn-block { font-size: 13px; }
 
+  /* رأس الصفحة بالوضع القوائم (list) */
+  .page-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .page-head > div.flex { flex-wrap: wrap; align-items: stretch; }
+  .page-head > div.flex > * { flex: 1 1 100%; width: 100%; }
+  .page-head > div.flex .spacer { display: none; }
+  .page-head > div.flex select.form-control,
+  .page-head > div.flex input[type="date"],
+  .page-head > div.flex input[type="search"] { min-width: 0 !important; }
+  .page-head > div.flex .btn { justify-content: center; }
+
+  /* شريط الفلاتر المستقل */
+  .filters-bar { flex-direction: column; align-items: stretch; }
+  .filters-bar .filter-search { min-width: 0; }
+
   /* البطاقات والحشو */
   .card-body { padding: 14px; }
   .card-header { padding: 12px 14px; }
@@ -985,7 +998,9 @@ i[class*="fa-"], i.fa, i.fas, i.far, i.fab { display: none !important; }
   /* صفوف الحضور */
   .att-row { flex-wrap: wrap; gap: 10px; }
   .att-name { font-size: 13px; flex: 1 1 100%; }
-  .att-btns { flex: 1 1 100%; justify-content: flex-start; }
+  .att-btns { flex: 1 1 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .att-btn { min-width: 44px; padding: 0 7px; }
+  .att-group-head { flex-direction: column; align-items: flex-start; }
 
   /* التفاصيل */
   .detail-grid { grid-template-columns: 1fr; gap: 10px; }
@@ -1007,6 +1022,28 @@ i[class*="fa-"], i.fa, i.fas, i.far, i.fab { display: none !important; }
   /* صفقات التقييم */
   .level-block-body { grid-template-columns: 1fr; }
   .criteria-input-group { flex-wrap: wrap; }
+
+  /* التبويبات في ملف السباح */
+  .tabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+  .tabs .tab { white-space: nowrap; }
+
+  /* نقل السباح */
+  .transfer-summary { flex-direction: column; }
+  .transfer-summary .ts-box { min-width: 0; }
+
+  /* حقول الوقت المزدوجة في جداول الحصص والنماذج */
+  .form-group .flex.gap-1 { flex-wrap: wrap; }
+  .form-group .flex.gap-1 .form-control { flex: 1 1 100%; }
+
+  /* إلغاء أي حد أدنى inline عريض يسبب تجاوزاً على الهاتف */
+  [style*="min-width:220px"], [style*="min-width:250px"],
+  [style*="min-width:200px"], [style*="min-width:150px"] { min-width: 0 !important; }
+
+  /* صفوف الحصص/التقييمات داخل البطاقات */
+  .attendance-session { padding: 10px; }
+
+  /* صف ملخصات grand في التقييم */
+  .grand-block { min-width: 110px; }
 }
 
 /* ============================= التجاوب مع الشاشات الصغيرة جداً ============================= */
@@ -1017,4 +1054,9 @@ i[class*="fa-"], i.fa, i.fas, i.far, i.fab { display: none !important; }
   .user-chip { max-width: 120px; }
   .card-body { padding: 12px; }
   .grand-block { min-width: 110px; }
+  .page-title { font-size: 16px; }
+  .topbar .icon-btn.with-label { width: 34px; height: 34px; }
+  .table-wrap table { min-width: 560px; }
+  .profile-header { text-align: center; }
+  .profile-avatar { margin: 0 auto; }
 }
