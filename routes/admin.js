@@ -60,6 +60,7 @@ router.get('/users', async function (req, res) {
     canAdd: canAdd(req.currentUser, 'users'), addUrl: canAdd(req.currentUser, 'users') ? '/users/new' : null, addLabel: 'مستخدم جديد',
     actions: () => row => [
       { label: 'تعديل', icon: 'fa-pen', href: '/users/' + row.id + '/edit' },
+      { label: 'الصلاحيات', icon: 'fa-user-shield', href: '/users/' + row.id + '/permissions' },
       { label: 'إعادة كلمة المرور', icon: 'fa-key', href: '/users/' + row.id + '/reset', confirm: 'إعادة تعيين كلمة مرور هذا المستخدم إلى 123456؟' },
       { label: 'حذف', icon: 'fa-trash', href: '/users/' + row.id + '/delete', confirm: 'حذف المستخدم؟', cls: 'text-danger' }
     ]
@@ -129,6 +130,38 @@ router.post('/users/:id/reset', async function (req, res) {
   setFlash(res, { type: 'success', message: 'تم إعادة تعيين كلمة المرور إلى 123456' });
   res.redirect('/users');
 });
+
+/* ============ الصلاحيات الدقيقة لكل مستخدم ============ */
+router.get('/users/:id/permissions', async function (req, res) {
+  if (!canEdit(req.currentUser, 'users')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const row = await db.prepare('SELECT u.*, r.name AS role_name, r.permissions AS role_permissions FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id=?').get(Number(req.params.id));
+  if (!row) return res.redirect('/users');
+  let own = {};
+  try { own = JSON.parse(row.permissions || '{}'); } catch (e) { own = {}; }
+  res.render('user_permissions', { title: 'صلاحيات ' + row.full_name, active: 'users', target: row, own,
+    groups: MODULE_GROUPS, labels: MODULE_LABELS });
+});
+router.post('/users/:id/permissions', async function (req, res) {
+  if (!canEdit(req.currentUser, 'users')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const id = Number(req.params.id);
+  const b = req.body;
+  const perms = {};
+  for (const m of MODULES) {
+    perms[m] = {
+      view: b[m + '_view'] === 'allow' ? 1 : b[m + '_view'] === 'deny' ? 0 : undefined,
+      add: b[m + '_add'] === 'allow' ? 1 : b[m + '_add'] === 'deny' ? 0 : undefined,
+      edit: b[m + '_edit'] === 'allow' ? 1 : b[m + '_edit'] === 'deny' ? 0 : undefined,
+      del: b[m + '_del'] === 'allow' ? 1 : b[m + '_del'] === 'deny' ? 0 : undefined,
+      export: b[m + '_export'] === 'allow' ? 1 : b[m + '_export'] === 'deny' ? 0 : undefined
+    };
+    Object.keys(perms[m]).forEach(function (k) { if (perms[m][k] === undefined) delete perms[m][k]; });
+    if (!Object.keys(perms[m]).length) delete perms[m];
+  }
+  await db.prepare('UPDATE users SET permissions=? WHERE id=?').run(JSON.stringify(perms), id);
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'users', id, 'تحديث الصلاحيات الفردية', req);
+  setFlash(res, { type: 'success', message: 'تم حفظ الصلاحيات الفردية لهذا المستخدم' });
+  res.redirect('/users/' + id + '/permissions');
+});
 router.post('/users/:id/delete', async function (req, res) {
   if (!canDel(req.currentUser, 'users')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
@@ -156,7 +189,8 @@ router.post('/roles/:id/permissions', async function (req, res) {
       view: req.body[m + '_view'] ? 1 : 0,
       add: req.body[m + '_add'] ? 1 : 0,
       edit: req.body[m + '_edit'] ? 1 : 0,
-      del: req.body[m + '_del'] ? 1 : 0
+      del: req.body[m + '_del'] ? 1 : 0,
+      export: req.body[m + '_export'] ? 1 : 0
     };
   }
   await db.prepare('UPDATE roles SET permissions=? WHERE id=?').run(JSON.stringify(perms), id);

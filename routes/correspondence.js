@@ -2,17 +2,18 @@
 const express = require('express');
 const path = require('node:path');
 const { db } = require('../lib/db');
-const { audit, money, fmtDate, fmtDateTime, today, canView, canAdd, canEdit, canDel, getPermissions } = require('../lib/helpers');
+const { audit, money, fmtDate, fmtDateTime, today, canView, canAdd, canEdit, canDel, canExport, getPermissions } = require('../lib/helpers');
 const { uploadAndStore, removeUploaded } = require('../lib/upload');
 const { setFlash } = require('../lib/auth-cookie');
 const router = express.Router();
 
-function fileBadge(name) {
+function fileBadge(name, allowed) {
   if (!name) return '';
+  if (!allowed) return `<span class="badge badge-gray" title="لا تملك صلاحية تحميل الملف"><i class="fas fa-lock"></i> <span class="font-12">${name}</span></span>`;
   const ext = path.extname(name).toLowerCase();
   const m = { '.pdf': ['fa-file-pdf', 'badge-danger'], '.png': ['fa-file-image', 'badge-success'], '.jpg': ['fa-file-image', 'badge-success'], '.jpeg': ['fa-file-image', 'badge-success'], '.xlsx': ['fa-file-excel', 'badge-success'], '.xls': ['fa-file-excel', 'badge-success'], '.docx': ['fa-file-word', 'badge-primary'], '.doc': ['fa-file-word', 'badge-primary'] };
   const r = m[ext] || ['fa-file', 'badge-gray'];
-  return `<a href="/uploads/${name}" target="_blank" class="btn btn-ghost btn-sm ${r[1]}" title="تحميل الملف"><i class="fas ${r[0]}"></i> تحميل</a>`;
+  return `<a href="/uploads/${name}?dl=1" target="_blank" class="btn btn-ghost btn-sm ${r[1]}" title="تحميل الملف"><i class="fas ${r[0]}"></i> تحميل</a>`;
 }
 
 function removeAttachment(row) {
@@ -90,7 +91,7 @@ router.get('/incoming/:id', async function (req, res) {
     { label: 'نوع المستند', value: r.doc_type || '—' }, { label: 'الجهة المستلمة', value: r.receiver || '—' },
     { label: 'المطلوب', value: r.required_action || '—' }, { label: 'المسؤول', value: r.owner_name || '—' },
     { label: 'تاريخ الاستحقاق', value: r.due_date ? fmtDate(r.due_date) : '—' },
-    { label: 'الحالة', value: r.status }, { label: 'المرفق', value: r.attachment ? fileBadge(r.attachment) : '—' },
+    { label: 'الحالة', value: r.status }, { label: 'المرفق', value: r.attachment ? fileBadge(r.attachment, canExport(req.currentUser, 'incoming')) : '—' },
     { label: 'ملاحظات', value: r.notes || '—' }
   ];
   res.render('detail', { page: { title: 'وارد — تفاصيل', subtitle: r.doc_no || '', icon: 'fa-inbox', fields, canEdit: canEdit(req.currentUser, 'incoming'), editUrl: '/incoming/' + r.id + '/edit', canDelete: canDel(req.currentUser, 'incoming'), deleteUrl: '/incoming/' + r.id + '/delete', backUrl: '/incoming' } });
@@ -178,7 +179,7 @@ router.get('/outgoing/:id', async function (req, res) {
     { label: 'الجهة المستلمة', value: r.recipient }, { label: 'الموضوع', value: r.subject },
     { label: 'نوع المستند', value: r.doc_type || '—' }, { label: 'الجهة المرسلة', value: r.sender || '—' },
     { label: 'طريقة الإرسال', value: r.send_method || '—' }, { label: 'حالة التسليم', value: r.delivery_status || '—' },
-    { label: 'المرفق', value: r.attachment ? fileBadge(r.attachment) : '—' },
+    { label: 'المرفق', value: r.attachment ? fileBadge(r.attachment, canExport(req.currentUser, 'outgoing')) : '—' },
     { label: 'ملاحظات', value: r.notes || '—' }
   ];
   res.render('detail', { page: { title: 'صادر — تفاصيل', subtitle: r.doc_no || '', icon: 'fa-paper-plane', fields, canEdit: canEdit(req.currentUser, 'outgoing'), editUrl: '/outgoing/' + r.id + '/edit', canDelete: canDel(req.currentUser, 'outgoing'), deleteUrl: '/outgoing/' + r.id + '/delete', backUrl: '/outgoing' } });
@@ -243,7 +244,7 @@ router.get('/documents', async function (req, res) {
         const lbl = row.owner_type === 'swimmer' ? 'سباح' : row.owner_type === 'coach' ? 'مدرب' : 'ولي أمر';
         return `<span class="badge ${cls}">${lbl}: ${row.owner_name}</span>`;
       } },
-      { key: 'file', label: 'الملف', html: row => fileBadge(row.file_name) },
+      { key: 'file', label: 'الملف', html: row => fileBadge(row.file_name, canExport(req.currentUser, 'documents')) },
       { key: 'visibility', label: 'الظهور', html: row => row.visibility },
       { key: 'uploaded_name', label: 'رفعه' }
     ],

@@ -30,20 +30,22 @@
                   <th style="width:90px"><label class="perm-head"><input type="checkbox" class="perm-all-col" data-col="add"> إضافة</label></th>
                   <th style="width:90px"><label class="perm-head"><input type="checkbox" class="perm-all-col" data-col="edit"> تعديل</label></th>
                   <th style="width:90px"><label class="perm-head"><input type="checkbox" class="perm-all-col" data-col="del"> حذف</label></th>
+                  <th style="width:110px"><label class="perm-head"><input type="checkbox" class="perm-all-col" data-col="export"> تحميل/طباعة</label></th>
                 </tr>
               </thead>
               <tbody>
                 <% let perms = {}; try { perms = JSON.parse(role.permissions || '{}'); } catch (e) { perms = {}; } %>
                 <% groups.forEach(function (grp) { %>
-                  <tr class="group-row"><td colspan="5"><i class="fas fa-folder"></i> <%= grp[0] %></td></tr>
+                  <tr class="group-row"><td colspan="6"><i class="fas fa-folder"></i> <%= grp[0] %></td></tr>
                   <% grp[1].forEach(function (m) { %>
-                    <% const p = perms[m] || { view: 0, add: 0, edit: 0, del: 0 }; %>
+                    <% const p = perms[m] || { view: 0, add: 0, edit: 0, del: 0, export: 0 }; %>
                     <tr>
                       <td><%= labels[m] || m %></td>
                       <td><input type="checkbox" name="<%= m %>_view" value="1" <%= p.view ? 'checked' : '' %> class="perm-row" data-row="view"></td>
                       <td><input type="checkbox" name="<%= m %>_add" value="1" <%= p.add ? 'checked' : '' %> class="perm-row" data-row="add"></td>
                       <td><input type="checkbox" name="<%= m %>_edit" value="1" <%= p.edit ? 'checked' : '' %> class="perm-row" data-row="edit"></td>
                       <td><input type="checkbox" name="<%= m %>_del" value="1" <%= p.del ? 'checked' : '' %> class="perm-row" data-row="del"></td>
+                      <td><input type="checkbox" name="<%= m %>_export" value="1" <%= p.export ? 'checked' : '' %> class="perm-row" data-row="export"></td>
                     </tr>
                   <% }); %>
                 <% }); %>

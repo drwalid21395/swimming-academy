@@ -1,0 +1,81 @@
+<%- include('partials/layout_top', { title: title, active: active }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-user-shield"></i> الصلاحيات الدقيقة — <%= target.full_name %></div>
+    <div class="page-sub">حدد لكل وحدة ما يمكن لهذا المستخدم فعله بالضبط. خانة «اتبع الدور» تعني أخذ صلاحيات دوره.</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1" style="flex-wrap:wrap">
+    <a href="/users/<%= target.id %>/edit" class="btn btn-outline"><i class="fas fa-pen"></i> تعديل بياناته</a>
+    <a href="/users" class="btn btn-outline"><i class="fas fa-arrow-right"></i> المستخدمون</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h3><i class="fas fa-user-tag"></i> <%= target.full_name %> <span class="badge badge-primary"><%= target.role_name || target.user_type || '—' %></span></h3>
+  </div>
+  <div class="card-body">
+    <div class="flex gap-1" style="flex-wrap:wrap;margin-bottom:14px">
+      <button type="button" class="btn btn-success btn-sm" id="permGrantAll"><i class="fas fa-check-double"></i> منح كل الوحدات</button>
+      <button type="button" class="btn btn-outline-danger btn-sm" id="permDenyAll"><i class="fas fa-ban"></i> منع كل الوحدات</button>
+      <button type="button" class="btn btn-outline btn-sm" id="permInheritAll"><i class="fas fa-user-tag"></i> اتباع الدور للكل</button>
+    </div>
+    <form method="POST" action="/users/<%= target.id %>/permissions" novalidate>
+      <div class="table-wrap">
+        <table class="data-table perms-table">
+          <thead>
+            <tr>
+              <th>الوحدة</th>
+              <th style="width:110px"><span class="font-12">عرض</span></th>
+              <th style="width:110px"><span class="font-12">إضافة / تسجيل</span></th>
+              <th style="width:110px"><span class="font-12">تعديل</span></th>
+              <th style="width:110px"><span class="font-12">حذف</span></th>
+              <th style="width:120px"><span class="font-12">تحميل / طباعة</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% groups.forEach(function (grp) { %>
+              <tr class="group-row"><td colspan="6"><i class="fas fa-folder"></i> <%= grp[0] %></td></tr>
+              <% grp[1].forEach(function (m) { %>
+                <% const p = own[m] || {}; %>
+                <tr>
+                  <td><%= labels[m] || m %></td>
+                  <% const acts = [['view','عرض'],['add','إضافة'],['edit','تعديل'],['del','حذف'],['export','تحميل']]; %>
+                  <% acts.forEach(function (a) { %>
+                    <td>
+                      <select name="<%= m %>_<%= a[0] %>" class="form-control perm-cell" data-module="<%= m %>">
+                        <option value="inherit" <%= p[a[0]] === undefined ? 'selected' : '' %>>اتبع الدور</option>
+                        <option value="allow" <%= p[a[0]] === 1 ? 'selected' : '' %>>مسموح</option>
+                        <option value="deny" <%= p[a[0]] === 0 ? 'selected' : '' %>>ممنوع</option>
+                      </select>
+                    </td>
+                  <% }); %>
+                </tr>
+              <% }); %>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+      <div class="flex gap-1" style="flex-wrap:wrap;margin-top:14px">
+        <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> حفظ الصلاحيات الفردية</button>
+        <a href="/users" class="btn btn-outline btn-lg"><i class="fas fa-xmark"></i> إلغاء</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  function setAll(value) {
+    document.querySelectorAll('.perm-cell').forEach(function (s) { s.value = value; });
+  }
+  var g = document.getElementById('permGrantAll');
+  var d = document.getElementById('permDenyAll');
+  var i = document.getElementById('permInheritAll');
+  if (g) g.addEventListener('click', function () { setAll('allow'); });
+  if (d) d.addEventListener('click', function () { setAll('deny'); });
+  if (i) i.addEventListener('click', function () { setAll('inherit'); });
+})();
+</script>
+<%- include('partials/layout_bottom') %>

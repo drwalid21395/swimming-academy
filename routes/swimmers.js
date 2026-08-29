@@ -1,7 +1,7 @@
 /** السباحون (ملف شامل) + أولياء الأمور + المدربون + الموظفون */
 const express = require('express');
 const { db } = require('../lib/db');
-const { audit, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON, today, canView } = require('../lib/helpers');
+const { audit, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON, today, canView, canExport } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
 const crud = require('../lib/crud');
 const { uploadAndStore, removeUploaded } = require('../lib/upload');
@@ -47,8 +47,10 @@ const contractTypes = ['ثابت', 'بالحصة', 'نسبة'].map(v => ({ value
 const salaryTypes = [
   { value: 'monthly', label: 'راتب شهري' }, { value: 'per_session', label: 'قيمة الحصة' }, { value: 'percent', label: 'نسبة من الاشتراكات' }
 ];
-function cvLink(cv) {
-  return cv ? `<a href="${cv}" target="_blank" class="btn btn-ghost btn-sm" title="تحميل السيرة الذاتية"><i class="fas fa-file-pdf text-danger"></i> تحميل</a>` : '—';
+function cvLink(cv, allowed) {
+  if (!cv) return '—';
+  if (!allowed) return '<span class="font-12 text-muted"><i class="fas fa-lock"></i> مرفق</span>';
+  return `<a href="${cv}?dl=1" target="_blank" class="btn btn-ghost btn-sm" title="تحميل السيرة الذاتية"><i class="fas fa-file-pdf text-danger"></i> تحميل</a>`;
 }
 crud(router, '/coaches', {
   table: 'coaches', module: 'coaches', entity: 'coaches',
@@ -124,7 +126,7 @@ crud(router, '/staff', {
     { key: 'job_title', label: 'المسمى الوظيفي', html: row => `<span class="badge badge-primary">${row.job_title || '—'}</span>` },
     { key: 'phone', label: 'الهاتف' },
     { key: 'email', label: 'البريد الإلكتروني' },
-    { key: 'cv', label: 'السيرة الذاتية', html: row => cvLink(row.cv) },
+    { key: 'cv', label: 'السيرة الذاتية', html: row => cvLink(row.cv, canExport(req.currentUser, 'staff')) },
     { key: 'status', label: 'الحالة', html: row => `<span class="badge ${row.status === 'active' ? 'badge-success' : 'badge-danger'}">${row.status === 'active' ? 'نشط' : 'متوقف'}</span>` }
   ],
   filters: async () => [
@@ -250,10 +252,10 @@ router.get('/swimmers', async function (req, res) {
     canAdd: true,
     addUrl: '/swimmers/new',
     addLabel: 'تسجيل سباح جديد',
-    headerActions: [
+    headerActions: canExport(req.currentUser, 'swimmers') ? [
       { href: '/reports/swimmers-print', label: 'ملف السباحين PDF', icon: 'fa-file-pdf', cls: 'btn-outline' },
       { href: '/reports/swimmers.xls', label: 'ملف السباحين Excel', icon: 'fa-file-excel', cls: 'btn-outline' }
-    ],
+    ] : [],
     actions: user => row => [
       { label: 'عرض', icon: 'fa-eye', href: '/swimmers/' + row.id },
       { label: 'تعديل', icon: 'fa-pen', href: '/swimmers/' + row.id + '/edit' },
@@ -438,6 +440,7 @@ router.post('/swimmers/:id/transfer', async function (req, res) {
 
 /* نسخة طباعة سجل الحضور والغياب لسباح واحد */
 router.get('/swimmers/:id/attendance-print', async function (req, res) {
+  if (!canExport(req.currentUser, 'swimmers')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
   const s = await db.prepare(`SELECT s.*, g.full_name AS guardian_name, l.name AS level_name, gr.name AS group_name, c.full_name AS coach_name, p.name AS program_name FROM swimmers s
     LEFT JOIN guardians g ON g.id = s.guardian_id LEFT JOIN levels l ON l.id = s.level_id
@@ -520,6 +523,7 @@ async function swimmerAssessmentReport(swimmerId) {
 /* تقرير شامل: تقييمات السباح على كل المستويات (مستوى ← مهارات + نسب) */
 router.get('/swimmers/:id/assessment-report', async function (req, res) {
   if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  if (!canExport(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const data = await swimmerAssessmentReport(Number(req.params.id));
   if (!data) return res.redirect('/swimmers');
   res.render('assessment_report', {

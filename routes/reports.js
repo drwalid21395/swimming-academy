@@ -1,7 +1,7 @@
 /** التقارير */
 const express = require('express');
 const { db } = require('../lib/db');
-const { audit, money, fmtDate, today, daysAgo, pct, canView, dayAr } = require('../lib/helpers');
+const { audit, money, fmtDate, today, daysAgo, pct, canView, canExport, dayAr } = require('../lib/helpers');
 const router = express.Router();
 
 router.get('/reports', async function (req, res) {
@@ -55,6 +55,7 @@ router.get('/reports/attendance', async function (req, res) {
 /* ============================================================== */
 router.get('/reports/attendance/daily', async function (req, res) {
   if (!canView(req.currentUser, 'reports')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  if (!canExport(req.currentUser, 'reports')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const date = req.query.date || today();
   const groupRows = await db.prepare(`SELECT g.*, c.full_name AS coach_name FROM groups g
     LEFT JOIN coaches c ON c.id = g.coach_id ORDER BY g.name`).all();

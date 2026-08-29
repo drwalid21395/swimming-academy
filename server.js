@@ -2,7 +2,7 @@
 const path = require('node:path');
 const express = require('express');
 const { db, client, ready } = require('./lib/db');
-const { canView, canAdd, canEdit, canDel, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON } = require('./lib/helpers');
+const { canView, canAdd, canEdit, canDel, canExport, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON } = require('./lib/helpers');
 const { getAuth, takeFlash } = require('./lib/auth-cookie');
 
 const app = express();
@@ -21,6 +21,11 @@ app.use(express.json({ limit: '12mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/uploads/:name', async function (req, res) {
   try {
+    if (req.query.dl === '1') {
+      const u = req.currentUser || await currentUser(req);
+      const ok = u && (u.user_type === 'system' || canExport(u, 'documents') || canExport(u, 'incoming') || canExport(u, 'outgoing') || canExport(u, 'coaches') || canExport(u, 'staff'));
+      if (!ok) return res.status(403).send('غير مصرح بالتحميل');
+    }
     const row = await db.prepare('SELECT mime, data FROM file_blobs WHERE name = ?').get(String(req.params.name));
     if (!row) {
       /* الرجوع للملفات القديمة على القرص */
@@ -44,10 +49,19 @@ async function currentUser(req) {
     u.role_name = role ? role.name : u.user_type;
     let perms = {};
     try { perms = JSON.parse((role && role.permissions) || '{}'); } catch (e) { perms = {}; }
+    /* الصلاحيات الفردية للمستخدم تتجاوز صلاحيات دوره (لكل وحدة وإجراء على حدة) */
+    try {
+      const own = JSON.parse(u.permissions || '{}');
+      Object.entries(own).forEach(([m, actions]) => {
+        if (!actions || typeof actions !== 'object') return;
+        perms[m] = perms[m] || {};
+        Object.entries(actions).forEach(([a, v]) => { perms[m][a] = v ? 1 : 0; });
+      });
+    } catch (e) { /* تجاهل */ }
     if (u.user_type === 'system') {
       perms = {};
       const MODULES = require('./lib/helpers').MODULES;
-      MODULES.forEach(m => { perms[m] = { view: 1, add: 1, edit: 1, del: 1 }; });
+      MODULES.forEach(m => { perms[m] = { view: 1, add: 1, edit: 1, del: 1, export: 1 }; });
     }
     u.perms = perms;
     return u;
@@ -69,6 +83,7 @@ app.use(async function (req, res, next) {
     res.locals.canAdd = canAdd;
     res.locals.canEdit = canEdit;
     res.locals.canDel = canDel;
+    res.locals.canExport = canExport;
     res.locals.money = money;
     res.locals.fmtDate = fmtDate;
     res.locals.fmtDateTime = fmtDateTime;
