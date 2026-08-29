@@ -126,7 +126,7 @@ crud(router, '/staff', {
     { key: 'job_title', label: 'المسمى الوظيفي', html: row => `<span class="badge badge-primary">${row.job_title || '—'}</span>` },
     { key: 'phone', label: 'الهاتف' },
     { key: 'email', label: 'البريد الإلكتروني' },
-    { key: 'cv', label: 'السيرة الذاتية', html: row => cvLink(row.cv, canExport(req.currentUser, 'staff')) },
+    { key: 'cv', label: 'السيرة الذاتية', html: (row, u) => cvLink(row.cv, canExport(u, 'staff')) },
     { key: 'status', label: 'الحالة', html: row => `<span class="badge ${row.status === 'active' ? 'badge-success' : 'badge-danger'}">${row.status === 'active' ? 'نشط' : 'متوقف'}</span>` }
   ],
   filters: async () => [

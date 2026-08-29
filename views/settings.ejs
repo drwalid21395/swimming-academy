@@ -19,7 +19,7 @@
         <div class="form-grid">
           <% let lastSec = ''; %>
           <% defs.forEach(function (d, i) { %>
-            <% const sec = i === 0 ? 'بيانات الأكاديمية' : (i === 3 ? 'التواصل' : (i === 7 ? 'عن الأكاديمية' : (i === 9 ? 'السوشيال ميديا' : (i === 12 ? 'السلامة' : '')))); %>
+            <% const sec = d.section || ''; %>
             <% if (sec && sec !== lastSec) { %><div class="full form-section-title"><i class="fas fa-circle-info"></i> <%= sec %></div><% lastSec = sec; } %>
             <div class="form-group <%= d.type === 'textarea' ? 'full' : '' %>">
               <label><%= d.label %></label>

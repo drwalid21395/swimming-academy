@@ -2,6 +2,7 @@
 const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, today, daysAhead, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
+const { buildRenewalMessage, sendReminder, logMessage } = require('../lib/whatsapp');
 const { setFlash } = require('../lib/auth-cookie');
 const router = express.Router();
 
@@ -28,8 +29,8 @@ function computeTotal(price, discount, tax) {
 /* ============================================================== */
 router.get('/subscriptions', async function (req, res) {
   if (!canView(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT sub.*, s.full_name AS swimmer_name, s.membership_no, p.name AS program_name, g.name AS group_name FROM subscriptions sub
-    LEFT JOIN swimmers s ON s.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id
+  const rows = await db.prepare(`SELECT sub.*, s.full_name AS swimmer_name, s.membership_no, p.name AS program_name, g.name AS group_name, gu.whatsapp AS guardian_whatsapp FROM subscriptions sub
+    LEFT JOIN swimmers s ON s.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id LEFT JOIN guardians gu ON gu.id = s.guardian_id
     ORDER BY sub.created_at DESC`).all();
   const page = {
     title: 'الاشتراكات', subtitle: 'اشتراكات السباحين في البرامج', icon: 'fa-file-contract', module: 'subscriptions', active: 'subscriptions',
@@ -49,11 +50,15 @@ router.get('/subscriptions', async function (req, res) {
       { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) }
     ],
     canAdd: canAdd(req.currentUser, 'subscriptions'), addUrl: canAdd(req.currentUser, 'subscriptions') ? '/subscriptions/new' : null, addLabel: 'اشتراك جديد',
-    actions: () => row => [
-      { label: 'التفاصيل', icon: 'fa-eye', href: '/subscriptions/' + row.id },
-      { label: 'السباح', icon: 'fa-person-swimming', href: '/swimmers/' + row.swimmer_id },
-      { label: 'تعديل', icon: 'fa-pen', href: '/subscriptions/' + row.id + '/edit' }
-    ]
+    actions: () => row => {
+      const acts = [
+        { label: 'التفاصيل', icon: 'fa-eye', href: '/subscriptions/' + row.id },
+        { label: 'السباح', icon: 'fa-person-swimming', href: '/swimmers/' + row.swimmer_id },
+        { label: 'تعديل', icon: 'fa-pen', href: '/subscriptions/' + row.id + '/edit' }
+      ];
+      if (row.guardian_whatsapp) acts.push({ label: 'تذكير واتساب', icon: 'fa-whatsapp', iconPrefix: 'fab', href: '/subscriptions/' + row.id + '/whatsapp' });
+      return acts;
+    }
   };
   res.render('list', { page });
 });
@@ -108,13 +113,34 @@ router.post('/subscriptions/new', async function (req, res) {
 router.get('/subscriptions/:id', async function (req, res) {
   if (!canView(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
-  const s = await db.prepare(`SELECT sub.*, sw.full_name AS swimmer_name, sw.membership_no, p.name AS program_name, g.name AS group_name FROM subscriptions sub
-    LEFT JOIN swimmers sw ON sw.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id WHERE sub.id = ?`).get(id);
+  const s = await db.prepare(`SELECT sub.*, sw.full_name AS swimmer_name, sw.membership_no, p.name AS program_name, g.name AS group_name, gu.full_name AS guardian_name, gu.whatsapp AS guardian_whatsapp, gu.phone AS guardian_phone FROM subscriptions sub
+    LEFT JOIN swimmers sw ON sw.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id LEFT JOIN guardians gu ON gu.id = sw.guardian_id WHERE sub.id = ?`).get(id);
   if (!s) return res.redirect('/subscriptions');
   const payments = await db.prepare('SELECT * FROM payments WHERE subscription_id = ? ORDER BY paid_date').all(id);
   const history = await db.prepare('SELECT * FROM subscription_history WHERE subscription_id = ? ORDER BY created_at DESC').all(id);
   res.render('subscription_detail', { title: 'تفاصيل الاشتراك', active: 'subscriptions', s, payments, history, money,
     canEdit: canEdit(req.currentUser, 'subscriptions'), canAdd: canAdd(req.currentUser, 'payments') });
+});
+/* تذكير واتساب لتجديد الاشتراك: إرسال تلقائي عبر Cloud API إن كان مفعلاً، وإلا رابط wa.me برسالة جاهزة */
+router.get('/subscriptions/:id/whatsapp', async function (req, res) {
+  if (!canView(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const id = Number(req.params.id);
+  const sub = await db.prepare(`SELECT sub.*, sw.full_name AS swimmer_name, g.full_name AS guardian_name, COALESCE(g.whatsapp, g.phone) AS phone
+    FROM subscriptions sub JOIN swimmers sw ON sw.id = sub.swimmer_id LEFT JOIN guardians g ON g.id = sw.guardian_id WHERE sub.id = ?`).get(id);
+  if (!sub) return res.redirect('/subscriptions');
+  const phone = String(sub.phone || '').trim();
+  if (!phone) {
+    setFlash(res, { type: 'error', message: 'لا يوجد رقم واتساب/هاتف مسجل لولي الأمر' });
+    return res.redirect('/subscriptions/' + id);
+  }
+  const text = buildRenewalMessage({ swimmerName: sub.swimmer_name, guardianName: sub.guardian_name, endDate: sub.end_date, academyName: res.locals.settings.site_name });
+  const r = await sendReminder({ phone, text });
+  await logMessage({ subscription_id: id, swimmer_id: sub.swimmer_id, swimmer_name: sub.swimmer_name, guardian_name: sub.guardian_name,
+    phone, message: text, mode: r.mode, status: r.ok ? 'sent' : 'failed', trigger: 'manual', error: r.apiError || '', created_by: req.currentUser.id });
+  audit(req.currentUser.id, req.currentUser.full_name, 'send', 'whatsapp', id, 'تذكير تجديد اشتراك (واتساب، ' + r.mode + ')' + (r.apiError ? ' — ' + r.apiError : ''), req);
+  if (r.mode === 'link' && r.url) return res.redirect(r.url);
+  setFlash(res, { type: 'success', message: 'تم إرسال تذكير الواتساب تلقائياً لولي الأمر' });
+  res.redirect('/subscriptions/' + id);
 });
 router.get('/subscriptions/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });

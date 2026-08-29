@@ -127,6 +127,9 @@
             <div class="detail-item"><div class="dl">الحالة</div><div class="dv"><span class="badge badge-success"><%= activeSub.status %></span></div></div>
             <div class="detail-item"><div class="dl">الإيصال</div><div class="dv"><%= activeSub.receipt_no %></div></div>
           </div>
+          <% if (s.guardian_whatsapp && activeSub.end_date) { %>
+            <a href="/subscriptions/<%= activeSub.id %>/whatsapp" class="btn btn-success btn-sm mt-2"><i class="fab fa-whatsapp"></i> تذكير تجديد الاشتراك واتساب</a>
+          <% } %>
         <% } else { %>
           <div class="empty-state"><i class="fas fa-file-contract"></i><p>لا يوجد اشتراك نشط حالياً</p></div>
           <a href="/subscriptions/new?swimmer=<%= s.id %>" class="btn btn-primary btn-block"><i class="fas fa-plus"></i> إنشاء اشتراك جديد</a>
@@ -196,7 +199,12 @@
                 <td class="text-success fw-700"><%= money(sub.paid_amount) %></td>
                 <td class="<%= sub.remaining > 0 ? 'text-danger fw-700' : '' %>"><%= money(sub.remaining) %></td>
                 <td><span class="badge <%= sub.status === 'نشط' ? 'badge-success' : sub.status === 'مجمد' ? 'badge-info' : sub.status === 'مكتمل' ? 'badge-purple' : 'badge-gray' %>"><%= sub.status %></span></td>
-                <td><a href="/subscriptions/<%= sub.id %>" class="btn btn-ghost btn-sm"><i class="fas fa-eye"></i> عرض</a></td>
+                <td>
+                  <div class="flex gap-1">
+                    <a href="/subscriptions/<%= sub.id %>" class="btn btn-ghost btn-sm" title="عرض"><i class="fas fa-eye"></i></a>
+                    <% if (s.guardian_whatsapp && sub.end_date) { %><a href="/subscriptions/<%= sub.id %>/whatsapp" class="btn btn-ghost btn-sm" title="تذكير واتساب بتجديد الاشتراك"><i class="fab fa-whatsapp" style="color:#25d366"></i></a><% } %>
+                  </div>
+                </td>
               </tr>
             <% }); %>
             <% if (!subs.length) { %><tr><td colspan="9"><div class="empty-state"><i class="fas fa-file-contract"></i><p>لا توجد اشتراكات</p></div></td></tr><% } %>

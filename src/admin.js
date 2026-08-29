@@ -57,6 +57,14 @@ function buildWhere(entity, q, filters) {
   return { where: where.length ? 'WHERE ' + where.join(' AND ') : '', params };
 }
 
+function countLabel(n) {
+  if (n === 0) return 'لا توجد سجلات';
+  if (n === 1) return 'سجل واحد';
+  if (n === 2) return 'سجلان';
+  if (n <= 10) return `${n} سجلات`;
+  return `${n} سجلاً`;
+}
+
 function listPage(entity, user, query) {
   const conf = ENTITIES[entity];
   if (!conf) return { status: 404, body: 'غير موجود' };
@@ -68,6 +76,8 @@ function listPage(entity, user, query) {
   }
   const { where, params } = buildWhere(entity, q, filters);
   const rows = db.prepare(`${conf.listQuery} ${where} ${conf.orderBy ? 'ORDER BY ' + conf.orderBy : ''} LIMIT 300`).all(...params);
+  const totalRow = db.prepare(`SELECT COUNT(*) AS c FROM (${conf.listQuery} ${where})`).get(...params);
+  const total = totalRow && totalRow.c ? totalRow.c : rows.length;
 
   const canAdd = can(user, conf.module, 'add');
   const actions = [];
@@ -89,7 +99,7 @@ function listPage(entity, user, query) {
   }
 
   const content = `
-    ${pageHead(conf.title, `${rows.length} سجل${conf.title.includes('طلبات') ? '' : ''}`, actions.join(''))}
+    ${pageHead(conf.title, `${countLabel(total)}${total > rows.length ? ' — معروض ' + rows.length : ''}`, actions.join(''))}
     ${filtersHtml}
     ${renderTable(entity, rows, user, {})}
   `;

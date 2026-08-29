@@ -2,7 +2,7 @@
 <div class="page-head">
   <div>
     <div class="page-title"><i class="fas <%= page.icon || 'fa-list' %>"></i> <%= page.title %></div>
-    <div class="page-sub"><%= page.subtitle || '' %></div>
+    <div class="page-sub"><%= page.subtitle || '' %><% if (page.rows && page.rows.length) { %> <span class="count-badge">إجمالي السجلات: <%= page.rows.length %></span><% } %></div>
   </div>
   <div class="spacer"></div>
   <div class="flex flex-wrap gap-1" style="align-items:center">
@@ -36,7 +36,7 @@
           <% page.rows.forEach(function (row) { %>
             <tr <%- page.filters ? page.filters.map(function (f) { return 'data-' + f.name + '="' + (row[f.name] ?? '') + '"'; }).join(' ') : '' %>>
               <% page.columns.forEach(function (col) { %>
-                <td><% if (col.html) { %><%- col.html(row) %><% } else { %><%= row[col.key] !== null && row[col.key] !== undefined ? row[col.key] : '—' %><% } %></td>
+                <td><% if (col.html) { %><%- col.html(row, user) %><% } else { %><%= row[col.key] !== null && row[col.key] !== undefined ? row[col.key] : '—' %><% } %></td>
               <% }); %>
               <% if (page.actions) { %>
                 <td>
@@ -45,10 +45,11 @@
                     <% if (typeof acts === 'function') acts = acts(row); %>
                     <% (acts && acts.forEach ? acts : []).forEach(function (a) { %>
                       <div class="action-cell">
+                        <% var ip = a.iconPrefix || 'fas'; %>
                         <% if (a.confirm) { %>
-                          <form method="POST" action="<%= a.href %>" style="display:inline;margin:0"><button type="submit" class="btn btn-ghost btn-sm <%= a.cls || '' %>" title="<%= a.label %>" data-confirm="<%= a.confirm %>" data-action="submit"><i class="fas <%= a.icon %>"></i> <%= a.label %></button></form>
+                          <form method="POST" action="<%= a.href %>" style="display:inline;margin:0"><button type="submit" class="btn btn-ghost btn-sm <%= a.cls || '' %>" title="<%= a.label %>" data-confirm="<%= a.confirm %>" data-action="submit"><i class="<%= ip %> <%= a.icon %>"></i> <%= a.label %></button></form>
                         <% } else { %>
-                          <a href="<%= a.href %>" class="btn btn-ghost btn-sm <%= a.cls || '' %>" title="<%= a.label %>"><i class="fas <%= a.icon %>"></i> <%= a.label %></a>
+                          <a href="<%= a.href %>" class="btn btn-ghost btn-sm <%= a.cls || '' %>" title="<%= a.label %>"><i class="<%= ip %> <%= a.icon %>"></i> <%= a.label %></a>
                         <% } %>
                       </div>
                     <% }); %>

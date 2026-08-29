@@ -2,6 +2,7 @@
 const express = require('express');
 const { db } = require('../lib/db');
 const { money, fmtDate, dayAr, calcAge, pct, daysAhead, daysAgo, today } = require('../lib/helpers');
+const { maybeSendExpiryReminders } = require('../lib/whatsapp');
 const router = express.Router();
 
 async function swimmerSummary() {
@@ -15,6 +16,9 @@ async function swimmerSummary() {
 router.get('/', async function (req, res) {
   const user = req.currentUser;
   if (user.user_type === 'guardian' || user.user_type === 'swimmer') return res.redirect('/my-portal');
+
+  /* إرسال تلقائي لتذكيرات تجديد الاشتراكات المنتهية (مرة واحدة لكل اشتراك) */
+  try { await maybeSendExpiryReminders(user); } catch (e) { console.error('خطأ في إرسال تذكيرات الواتساب:', e.message); }
 
   const S = await swimmerSummary();
   const now = today();

@@ -203,19 +203,23 @@ router.post('/roles/:id/permissions', async function (req, res) {
 /*                       إعدادات النظام                           */
 /* ============================================================== */
 const SETTING_DEFS = [
-  { key: 'site_name', label: 'اسم الأكاديمية', type: 'text' },
-  { key: 'site_slogan', label: 'الشعار النصي', type: 'text' },
-  { key: 'phone', label: 'هاتف التواصل', type: 'tel' },
-  { key: 'whatsapp', label: 'واتساب', type: 'tel' },
-  { key: 'email', label: 'البريد الإلكتروني', type: 'email' },
-  { key: 'address', label: 'العنوان', type: 'text' },
-  { key: 'work_hours', label: 'مواعيد العمل', type: 'text' },
-  { key: 'about', label: 'نبذة عن الأكاديمية', type: 'textarea' },
-  { key: 'facebook', label: 'فيسبوك', type: 'text' },
-  { key: 'instagram', label: 'انستغرام', type: 'text' },
-  { key: 'tiktok', label: 'تيك توك', type: 'text' },
-  { key: 'map_url', label: 'رابط الخريطة', type: 'text' },
-  { key: 'safety_notes', label: 'إرشادات السلامة في الماء', type: 'textarea' }
+  { key: 'site_name', label: 'اسم الأكاديمية', type: 'text', section: 'بيانات الأكاديمية' },
+  { key: 'site_slogan', label: 'الشعار النصي', type: 'text', section: 'بيانات الأكاديمية' },
+  { key: 'phone', label: 'هاتف التواصل', type: 'tel', section: 'بيانات الأكاديمية' },
+  { key: 'whatsapp', label: 'واتساب', type: 'tel', section: 'التواصل' },
+  { key: 'email', label: 'البريد الإلكتروني', type: 'email', section: 'التواصل' },
+  { key: 'address', label: 'العنوان', type: 'text', section: 'التواصل' },
+  { key: 'work_hours', label: 'مواعيد العمل', type: 'text', section: 'التواصل' },
+  { key: 'about', label: 'نبذة عن الأكاديمية', type: 'textarea', section: 'عن الأكاديمية' },
+  { key: 'facebook', label: 'فيسبوك', type: 'text', section: 'عن الأكاديمية' },
+  { key: 'instagram', label: 'انستغرام', type: 'text', section: 'السوشيال ميديا' },
+  { key: 'tiktok', label: 'تيك توك', type: 'text', section: 'السوشيال ميديا' },
+  { key: 'map_url', label: 'رابط الخريطة', type: 'text', section: 'السوشيال ميديا' },
+  { key: 'safety_notes', label: 'إرشادات السلامة في الماء', type: 'textarea', section: 'السلامة' },
+  { key: 'whatsapp_country_code', label: 'مفتاح دولة الواتساب (مثال: 20 لمصر)', type: 'text', section: 'إعدادات الواتساب' },
+  { key: 'whatsapp_api_token', label: 'رمز API للواتساب (WhatsApp Cloud API)', type: 'text', section: 'إعدادات الواتساب' },
+  { key: 'whatsapp_phone_id', label: 'معرّف رقم الهاتف (Phone Number ID)', type: 'text', section: 'إعدادات الواتساب' },
+  { key: 'whatsapp_auto_send', label: 'الإرسال التلقائي عند انتهاء الاشتراك (1 = مفعل / 0 = معطل)', type: 'text', section: 'إعدادات الواتساب' }
 ];
 router.get('/settings', async function (req, res) {
   if (!canView(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });

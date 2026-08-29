@@ -8,6 +8,7 @@
   <div class="flex gap-1">
     <a href="/subscriptions" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل الاشتراكات</a>
     <a href="/swimmers/<%= s.swimmer_id %>" class="btn btn-primary"><i class="fas fa-person-swimming"></i> ملف السباح</a>
+    <% if (s.guardian_whatsapp && s.end_date) { %><a href="/subscriptions/<%= s.id %>/whatsapp" class="btn btn-success" title="رسالة تلقائية باسم السباح وتاريخ انتهاء الاشتراك تطلب التجديد"><i class="fab fa-whatsapp"></i> تذكير واتساب</a><% } %>
     <% if (canEdit) { %><a href="/subscriptions/<%= s.id %>/edit" class="btn btn-primary"><i class="fas fa-pen"></i> تعديل</a><% } %>
   </div>
 </div>
@@ -27,6 +28,7 @@
         <div class="detail-item"><div class="dl">السباح</div><div class="dv"><a href="/swimmers/<%= s.swimmer_id %>" class="link"><%= s.swimmer_name %></a> (<%= s.membership_no %>)</div></div>
         <div class="detail-item"><div class="dl">البرنامج</div><div class="dv"><%= s.program_name || '—' %></div></div>
         <div class="detail-item"><div class="dl">المجموعة</div><div class="dv"><%= s.group_name || '—' %></div></div>
+        <div class="detail-item"><div class="dl">ولي الأمر</div><div class="dv"><%= s.guardian_name || '—' %><% if (s.guardian_whatsapp) { %> · <span dir="ltr" class="text-soft font-11"><i class="fab fa-whatsapp" style="color:#25d366"></i> <%= s.guardian_whatsapp %></span><% } %></div></div>
         <div class="detail-item"><div class="dl">الفترة</div><div class="dv"><%= fmtDate(s.start_date) %> — <%= fmtDate(s.end_date) %></div></div>
         <div class="detail-item"><div class="dl">السعر</div><div class="dv"><%= money(s.price) %></div></div>
         <div class="detail-item"><div class="dl">الخصم</div><div class="dv"><%= money(s.discount) %></div></div>
