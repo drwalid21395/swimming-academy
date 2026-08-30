@@ -3,8 +3,6 @@ const express = require('express');
 const { db } = require('../lib/db');
 const { hashPassword, verifyPassword, audit, money, fmtDate, calcAge } = require('../lib/helpers');
 const { setAuth, clearAuth, setFlash } = require('../lib/auth-cookie');
-const { sendAdminMail, notifyEmail } = require('../lib/mailer');
-const { notifyAdmin } = require('../lib/whatsapp');
 const router = express.Router();
 
 /* ---------- تسجيل الدخول ---------- */
@@ -35,38 +33,7 @@ router.get('/logout', function (req, res) {
   res.redirect('/login');
 });
 
-/* ---------- نسيان كلمة المرور: يُشعِر المدير فقط ولا يغيّر كلمة المرور ---------- */
-router.get('/forgot-password', async function (req, res) {
-  res.render('auth/forgot', { message: '', layout: false, user: null, siteName: res.locals.siteName });
-});
-router.post('/forgot-password', async function (req, res) {
-  const val = String(req.body.username || '').trim();
-  const user = await db.prepare('SELECT * FROM users WHERE username = ? OR email = ?').get(val, val);
-  const noted = await notifyEmail();
-  let mail = { ok: false, mode: 'log', error: '' };
-  let wa = { ok: false, mode: 'none', error: '' };
-  if (user) {
-    const text =
-      'طلب تغيير كلمة المرور\n---------------------\n' +
-      'المستخدم: ' + user.username + '\n' +
-      'الاسم الكامل: ' + user.full_name + '\n' +
-      (user.email ? 'البريد: ' + user.email + '\n' : '') +
-      'التوقيت: ' + new Date().toLocaleString('ar-EG') + '\n\n' +
-      'يطلب المستخدم تغيير كلمة المرور. عيّنها يدوياً من صفحة المستخدمين (الرابط: /users) — التغيير منك أنت فقط ولا يتغير تلقائياً.';
-    mail = await sendAdminMail({ subject: 'طلب تغيير كلمة مرور: ' + user.username, text });
-    wa = await notifyAdmin({ text: text.replace(/\n/g, '\n') });
-  }
-  const emailStatus = user ? (mail.ok ? 'sent' : 'failed') : '';
-  const waStatus = user ? (wa.mode === 'api' ? 'api' : wa.mode === 'link' ? 'link' : wa.mode === 'none' ? 'none' : 'failed') : '';
-  const entry = await db.prepare(`INSERT INTO password_reset_requests (username, full_name, note, status, notified_email, email_status, wa_status, error, ip)
-      VALUES (?,?,?,?,?,?,?,?,?)`)
-    .run(val, user ? user.full_name : '', user ? '' : 'اسم المستخدم غير موجود', 'pending', noted, emailStatus, waStatus, mail.error || wa.error || '', req.ip || '');
-  audit(user ? user.id : null, user ? user.full_name : 'مجهول', 'request', 'password', entry.lastInsertRowid, 'طلب تغيير كلمة المرور' + (user ? ' من ' + user.username : ' (اسم غير موجود): ' + val), req);
-  const msg = user
-    ? 'تم تسجيل طلبك وإرساله لمدير النظام. سيتم التواصل معك بشأن كلمة المرور الجديدة خلال فترة قصيرة.'
-    : 'لم يتم العثور على حساب بهذه البيانات.';
-  res.render('auth/forgot', { message: msg, layout: false, user: null, siteName: res.locals.siteName });
-});
+/* ---------- نسيان كلمة المرور: يُوجَّه المستخدم لإرسال طلب عبر واتساب (الزر أسفل صفحة الدخول) ---------- */
 
 /* ---------- الحساب الشخصي ---------- */
 router.get('/profile', function (req, res) {

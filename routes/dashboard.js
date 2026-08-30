@@ -89,10 +89,6 @@ router.get('/', async function (req, res) {
   overdue.forEach(function (x) {
     alerts.push({ type: 'danger', icon: 'fa-money-bill-wave', title: 'مبلغ مستحق: ' + x.full_name, sub: 'باقي ' + money(x.remaining), link: '/subscriptions/' + x.id });
   });
-  const pwReqs = await db.prepare("SELECT id, username, full_name, created_at FROM password_reset_requests WHERE status = 'pending' ORDER BY id DESC LIMIT 5").all();
-  pwReqs.forEach(function (x) {
-    alerts.push({ type: 'info', icon: 'fa-key', title: 'طلب تغيير كلمة مرور: ' + (x.username || '—'), sub: (x.full_name || 'مجهول') + ' — ' + fmtDateTime(x.created_at) + ' (يُغيّر منك أنت فقط)', link: '/password-requests' });
-  });
   const missingDocs = await db.prepare(`SELECT s.full_name, s.id FROM swimmers s WHERE NOT EXISTS (SELECT 1 FROM documents d WHERE d.owner_type='swimmer' AND d.owner_id=s.id AND d.doc_type='إقرار صحي') AND s.status = 'نشط' LIMIT 4`).all();
   missingDocs.forEach(function (x) {
     alerts.push({ type: 'info', icon: 'fa-folder-minus', title: 'مستند ناقص: ' + x.full_name, sub: 'الإقرار الصحي غير موجود', link: '/documents' });

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>تسجيل الدخول | <%= siteName %></title>
   <link rel="stylesheet" href="/vendor/fa-all.min.css">
-  <link rel="stylesheet" href="/css/style.css?v=20">
+  <link rel="stylesheet" href="/css/style.css?v=21">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>">
 </head>
 <body>
@@ -28,13 +28,15 @@
       </div>
       <button class="btn btn-primary btn-lg btn-block" type="submit"><i class="fas fa-right-to-bracket"></i> دخول النظام</button>
     </form>
-    <div class="auth-footer"><a href="/forgot-password">نسيت كلمة المرور؟</a></div>
+    <div class="auth-footer">
+      <% if (settings && settings.whatsapp) { %>
+        <a href="https://wa.me/<%= String(settings.whatsapp).replace(/\D+/g, '') %>?text=<%= encodeURIComponent('السلام عليكم، أرجو إعادة تعيين كلمة السر لحسابي في النظام.') %>" class="phone-link wa-reset" target="_blank" rel="noopener"><i class="fab fa-whatsapp" style="color:#22c55e"></i> أرسل طلب لإعادة تعيين كلمة السر</a>
+      <% } %>
+    </div>
     <% if (settings && settings.phone) { %>
       <div class="auth-footer">
         <a href="tel:<%= String(settings.phone).replace(/\s+/g, '') %>" class="phone-link"><i class="fas fa-phone"></i> اتصل: <span dir="ltr"><%= settings.phone %></span></a>
-        <% if (settings.whatsapp) { %>
-          <a href="https://wa.me/<%= String(settings.whatsapp).replace(/\D+/g, '') %>" class="phone-link" target="_blank" rel="noopener"><i class="fab fa-whatsapp" style="color:#22c55e"></i> واتساب</a>
-        <% } %>
+        <a href="https://wa.me/<%= String(settings.whatsapp).replace(/\D+/g, '') %>" class="phone-link" target="_blank" rel="noopener"><i class="fab fa-whatsapp" style="color:#22c55e"></i> واتساب</a>
       </div>
     <% } %>
   </div>

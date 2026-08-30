@@ -664,6 +664,9 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
 .auth-footer .phone-link { display: inline-flex; align-items: center; gap: 7px; margin: 0 6px; padding: 8px 14px; background: var(--bg-soft); border: 1px solid var(--card-border); border-radius: 10px; font-weight: 600; }
 .auth-footer .phone-link:hover { border-color: var(--primary); color: var(--primary); }
 .auth-footer .phone-link i { color: var(--primary); }
+.auth-footer .wa-reset { background: #f0fdf4; border: 1px solid #22c55e; color: #15803d; margin-top: 6px; }
+.auth-footer .wa-reset:hover { border-color: #16a34a; color: #15803d; }
+.auth-footer .wa-reset i { color: #22c55e; }
 .demo-box {
   margin-top: 18px;
   background: var(--bg-soft);

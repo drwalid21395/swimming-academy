@@ -111,7 +111,7 @@ app.use(async function (req, res, next) {
 
 /* منع الوصول للوحة بدون تسجيل دخول */
 app.use(function (req, res, next) {
-  const publicPaths = ['/login', '/forgot-password', '/site', '/api/site'];
+  const publicPaths = ['/login', '/site', '/api/site'];
   if (publicPaths.some(p => req.path.startsWith(p))) return next();
   if (!req.currentUser) {
     if (req.path.startsWith('/api/')) return res.status(401).json({ ok: false, error: 'غير مصرح' });
