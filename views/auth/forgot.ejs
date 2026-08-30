@@ -12,7 +12,7 @@
   <div class="auth-card">
     <div class="auth-logo"><i class="fas fa-key"></i></div>
     <div class="auth-title">استعادة كلمة المرور</div>
-    <div class="auth-sub">أدخل اسم المستخدم أو البريد الإلكتروني</div>
+    <div class="auth-sub">أدخل اسم المستخدم أو البريد الإلكتروني وسيُشعَر مدير النظام لتغيير كلمّة المرور</div>
     <% if (message) { %>
       <div class="toast <%= message.includes('تم') ? 'success' : 'error' %>" style="margin-bottom:14px"><i class="fas fa-circle-check text-success"></i><span><%= message %></span></div>
     <% } %>

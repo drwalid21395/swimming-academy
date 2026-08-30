@@ -3,6 +3,7 @@ const express = require('express');
 const { db } = require('../lib/db');
 const { hashPassword, verifyPassword, audit, money, fmtDate, calcAge } = require('../lib/helpers');
 const { setAuth, clearAuth, setFlash } = require('../lib/auth-cookie');
+const { sendAdminMail, notifyEmail } = require('../lib/mailer');
 const router = express.Router();
 
 /* ---------- تسجيل الدخول ---------- */
@@ -33,14 +34,34 @@ router.get('/logout', function (req, res) {
   res.redirect('/login');
 });
 
-/* ---------- نسيان كلمة المرور (محاكاة إرسال) ---------- */
-router.get('/forgot-password', function (req, res) {
+/* ---------- نسيان كلمة المرور: يُشعِر المدير فقط ولا يغيّر كلمة المرور ---------- */
+router.get('/forgot-password', async function (req, res) {
   res.render('auth/forgot', { message: '', layout: false, user: null, siteName: res.locals.siteName });
 });
-router.post('/forgot-password', function (req, res) {
-  const { username } = req.body;
-  const user = db.prepare('SELECT * FROM users WHERE username = ? OR email = ?').get(username || '', username || '');
-  res.render('auth/forgot', { message: user ? 'تم إرسال رابط استعادة كلمة المرور إلى حسابك. (في الوضع التجريبي تُعاد التعيين إلى 123456)' : 'لم يتم العثور على حساب بهذه البيانات.', layout: false, user: null, siteName: res.locals.siteName });
+router.post('/forgot-password', async function (req, res) {
+  const val = String(req.body.username || '').trim();
+  const user = await db.prepare('SELECT * FROM users WHERE username = ? OR email = ?').get(val, val);
+  const noted = await notifyEmail();
+  const entry = await db.prepare(`INSERT INTO password_reset_requests (username, full_name, note, status, notified_email, ip)
+      VALUES (?,?,?,?,?,?)`)
+    .run(val, user ? user.full_name : '', user ? '' : 'اسم المستخدم غير موجود', 'pending', noted, req.ip || '');
+  let mail = { ok: false, mode: 'log', error: '' };
+  if (user) {
+    const text =
+      'طلب تغيير كلمة المرور\n---------------------\n' +
+      'المستخدم: ' + user.username + '\n' +
+      'الاسم الكامل: ' + user.full_name + '\n' +
+      (user.email ? 'البريد: ' + user.email + '\n' : '') +
+      'التوقيت: ' + new Date().toLocaleString('ar-EG') + '\n\n' +
+      'هذا المستخدم يطلب تغيير كلمة المرور الخاصة به. يرجى تعديلها يدوياً من صفحة المستخدمين' +
+      ' (الرابط: /users). التغيير يتم منك أنت فقط ولا يُغيَّر تلقائياً.';
+    mail = await sendAdminMail({ subject: 'طلب تغيير كلمة مرور: ' + user.username, text });
+  }
+  audit(user ? user.id : null, user ? user.full_name : 'مجهول', 'request', 'password', entry.lastInsertRowid, 'طلب تغيير كلمة المرور' + (user ? ' من ' + user.username : ' (اسم غير موجود): ' + val), req);
+  const msg = user
+    ? (mail.ok ? 'تم إرسال طلبك إلى مدير النظام. سيتم التواصل معك بشأن كلمة المرور الجديدة خلال فترة قصيرة.' : 'تم تسجيل طلبك وسيتم التواصل معك بشأن كلمة المرور. (تعذّر إرسال البريد الآن لكن الطلب مسجّل لدينا)')
+    : 'لم يتم العثور على حساب بهذه البيانات.';
+  res.render('auth/forgot', { message: msg, layout: false, user: null, siteName: res.locals.siteName });
 });
 
 /* ---------- الحساب الشخصي ---------- */

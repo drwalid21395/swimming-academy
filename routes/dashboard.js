@@ -1,7 +1,7 @@
 /** لوحة التحكم + بوابة ولي الأمر والسباح */
 const express = require('express');
 const { db } = require('../lib/db');
-const { money, fmtDate, dayAr, calcAge, pct, daysAhead, daysAgo, today } = require('../lib/helpers');
+const { money, fmtDate, fmtDateTime, dayAr, calcAge, pct, daysAhead, daysAgo, today } = require('../lib/helpers');
 const { maybeSendExpiryReminders } = require('../lib/whatsapp');
 const router = express.Router();
 
@@ -88,6 +88,10 @@ router.get('/', async function (req, res) {
   const overdue = await db.prepare(`SELECT s.full_name, sub.remaining, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE sub.status = 'نشط' AND sub.remaining > 0`).all();
   overdue.forEach(function (x) {
     alerts.push({ type: 'danger', icon: 'fa-money-bill-wave', title: 'مبلغ مستحق: ' + x.full_name, sub: 'باقي ' + money(x.remaining), link: '/subscriptions/' + x.id });
+  });
+  const pwReqs = await db.prepare("SELECT id, username, full_name, created_at FROM password_reset_requests WHERE status = 'pending' ORDER BY id DESC LIMIT 5").all();
+  pwReqs.forEach(function (x) {
+    alerts.push({ type: 'info', icon: 'fa-key', title: 'طلب تغيير كلمة مرور: ' + (x.username || '—'), sub: (x.full_name || 'مجهول') + ' — ' + fmtDateTime(x.created_at) + ' (يُغيّر منك أنت فقط)', link: '/password-requests' });
   });
   const missingDocs = await db.prepare(`SELECT s.full_name, s.id FROM swimmers s WHERE NOT EXISTS (SELECT 1 FROM documents d WHERE d.owner_type='swimmer' AND d.owner_id=s.id AND d.doc_type='إقرار صحي') AND s.status = 'نشط' LIMIT 4`).all();
   missingDocs.forEach(function (x) {

@@ -58,6 +58,9 @@ router.get('/users', async function (req, res) {
       { name: 'user_type', label: 'النوع', options: [{ value: 'staff', label: 'موظف' }, { value: 'coach', label: 'مدرب' }, { value: 'guardian', label: 'ولي أمر' }, { value: 'swimmer', label: 'سباح' }] }
     ],
     canAdd: canAdd(req.currentUser, 'users'), addUrl: canAdd(req.currentUser, 'users') ? '/users/new' : null, addLabel: 'مستخدم جديد',
+    headerActions: [
+      { label: 'طلبات كلمة المرور', icon: 'fa-key', href: '/password-requests' }
+    ],
     actions: () => row => [
       { label: 'تعديل', icon: 'fa-pen', href: '/users/' + row.id + '/edit' },
       { label: 'الصلاحيات', icon: 'fa-user-shield', href: '/users/' + row.id + '/permissions' },
@@ -129,6 +132,40 @@ router.post('/users/:id/reset', async function (req, res) {
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'users', Number(req.params.id), 'إعادة تعيين كلمة المرور', req);
   setFlash(res, { type: 'success', message: 'تم إعادة تعيين كلمة المرور إلى 123456' });
   res.redirect('/users');
+});
+
+/* ============ طلبات تغيير كلمة المرور (الإشعار يصل للمدير فقط) ============ */
+router.get('/password-requests', async function (req, res) {
+  if (!canView(req.currentUser, 'users')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const rows = await db.prepare('SELECT * FROM password_reset_requests ORDER BY id DESC LIMIT 300').all();
+  const page = {
+    title: 'طلبات تغيير كلمة المرور', subtitle: 'وصلت عبر «نسيت كلمة المرور» — تغيير كلمة المرور يتم منك أنت فقط', icon: 'fa-key', module: 'users', active: 'users',
+    columns: [
+      { key: 'username', label: 'اسم المستخدم', html: row => `<b>${row.username || '—'}</b>` },
+      { key: 'full_name', label: 'الاسم' },
+      { key: 'note', label: 'ملاحظات', html: row => `<span class="text-soft font-11">${row.note || ''}</span>` },
+      { key: 'notified_email', label: 'بريد الإشعار', html: row => `<span dir="ltr" class="font-11">${row.notified_email || '—'}</span>` },
+      { key: 'ip', label: 'الآيبي', html: row => `<span dir="ltr" class="font-11">${row.ip || '—'}</span>` },
+      { key: 'status', label: 'الحالة', html: row => `<span class="badge ${row.status === 'pending' ? 'badge-warning' : row.status === 'rejected' ? 'badge-danger' : 'badge-success'}">${row.status === 'pending' ? 'معلق' : row.status === 'rejected' ? 'مرفوض' : 'تمت المعالجة'}</span>` },
+      { key: 'created_at', label: 'التوقيت', html: row => fmtDateTime(row.created_at) }
+    ],
+    rows,
+    filters: [
+      { name: 'status', label: 'الحالة', options: [{ value: 'pending', label: 'معلق' }, { value: 'done', label: 'تمت المعالجة' }, { value: 'rejected', label: 'مرفوض' }] }
+    ],
+    actions: () => row => row.status === 'pending' ? [
+      { label: 'تغيير كلمة المرور', icon: 'fa-user-shield', href: '/users' },
+      { label: 'تمت المعالجة', icon: 'fa-check', href: '/password-requests/' + row.id + '/done', confirm: 'تحديد هذا الطلب كمُعالَج؟' }
+    ] : []
+  };
+  res.render('list', { page });
+});
+router.post('/password-requests/:id/done', async function (req, res) {
+  if (!canEdit(req.currentUser, 'users')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  await db.prepare("UPDATE password_reset_requests SET status='done' WHERE id=?").run(Number(req.params.id));
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'password', Number(req.params.id), 'معالجة طلب تغيير كلمة المرور', req);
+  setFlash(res, { type: 'success', message: 'تم تحديث حالة الطلب' });
+  res.redirect('/password-requests');
 });
 
 /* ============ الصلاحيات الدقيقة لكل مستخدم ============ */
@@ -219,7 +256,8 @@ const SETTING_DEFS = [
   { key: 'whatsapp_country_code', label: 'مفتاح دولة الواتساب (مثال: 20 لمصر)', type: 'text', section: 'إعدادات الواتساب' },
   { key: 'whatsapp_api_token', label: 'رمز API للواتساب (WhatsApp Cloud API)', type: 'text', section: 'إعدادات الواتساب' },
   { key: 'whatsapp_phone_id', label: 'معرّف رقم الهاتف (Phone Number ID)', type: 'text', section: 'إعدادات الواتساب' },
-  { key: 'whatsapp_auto_send', label: 'الإرسال التلقائي عند انتهاء الاشتراك (1 = مفعل / 0 = معطل)', type: 'text', section: 'إعدادات الواتساب' }
+  { key: 'whatsapp_auto_send', label: 'الإرسال التلقائي عند انتهاء الاشتراك (1 = مفعل / 0 = معطل)', type: 'text', section: 'إعدادات الواتساب' },
+  { key: 'notify_email', label: 'بريد إشعارات المدير (طلبات تغيير كلمة المرور)', type: 'email', section: 'إشعارات' }
 ];
 router.get('/settings', async function (req, res) {
   if (!canView(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });

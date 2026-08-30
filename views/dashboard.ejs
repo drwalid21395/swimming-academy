@@ -98,7 +98,7 @@
     <div class="card-body">
       <% if (alerts.length) { %>
         <div class="alerts-list">
-          <% alerts.slice(0, 6).forEach(function (a) { %>
+          <% alerts.slice(0, 10).forEach(function (a) { %>
             <a href="<%= a.link %>" class="alert-item <%= a.type === 'danger' ? 'alert-danger' : a.type === 'warn' ? '' : 'alert-info' %>" style="color:inherit">
               <i class="fas <%= a.icon %> <%= a.type === 'danger' ? 'text-danger' : a.type === 'warn' ? 'text-warning' : 'text-primary' %>"></i>
               <div>
