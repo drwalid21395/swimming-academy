@@ -145,6 +145,9 @@ router.get('/password-requests', async function (req, res) {
       { key: 'full_name', label: 'الاسم' },
       { key: 'note', label: 'ملاحظات', html: row => `<span class="text-soft font-11">${row.note || ''}</span>` },
       { key: 'notified_email', label: 'بريد الإشعار', html: row => `<span dir="ltr" class="font-11">${row.notified_email || '—'}</span>` },
+      { key: 'email_status', label: 'البريد', html: row => row.email_status === 'sent' ? `<span class="badge badge-success">أُرسل</span>` : row.email_status === 'failed' ? `<span class="badge badge-danger">فشل</span>` : '—' },
+      { key: 'wa_status', label: 'واتساب', html: row => row.wa_status === 'api' ? `<span class="badge badge-success">أُرسل</span>` : row.wa_status === 'link' ? `<span class="badge badge-warning">رابط</span>` : row.wa_status === 'none' || row.wa_status === 'failed' ? `<span class="badge badge-danger">فشل</span>` : '—' },
+      { key: 'error', label: 'تفاصيل', html: row => `<span class="text-soft font-11">${row.error || ''}</span>` },
       { key: 'ip', label: 'الآيبي', html: row => `<span dir="ltr" class="font-11">${row.ip || '—'}</span>` },
       { key: 'status', label: 'الحالة', html: row => `<span class="badge ${row.status === 'pending' ? 'badge-warning' : row.status === 'rejected' ? 'badge-danger' : 'badge-success'}">${row.status === 'pending' ? 'معلق' : row.status === 'rejected' ? 'مرفوض' : 'تمت المعالجة'}</span>` },
       { key: 'created_at', label: 'التوقيت', html: row => fmtDateTime(row.created_at) }

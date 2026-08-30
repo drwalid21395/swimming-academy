@@ -43,9 +43,6 @@ router.post('/forgot-password', async function (req, res) {
   const val = String(req.body.username || '').trim();
   const user = await db.prepare('SELECT * FROM users WHERE username = ? OR email = ?').get(val, val);
   const noted = await notifyEmail();
-  const entry = await db.prepare(`INSERT INTO password_reset_requests (username, full_name, note, status, notified_email, ip)
-      VALUES (?,?,?,?,?,?)`)
-    .run(val, user ? user.full_name : '', user ? '' : 'اسم المستخدم غير موجود', 'pending', noted, req.ip || '');
   let mail = { ok: false, mode: 'log', error: '' };
   let wa = { ok: false, mode: 'none', error: '' };
   if (user) {
@@ -59,6 +56,11 @@ router.post('/forgot-password', async function (req, res) {
     mail = await sendAdminMail({ subject: 'طلب تغيير كلمة مرور: ' + user.username, text });
     wa = await notifyAdmin({ text: text.replace(/\n/g, '\n') });
   }
+  const emailStatus = user ? (mail.ok ? 'sent' : 'failed') : '';
+  const waStatus = user ? (wa.mode === 'api' ? 'api' : wa.mode === 'link' ? 'link' : wa.mode === 'none' ? 'none' : 'failed') : '';
+  const entry = await db.prepare(`INSERT INTO password_reset_requests (username, full_name, note, status, notified_email, email_status, wa_status, error, ip)
+      VALUES (?,?,?,?,?,?,?,?,?)`)
+    .run(val, user ? user.full_name : '', user ? '' : 'اسم المستخدم غير موجود', 'pending', noted, emailStatus, waStatus, mail.error || wa.error || '', req.ip || '');
   audit(user ? user.id : null, user ? user.full_name : 'مجهول', 'request', 'password', entry.lastInsertRowid, 'طلب تغيير كلمة المرور' + (user ? ' من ' + user.username : ' (اسم غير موجود): ' + val), req);
   const msg = user
     ? 'تم تسجيل طلبك وإرساله لمدير النظام. سيتم التواصل معك بشأن كلمة المرور الجديدة خلال فترة قصيرة.'
