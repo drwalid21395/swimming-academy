@@ -61,7 +61,7 @@ router.post('/forgot-password', async function (req, res) {
   }
   audit(user ? user.id : null, user ? user.full_name : 'مجهول', 'request', 'password', entry.lastInsertRowid, 'طلب تغيير كلمة المرور' + (user ? ' من ' + user.username : ' (اسم غير موجود): ' + val), req);
   const msg = user
-    ? (mail.ok ? 'تم إرسال طلبك إلى مدير النظام. سيتم التواصل معك بشأن كلمة المرور الجديدة خلال فترة قصيرة.' : 'تم تسجيل طلبك وسيتم التواصل معك بشأن كلمة المرور. (تعذّر إرسال البريد الآن لكن الطلب مسجّل لدينا)')
+    ? 'تم تسجيل طلبك وإرساله لمدير النظام. سيتم التواصل معك بشأن كلمة المرور الجديدة خلال فترة قصيرة.'
     : 'لم يتم العثور على حساب بهذه البيانات.';
   res.render('auth/forgot', { message: msg, layout: false, user: null, siteName: res.locals.siteName });
 });
