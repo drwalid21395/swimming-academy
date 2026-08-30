@@ -20,7 +20,7 @@
       <% if (!canEdit) { %>
         <p class="text-muted">ليست لديك صلاحية تعديل الصلاحيات.</p>
       <% } else { %>
-        <form method="POST" action="/roles/<%= role.id %>/permissions" novalidate>
+        <form method="POST" action="/roles/<%= role.id %>/permissions" class="role-perm-form" data-role="<%= role.id %>" novalidate>
           <div class="table-wrap">
             <table class="data-table perms-table">
               <thead>
@@ -52,8 +52,9 @@
               </tbody>
             </table>
           </div>
-          <div class="form-actions">
+          <div class="form-actions" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> حفظ صلاحيات <%= role.name %></button>
+            <span class="role-save-status font-12" style="display:none"></span>
           </div>
         </form>
       <% } %>
@@ -71,6 +72,36 @@ document.querySelectorAll('.perm-all-col').forEach(function (chk) {
 document.querySelectorAll('.group-row').forEach(function (r) {
   r.style.background = 'var(--bg-soft)';
   r.style.fontWeight = '700';
+});
+
+/* حفظ الصلاحيات عبر AJAX: سريع بلا إعادة تحميل الصفحة كاملة */
+document.querySelectorAll('.role-perm-form').forEach(function (form) {
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = form.querySelector('button[type=submit]');
+    var status = form.querySelector('.role-save-status');
+    var original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جارٍ الحفظ...';
+    status.style.display = 'inline';
+    status.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> جارٍ الحفظ...';
+    fetch(form.getAttribute('action'), {
+      method: 'POST',
+      body: new FormData(form),
+      headers: { 'Accept': 'application/json' }
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      status.style.color = '#22c55e';
+      status.innerHTML = '<i class="fas fa-check-circle"></i> تم الحفظ بنجاح';
+    }).catch(function (err) {
+      status.style.color = '#ef4444';
+      status.innerHTML = '<i class="fas fa-triangle-exclamation"></i> فشل الحفظ — حاول مجدداً';
+    }).finally(function () {
+      btn.disabled = false;
+      btn.innerHTML = original;
+      setTimeout(function () { status.style.display = 'none'; }, 3000);
+    });
+  });
 });
 </script>
 <%- include('partials/layout_bottom') %>
