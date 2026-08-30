@@ -166,8 +166,18 @@ router.post('/users/:id/delete', async function (req, res) {
   if (!canDel(req.currentUser, 'users')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
   if (id === req.currentUser.id) { setFlash(res, { type: 'error', message: 'لا يمكنك حذف حسابك الحالي' }); return res.redirect('/users'); }
-  await db.prepare('DELETE FROM users WHERE id=?').run(id);
-  audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'users', id, 'حذف مستخدم', req);
+  try {
+    /* إزالة/فك الروابط التي تشير لهذا المستخدم حتى لا يفشل الحذف بسبب قيد المفاتيح الأجنبية */
+    await db.prepare('UPDATE staff SET user_id = NULL WHERE user_id = ?').run(id);
+    await db.prepare('DELETE FROM notification_recipients WHERE user_id = ?').run(id);
+    await db.prepare('UPDATE messages SET from_user_id = NULL, to_user_id = NULL WHERE from_user_id = ? OR to_user_id = ?').run(id, id);
+    await db.prepare('DELETE FROM users WHERE id=?').run(id);
+    audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'users', id, 'حذف مستخدم', req);
+    setFlash(res, { type: 'success', message: 'تم حذف المستخدم' });
+  } catch (e) {
+    console.error('فشل حذف مستخدم ' + id + ':', e.message);
+    setFlash(res, { type: 'error', message: 'تعذّر حذف المستخدم بسبب ارتباطه ببيانات أخرى: ' + e.message });
+  }
   res.redirect('/users');
 });
 
