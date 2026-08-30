@@ -4,6 +4,7 @@ const { db } = require('../lib/db');
 const { hashPassword, verifyPassword, audit, money, fmtDate, calcAge } = require('../lib/helpers');
 const { setAuth, clearAuth, setFlash } = require('../lib/auth-cookie');
 const { sendAdminMail, notifyEmail } = require('../lib/mailer');
+const { notifyAdmin } = require('../lib/whatsapp');
 const router = express.Router();
 
 /* ---------- تسجيل الدخول ---------- */
@@ -46,6 +47,7 @@ router.post('/forgot-password', async function (req, res) {
       VALUES (?,?,?,?,?,?)`)
     .run(val, user ? user.full_name : '', user ? '' : 'اسم المستخدم غير موجود', 'pending', noted, req.ip || '');
   let mail = { ok: false, mode: 'log', error: '' };
+  let wa = { ok: false, mode: 'none', error: '' };
   if (user) {
     const text =
       'طلب تغيير كلمة المرور\n---------------------\n' +
@@ -53,9 +55,9 @@ router.post('/forgot-password', async function (req, res) {
       'الاسم الكامل: ' + user.full_name + '\n' +
       (user.email ? 'البريد: ' + user.email + '\n' : '') +
       'التوقيت: ' + new Date().toLocaleString('ar-EG') + '\n\n' +
-      'هذا المستخدم يطلب تغيير كلمة المرور الخاصة به. يرجى تعديلها يدوياً من صفحة المستخدمين' +
-      ' (الرابط: /users). التغيير يتم منك أنت فقط ولا يُغيَّر تلقائياً.';
+      'يطلب المستخدم تغيير كلمة المرور. عيّنها يدوياً من صفحة المستخدمين (الرابط: /users) — التغيير منك أنت فقط ولا يتغير تلقائياً.';
     mail = await sendAdminMail({ subject: 'طلب تغيير كلمة مرور: ' + user.username, text });
+    wa = await notifyAdmin({ text: text.replace(/\n/g, '\n') });
   }
   audit(user ? user.id : null, user ? user.full_name : 'مجهول', 'request', 'password', entry.lastInsertRowid, 'طلب تغيير كلمة المرور' + (user ? ' من ' + user.username : ' (اسم غير موجود): ' + val), req);
   const msg = user
