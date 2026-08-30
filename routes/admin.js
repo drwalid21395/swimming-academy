@@ -260,7 +260,9 @@ const SETTING_DEFS = [
   { key: 'whatsapp_api_token', label: 'رمز API للواتساب (WhatsApp Cloud API)', type: 'text', section: 'إعدادات الواتساب' },
   { key: 'whatsapp_phone_id', label: 'معرّف رقم الهاتف (Phone Number ID)', type: 'text', section: 'إعدادات الواتساب' },
   { key: 'whatsapp_auto_send', label: 'الإرسال التلقائي عند انتهاء الاشتراك (1 = مفعل / 0 = معطل)', type: 'text', section: 'إعدادات الواتساب' },
-  { key: 'notify_email', label: 'بريد إشعارات المدير (طلبات تغيير كلمة المرور)', type: 'email', section: 'إشعارات' }
+  { key: 'notify_email', label: 'بريد إشعارات المدير (طلبات تغيير كلمة المرور)', type: 'email', section: 'إشعارات' },
+  { key: 'resend_api_key', label: 'رمز Resend API (لإرسال بريد من Vercel) — من resend.com', type: 'password', section: 'إشعارات' },
+  { key: 'resend_from', label: 'عنوان المُرسل Resend (مثال: admin@your-domain.com، ويفضّل تفعيل Domain هناك)', type: 'email', section: 'إشعارات' }
 ];
 router.get('/settings', async function (req, res) {
   if (!canView(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
