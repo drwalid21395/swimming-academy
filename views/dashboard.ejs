@@ -6,7 +6,7 @@
     <div class="page-sub">مرحباً <%= user.full_name %>، إليك ملخص نشاط الأكاديمية <b><%= fmtDate(today) %></b></div>
   </div>
   <div class="spacer"></div>
-  <a href="/site" target="_blank" class="btn btn-outline"><i class="fas fa-globe"></i> الموقع التعريفي</a>
+  <a href="<%= (typeof academy !== 'undefined' && academy && academy.code && academy.code !== 'primary') ? '/site/' + academy.code : '/site' %>" class="btn btn-outline"><i class="fas fa-globe"></i> الموقع التعريفي</a>
 </div>
 
 <!-- ===== البطاقات الإحصائية ===== -->

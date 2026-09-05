@@ -1,0 +1,45 @@
+<%- include('../partials/layout_top', { title: title, active: active, pageCss: ['/css/platform.css'] }) %>
+<div class="platform">
+  <div class="pf-hero">
+    <div>
+      <div class="pf-hero-eyebrow"><i class="fas fa-gear"></i> الإعدادات</div>
+      <div class="pf-hero-title">إعدادات المنصة</div>
+      <div class="pf-hero-sub">الضبط العام وبيانات الدفع الافتراضية</div>
+    </div>
+  </div>
+
+  <div class="pf-card">
+    <div class="pf-card-body">
+      <form method="POST" action="/platform/settings">
+        <div class="pf-sec-title"><i class="fas fa-sliders"></i> الإعدادات العامة</div>
+        <div class="pf-form-grid" style="margin-top:14px">
+          <div class="pf-field"><label>اسم المنصة</label><input class="pf-input" name="platform_name" value="<%= (sett.platform_name || 'منصة الأكاديميات').replace(/"/g, '&quot;') %>"></div>
+          <div class="pf-field"><label>أيام السماح الافتراضية (Grace)</label><input class="pf-input" name="grace_days" type="number" value="<%= sett.platform_grace_days || 7 %>" min="0"></div>
+          <div class="pf-field"><label>مدة التجديد التلقائي (شهور)</label><input class="pf-input" name="auto_renew_months" type="number" value="<%= sett.platform_auto_renew_months || 1 %>" min="1"></div>
+        </div>
+
+        <div class="pf-sec-title"><i class="fas fa-credit-card"></i> بيانات الدفع الافتراضية</div>
+        <div class="pf-form-grid" style="margin-top:14px">
+          <div class="pf-field"><label>رقم فودافون كاش</label><input class="pf-input" name="vodafone_cash" dir="ltr" value="<%= sett.platform_vodafone_cash || '' %>" style="text-align:left"></div>
+          <div class="pf-field" style="grid-column:1/-1"><label>تعليمات الدفع</label><textarea class="pf-input" name="payment_instructions" rows="3"><%= sett.platform_payment_instructions || '' %></textarea></div>
+        </div>
+
+        <div class="pf-sec-title"><i class="fab fa-whatsapp"></i> بيانات واتساب الرسمية (WhatsApp Cloud API)</div>
+        <div class="pf-sec-hint">هذه البيانات يضبطها مدير المنصة فقط، ولا تظهر لأكاديميات.</div>
+        <div class="pf-form-grid" style="margin-top:14px">
+          <div class="pf-field"><label>رمز API (Access Token)</label><input class="pf-input" name="whatsapp_api_token" dir="ltr" value="<%= (sett.whatsapp_api_token || '').replace(/"/g, '&quot;') %>" style="text-align:left" placeholder="EAAG..."></div>
+          <div class="pf-field"><label>معرّف رقم الهاتف (Phone Number ID)</label><input class="pf-input" name="whatsapp_phone_id" dir="ltr" value="<%= (sett.whatsapp_phone_id || '').replace(/"/g, '&quot;') %>" style="text-align:left"></div>
+          <div class="pf-field"><label>الإرسال التلقائي عند انتهاء الاشتراك</label>
+            <select class="pf-input" name="whatsapp_auto_send" style="height:46px">
+              <option value="1" <%= String(sett.whatsapp_auto_send) === '1' ? 'selected' : '' %>>مفعل</option>
+              <option value="0" <%= String(sett.whatsapp_auto_send || '0') === '0' ? 'selected' : '' %>>معطل</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="pf-form-actions"><button class="pf-btn primary lg" type="submit"><i class="fas fa-save"></i> حفظ الإعدادات</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+<%- include('../partials/layout_bottom') %>

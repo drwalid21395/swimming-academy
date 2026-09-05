@@ -1,0 +1,66 @@
+<%- include('../partials/layout_top', { title: title, active: active, pageCss: ['/css/platform.css'] }) %>
+<div class="platform">
+  <div class="pf-hero">
+    <div>
+      <div class="pf-hero-eyebrow"><i class="fas fa-building"></i> الأكاديميات</div>
+      <div class="pf-hero-title">إدارة الأكاديميات</div>
+      <div class="pf-hero-sub"><%= academies.length %> أكاديمية مسجّلة على المنصة</div>
+    </div>
+    <div class="pf-hero-actions">
+      <a href="/platform/academies/new" class="btn-hero"><i class="fas fa-plus"></i> إضافة أكاديمية</a>
+    </div>
+  </div>
+
+  <div class="pf-card">
+    <div class="pf-card-head">
+      <h3><i class="fas fa-list-ul"></i> قائمة الأكاديميات</h3>
+      <span class="pf-badge pf-badge-blue"><%= academies.length %> سجل</span>
+    </div>
+    <div class="pf-card-body flat">
+      <div class="pf-table">
+        <table>
+          <thead><tr>
+            <th>الأكاديمية</th><th>الخطة</th><th>اللاعبون</th><th>المستخدمون</th><th>الحالة</th><th></th>
+          </tr></thead>
+          <tbody>
+            <% academies.forEach(function (a) { %>
+              <tr>
+                <td>
+                  <form method="POST" action="/platform/academies/<%= a.id %>/logo" enctype="multipart/form-data" class="ac-logo-form">
+                    <div class="pf-entity">
+                      <span class="av-upload" title="اضغط لتغيير صورة الأكاديمية" onclick="if(event.target.tagName!=='INPUT'){var i=this.querySelector('input[type=file]');if(i)i.click();}">
+                        <span class="pf-entity-av" style="background:linear-gradient(135deg,#0ea5e9,#0369a1)"><% if (a.logo) { %><img src="<%= a.logo %>" alt=""><% } else { %><i class="fas fa-building"></i><% } %></span>
+                        <span class="av-edit"><i class="fas fa-camera"></i> تغيير</span>
+                        <input type="file" name="logo" accept="image/*" onchange="this.form.submit()">
+                      </span>
+                      <div><div class="pf-entity-t"><%= a.name %></div><div class="pf-entity-s">@<%= a.username || '—' %> · <%= a.owner_name || '—' %></div></div>
+                    </div>
+                  </form>
+                </td>
+                <td><span class="pf-badge pf-badge-violet"><%= a.plan_name || '—' %></span></td>
+                <td><b><%= a.studentCount %></b></td>
+                <td><%= a.userCount %></td>
+                <td>
+                  <% if (+a.premium === 1) { %><span class="pf-badge pf-badge-brand"><i class="fas fa-crown"></i> الأساسية</span>
+                  <% } else if (a.status !== 'active') { %><span class="pf-badge pf-badge-red"><%= a.status === 'suspended' ? 'موقوف' : 'منتهي' %></span>
+                  <% } else { %><span class="pf-badge pf-badge-<%= a.subInfo.status === 'ACTIVE' ? 'green' : a.subInfo.status === 'EXPIRING_SOON' ? 'amber' : 'red' %>"><%= a.subInfo.label %></span><% } %>
+                </td>
+                <td><div class="pf-row-actions"><a href="/platform/academies/<%= a.id %>" class="pf-btn"><i class="fas fa-eye"></i> عرض</a><a href="/platform/academies/<%= a.id %>/edit" class="pf-btn"><i class="fas fa-pen"></i></a></div></td>
+              </tr>
+            <% }); %>
+            <% if (!academies.length) { %><tr><td colspan="6"><div class="pf-empty"><i class="fas fa-building"></i><p>لا توجد أكاديميات بعد</p></div></td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+  .ac-logo-form{display:inline-block;margin:0}
+  .av-upload{position:relative;cursor:pointer;display:inline-flex}
+  .av-upload input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2;border:none;background:transparent}
+  .av-upload .pf-entity-av{display:inline-flex;pointer-events:none}
+  .av-upload .av-edit{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.65);color:#fff;font-size:10px;padding:2px 6px;border-radius:8px;display:flex;align-items:center;gap:4px;opacity:0;transition:opacity .15s;pointer-events:none;white-space:nowrap;z-index:1}
+  .av-upload:hover .av-edit{opacity:1}
+</style>
+<%- include('../partials/layout_bottom') %>

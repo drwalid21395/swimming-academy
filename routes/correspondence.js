@@ -395,8 +395,8 @@ router.get('/complaints/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'complaints')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   res.render('form', { form: { title: 'شكوى جديدة', subtitle: 'تسجيل شكوى أو طلب', icon: 'fa-plus', active: 'complaints', action: '/complaints/new',
     fields: [
-      { key: 'guardian_id', label: 'ولي الأمر', type: 'select', options: (await db.prepare('SELECT * FROM guardians').all()).map(g => ({ value: g.id, label: g.full_name })) },
-      { key: 'swimmer_id', label: 'السباح', type: 'select', options: (await db.prepare('SELECT id, full_name FROM swimmers ORDER BY full_name').all()).map(s => ({ value: s.id, label: s.full_name })) },
+      { key: 'guardian_id', label: 'ولي الأمر', type: 'select', options: (await db.prepare('SELECT * FROM guardians WHERE deleted_at IS NULL').all()).map(g => ({ value: g.id, label: g.full_name })) },
+      { key: 'swimmer_id', label: 'السباح', type: 'select', options: (await db.prepare('SELECT id, full_name FROM swimmers WHERE deleted_at IS NULL ORDER BY full_name').all()).map(s => ({ value: s.id, label: s.full_name })) },
       { key: 'category', label: 'الفئة', type: 'select', options: ['عام', 'مالية', 'تدريب', 'إداري', 'أخرى'].map(v => ({ value: v, label: v })) },
       { key: 'title', label: 'العنوان', type: 'text', required: true },
       { key: 'description', label: 'الوصف', type: 'textarea', full: true }

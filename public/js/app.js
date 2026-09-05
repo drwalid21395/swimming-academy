@@ -42,6 +42,26 @@
           if (window.innerWidth <= 768) sidebar.classList.remove('open');
         });
       });
+      /* الحفاظ على موضع القائمة الجانبية (التمرير) أثناء التنقل بين الصفحات */
+      const SKEY = 'sw-sidebar-scroll';
+      var saveScroll = function () {
+        try { sessionStorage.setItem(SKEY, String(sidebar.scrollTop)); } catch (e) { }
+      };
+      var restoreScroll = function () {
+        try {
+          var v = parseInt(sessionStorage.getItem(SKEY) || '0', 10);
+          if (v > 0) sidebar.scrollTop = v;
+        } catch (e) { }
+      };
+      sidebar.addEventListener('scroll', function () {
+        clearTimeout(sidebar._st);
+        sidebar._st = setTimeout(saveScroll, 150);
+      }, { passive: true });
+      sidebar.addEventListener('click', function (ev) {
+        if (ev.target.closest('a')) saveScroll();
+      });
+      window.addEventListener('beforeunload', saveScroll);
+      restoreScroll();
     }
 
     /* ---------- قوائم منسدلة ---------- */

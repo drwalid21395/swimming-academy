@@ -6,16 +6,115 @@
   <title><%= title %> | <%= siteName %></title>
   <link rel="stylesheet" href="/vendor/fa-all.min.css">
   <link rel="stylesheet" href="/css/style.css?v=20">
+  <% if (typeof pageCss !== 'undefined' && pageCss) { pageCss.forEach(function (c) { %><link rel="stylesheet" href="<%= c %>?v=2"><% }); } %>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>">
+  <% 
+    /* الأولوية: لون الأكاديمية (من settings JSON) ثم لون المنصة ثم الافتراضي */
+    let _acadSettings = {};
+    if (typeof academy !== 'undefined' && academy && academy.settings) {
+      try { _acadSettings = JSON.parse(academy.settings); } catch (e) { _acadSettings = {}; }
+    }
+    const _platformColor = (typeof settings !== 'undefined' && settings && settings.platform_primary_color) ? settings.platform_primary_color : '';
+    const _pc = (_acadSettings && /^#[0-9a-fA-F]{6}$/.test(_acadSettings.primary_color || '')) ? _acadSettings.primary_color : _platformColor;
+    if (/^#[0-9a-fA-F]{6}$/.test(_pc)) {
+      /* أدوات ألوان موثوقة: مزج بأسود/أبيض + حساب الإضاءة + اختيار نص متباين تلقائياً */
+      const _clamp = (n) => Math.max(0, Math.min(255, Math.round(n)));
+      const _mix = (c, pct, target) => {
+        const t = parseInt(target.slice(1),16);
+        const tr = (t>>16)&255, tg=(t>>8)&255, tb=t&255;
+        const r = _clamp(_r*255*(1-pct) + tr*pct);
+        const g = _clamp(_g*255*(1-pct) + tg*pct);
+        const b = _clamp(_b*255*(1-pct) + tb*pct);
+        return '#' + [r,g,b].map(n=>n.toString(16).padStart(2,'0')).join('');
+      };
+      const _lumOf = (hex) => {
+        const h = hex.replace('#','');
+        const r = parseInt(h.slice(0,2),16)/255, g = parseInt(h.slice(2,4),16)/255, b = parseInt(h.slice(4,6),16)/255;
+        const f = (v)=> v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055, 2.4);
+        return 0.2126*f(r)+0.7152*f(g)+0.0722*f(b);
+      };
+      const _textOn = (bg) => _lumOf(bg) > 0.5 ? '#0f172a' : '#ffffff';
+      const _hex = _pc.replace('#','');
+      const _r = parseInt(_hex.slice(0,2),16)/255, _g = parseInt(_hex.slice(2,4),16)/255, _b = parseInt(_hex.slice(4,6),16)/255;
+      const _lum = _lumOf(_pc);
+      /* تدرجات متناسقة */
+      const _dark    = _mix(_pc, 0.55, '#0f172a');   // داكن غني (أسس الخلفيات)
+      const _dark2   = _mix(_pc, 0.75, '#0f172a');
+      const _soft    = _mix(_pc, 0.88, '#ffffff');   // خلفية فاتحة ناعمة
+      const _soft2   = _mix(_pc, 0.95, '#ffffff');
+      const _light   = _mix(_pc, 0.35, '#ffffff');   // أفتح للتفاصيل
+      const _onDark  = _lumOf(_dark) > 0.5 ? '#0f172a' : '#ffffff';
+      /* لون روابط/نص على خلفيات فاتحة: يضمن تبايناً كافياً دائماً */
+      const _onLight = _lum > 0.55 ? '#0f172a' : (_lum > 0.32 ? _mix(_pc, 0.62, '#000000') : _pc); // نص على الفاتح
+      const _onPrimary = _lum > 0.4 ? '#0f172a' : '#ffffff';
+  %>
+  <style>
+    :root {
+      --primary: <%= _pc %>;
+      --primary-dark: <%= _dark %>;
+      --primary-darker: <%= _dark2 %>;
+      --primary-light: <%= _light %>;
+      --primary-soft: <%= _soft %>;
+      --primary-soft-2: <%= _soft2 %>;
+      --pf-primary: <%= _pc %>;
+      --pf-primary-2: <%= _dark %>;
+      --pf-primary-soft: <%= _soft %>;
+      --sidebar-active: <%= _light %>;
+      --input-focus: <%= _light %>;
+      --sidebar-bg: <%= _dark %>;
+      --sidebar-bg-2: <%= _dark2 %>;
+      --primary-grad-dark: <%= _dark2 %>;
+      --primary-grad-mid: <%= _dark %>;
+      --primary-grad: <%= _pc %>;
+      --on-primary: <%= _onPrimary %>;
+      --on-dark: <%= _onDark %>;
+      --link-on-light: <%= _onLight %>;
+      --sidebar-text-mode: <%= _lumOf(_mix(_pc,0.5,'#0f172a')) > 0.45 ? 'dark' : 'light' %>;
+    }
+    /* أزرار بخلفية ملونة: نص متباين تلقائياً */
+    .btn-primary, .btn-primary:hover, .btn-primary:focus,
+    .badge-brand, .pf-badge-brand, .avatar-preview, .level-badge { color: var(--on-primary) !important; }
+    .btn-primary { background: <%= _pc %> !important; border-color: <%= _dark %> !important; box-shadow: 0 2px 10px <%= _dark %>66 !important; }
+    /* روابط ونصوص تستخدم اللون على خلفيات فاتحة: ضمان القراءة */
+    a, .badge-primary, .text-primary, .count-badge, .tab.active, .sortable,
+    .card-header h3 i, .page-title i, .site-card .sc-icon, .att-session-head .time,
+    .check-chip input:checked ~ .chip-label, .chip-check input:checked ~ .chip-label,
+    .demo-box b, .alert-info i, .table-actions .btn:hover { color: var(--link-on-light) !important; }
+    .pf-badge-primary, .badge-primary { background: var(--primary-soft) !important; }
+    /* القائمة الجانبية: نص يتكيف مع خلفيتها تلقائياً */
+    .sidebar { background: linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-bg-2) 100%) !important; }
+    .sidebar .sidebar-title { color: var(--on-dark) !important; }
+    <% if (_lumOf(_mix(_pc,0.5,'#0f172a')) <= 0.45) { %>
+    .sidebar .sidebar-sub, .sidebar .nav-item, .sidebar .sidebar-footer,
+    .sidebar .nav-section, .sidebar .nav-badge { color: var(--on-dark) !important; }
+    .sidebar .nav-item:hover { background: rgba(255,255,255,.10); }
+    <% } else { %>
+    .sidebar .sidebar-sub, .sidebar .nav-item, .sidebar .sidebar-footer,
+    .sidebar .nav-section { color: #334155 !important; }
+    .sidebar .nav-item:hover { background: rgba(15,23,42,.06); }
+    <% } %>
+    /* ترويسات التدرج: تبقى في الطرف الداكن ليظل النص أبيض واضحاً دائماً */
+    .platform .pf-hero { background: linear-gradient(120deg, var(--primary-grad-dark) 0%, var(--primary-grad-mid) 60%, var(--primary-grad-mid) 100%) !important; }
+    .platform .pf-cover-band { background: linear-gradient(120deg, var(--primary-grad-dark) 0%, var(--primary-grad-mid) 70%, var(--primary-grad) 100%) !important; }
+    .platform .pf-hero .pf-hero-title, .platform .pf-hero .pf-hero-eyebrow, .platform .pf-hero .pf-hero-sub { color: var(--on-dark) !important; }
+    .platform .btn-hero { color: var(--link-on-light) !important; }
+  </style>
+  <% } %>
 </head>
 <body>
 <div class="layout">
   <!-- ============ القائمة الجانبية ============ -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
-      <div class="sidebar-logo"><% if (siteLogo) { %><img src="<%= siteLogo %>" alt="logo" class="logo-img"><% } else { %><i class="fas fa-water"></i><% } %></div>
+      <% const acad = typeof academy !== 'undefined' && academy ? academy : null; %>
+      <form class="avatar-upload" method="POST" action="/settings/avatar" enctype="multipart/form-data" title="اضغط لتغيير صورة الأكاديمية">
+        <input type="hidden" name="back" class="avatar-back">
+        <span class="sidebar-logo"><% if (acad && acad.logo) { %><img src="<%= acad.logo %>" alt="logo" class="logo-img"><% } else if (siteLogo) { %><img src="<%= siteLogo %>" alt="logo" class="logo-img"><% } else { %><i class="fas fa-water"></i><% } %></span>
+        <% if (_permCanEdit(user, 'settings')) { %><span class="avatar-edit"><i class="fas fa-camera"></i></span><% } %>
+        <% if (_permCanEdit(user, 'settings')) { %><input type="file" name="logo" accept="image/*" onchange="this.form.elements['back'].value=location.pathname+location.search;this.form.submit()"><% } %>
+      </form>
       <div>
-        <div class="sidebar-title"><%= siteName %></div>
+        <div class="sidebar-title"><%= acad ? acad.name : siteName %></div>
         <div class="sidebar-sub">نظام الإدارة المتكامل</div>
       </div>
     </div>
@@ -35,6 +134,12 @@
         { sec: 'الجداول والحضور' },
         { url: '/sessions', label: 'الحصص والجداول', icon: 'fa-calendar-days', module: 'sessions' },
         { url: '/attendance', label: 'الحضور والغياب', icon: 'fa-clipboard-user', module: 'attendance' },
+        { sec: 'الحضور والمستحقات' },
+        { url: '/staff-hours', label: 'صفحة الحضور السريع', icon: 'fa-bolt', module: 'trainerAttendance' },
+        { url: '/trainer-attendance', label: 'حضور المدربين', icon: 'fa-user-check', module: 'trainerAttendance' },
+        { url: '/staff-attendance', label: 'حضور الموظفين', icon: 'fa-user-clock', module: 'staffAttendance' },
+        { url: '/deductions', label: 'الخصومات والإضافات', icon: 'fa-scale-balanced', module: 'payroll' },
+        { url: '/payroll', label: 'مستحقات ورواتب', icon: 'fa-sack-dollar', module: 'payroll' },
         { sec: 'الجوانب الفنية' },
         { url: '/assessments', label: 'التقييمات الفنية', icon: 'fa-clipboard-check', module: 'assessments' },
         { url: '/tests', label: 'الاختبارات', icon: 'fa-vial-circle-check', module: 'tests' },
@@ -61,19 +166,35 @@
         { url: '/settings', label: 'إعدادات النظام', icon: 'fa-gears', module: 'settings' },
         { url: '/settings/types', label: 'أنواع البرامج والاختبارات', icon: 'fa-layer-group', module: 'settings' },
         { url: '/settings/images', label: 'صور الواجهة الرئيسية', icon: 'fa-images', module: 'settings' },
+        { url: '/settings/news', label: 'الأخبار والأحداث', icon: 'fa-newspaper', module: 'settings' },
         { url: '/audit-log', label: 'سجل النشاط', icon: 'fa-clock-rotate-left', module: 'auditLog' }
       ]; %>
       <% let section = ''; %>
+      <% const curPath = (typeof currentPath !== 'undefined') ? currentPath : ''; %>
+      <% const activeMap = { trainerAttendance: '/trainer-attendance', staffAttendance: '/staff-attendance', payroll: '/payroll', coachPayments: '/coach-payments', dashboard: '/', swimmers: '/swimmers', guardians: '/guardians', coaches: '/coaches', staff: '/staff', programs: '/programs', levels: '/levels', groups: '/groups', sessions: '/sessions', attendance: '/attendance', assessments: '/assessments', tests: '/tests', teams: '/teams', competitions: '/competitions', subscriptions: '/subscriptions', payments: '/payments', revenues: '/revenues', expenses: '/expenses', incoming: '/incoming', outgoing: '/outgoing', documents: '/documents', notifications: '/notifications', complaints: '/complaints', reports: '/reports', branches: '/branches', pools: '/pools', schools: '/schools', users: '/users', settings: '/settings', auditLog: '/audit-log' }; %>
+      <% function isNavActive(url) { if (url === '/') return curPath === '/'; return curPath === url || curPath.indexOf(url + '/') === 0; } %>
+      <% let bestUrl = ''; nav.forEach(function (it) { if (it.url && isNavActive(it.url) && it.url.length > bestUrl.length) bestUrl = it.url; }); %>
+      <% const inNav = bestUrl !== ''; %>
+      <% const activeUrl = activeMap[active] || ''; %>
       <% nav.forEach(function (item) { %>
         <% if (item.sec) { section = item.sec; %>
           <div class="nav-section"><%= item.sec %></div>
         <% } else if (canView(user, item.module)) { %>
-          <a href="<%= item.url %>" class="nav-item <%= active === item.module ? 'active' : '' %>">
+          <a href="<%= item.url %>" class="nav-item <%= (inNav ? item.url === bestUrl : (activeUrl && item.url === activeUrl)) ? 'active' : '' %>">
             <i class="fas <%= item.icon %>"></i><span><%= item.label %></span>
             <% if (item.module === 'notifications' && typeof unreadCount !== 'undefined' && unreadCount > 0) { %><span class="nav-badge"><%= unreadCount %></span><% } %>
           </a>
         <% } %>
       <% }); %>
+      <% if (typeof isSuper !== 'undefined' && isSuper) { %>
+        <div class="nav-section">النظام الأساسي (Super Admin)</div>
+        <a href="/platform" class="nav-item <%= (typeof currentPath !== 'undefined' && (currentPath === '/platform' || currentPath === '/platform/')) ? 'active' : '' %>"><i class="fas fa-globe"></i><span>لوحة المنصة</span></a>
+        <a href="/platform/academies" class="nav-item <%= (typeof currentPath !== 'undefined' && currentPath.indexOf('/platform/academies') === 0) ? 'active' : '' %>"><i class="fas fa-building-shield"></i><span>الأكاديميات</span></a>
+        <a href="/platform/plans" class="nav-item <%= (typeof currentPath !== 'undefined' && currentPath.indexOf('/platform/plans') === 0) ? 'active' : '' %>"><i class="fas fa-box-open"></i><span>خطط الاشتراك</span></a>
+        <a href="/platform/payments" class="nav-item <%= (typeof currentPath !== 'undefined' && currentPath.indexOf('/platform/payments') === 0) ? 'active' : '' %>"><i class="fas fa-money-check-dollar"></i><span>طلبات الدفع</span></a>
+        <a href="/platform/settings" class="nav-item <%= (typeof currentPath !== 'undefined' && currentPath.indexOf('/platform/settings') === 0) ? 'active' : '' %>"><i class="fas fa-globe"></i><span>إعدادات المنصة</span></a>
+        <a href="/platform/audit-logs" class="nav-item <%= (typeof currentPath !== 'undefined' && currentPath.indexOf('/platform/audit-logs') === 0) ? 'active' : '' %>"><i class="fas fa-clock-rotate-left"></i><span>سجل نشاط المنصة</span></a>
+      <% } %>
     </nav>
     <div class="sidebar-footer">
       <i class="fas fa-database"></i> النسخة التجريبية 1.0
@@ -95,7 +216,8 @@
       </div>
       <div class="topbar-right">
         <% if (canView(user, 'site')) { %>
-          <a href="/site" target="_blank" class="icon-btn with-label" title="الموقع التعريفي"><i class="fas fa-globe"></i><span class="btn-text">الموقع</span></a>
+          <% var _siteBase = (typeof academy !== 'undefined' && academy && academy.code && academy.code !== 'primary') ? '/site/' + academy.code : '/site'; %>
+          <a href="<%= _siteBase %>" class="icon-btn with-label" title="الموقع التعريفي"><i class="fas fa-globe"></i><span class="btn-text">الموقع</span></a>
         <% } %>
         <button class="icon-btn with-label" data-print title="طباعة / PDF"><i class="fas fa-print"></i><span class="btn-text">طباعة</span></button>
         <button class="icon-btn with-label" id="themeToggle" title="الوضع الليلي/النهاري"><i class="fas fa-moon"></i><span class="btn-text">الوضع</span></button>
@@ -115,7 +237,7 @@
           <div class="dropdown-menu">
             <a href="/profile"><i class="fas fa-user"></i> حسابي</a>
             <a href="/notifications"><i class="fas fa-bell"></i> الإشعارات</a>
-            <% if (canView(user, 'site')) { %><a href="/site" target="_blank"><i class="fas fa-globe"></i> الموقع التعريفي</a><% } %>
+            <% if (canView(user, 'site')) { %><a href="<%= (typeof _siteBase !== 'undefined' && _siteBase) ? _siteBase : '/site' %>"><i class="fas fa-globe"></i> الموقع التعريفي</a><% } %>
             <a href="/logout" class="danger"><i class="fas fa-right-from-bracket"></i> تسجيل الخروج</a>
           </div>
         </div>

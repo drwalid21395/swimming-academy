@@ -12,7 +12,7 @@
   <div class="dash-grid">
     <div class="card">
       <div class="card-body">
-        <form method="POST" action="/site/contact" novalidate>
+        <form method="POST" action="<%= (data.base || '/site') %>/contact" novalidate>
           <div class="form-grid">
             <div class="form-group"><label>الاسم الكامل <span class="req">*</span></label><input type="text" name="name" class="form-control" required></div>
             <div class="form-group"><label>رقم الهاتف</label><input type="tel" name="phone" class="form-control"></div>

@@ -5,8 +5,12 @@
   <div class="dash-grid">
     <% coaches.forEach(function (c) { %>
       <div class="card" style="text-align:center">
-        <div class="card-body">
-          <div class="avatar-xl" style="margin:auto;background:linear-gradient(135deg,#0284c7,#06b6d4);color:#fff"><%= (c.full_name || 'ك').trim().charAt(0) %></div>
+          <div class="card-body">
+            <% if (c.avatar) { %>
+              <div class="avatar-xl" style="margin:auto;overflow:hidden;background:#e2e8f0"><img src="<%= c.avatar %>" alt="<%= c.full_name %>" style="width:100%;height:100%;object-fit:cover;display:block"></div>
+            <% } else { %>
+              <div class="avatar-xl" style="margin:auto;background:linear-gradient(135deg,var(--primary),var(--primary-light));color:#fff"><%= (c.full_name || 'ك').trim().charAt(0) %></div>
+            <% } %>
           <b style="display:block;margin-top:10px"><%= c.full_name %></b>
           <div class="badge badge-primary" style="margin-top:4px"><%= c.specialization || 'مدرب سباحة' %></div>
           <div class="font-12 text-muted" style="margin-top:6px"><%= c.qualification || '' %><% if (c.experience_years) { %> · خبرة <%= c.experience_years %> سنة<% } %></div>

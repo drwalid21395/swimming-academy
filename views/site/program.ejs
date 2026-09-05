@@ -1,6 +1,6 @@
 <%- include('_head', { title: p.name, page: 'programs' }) %>
 <div class="site-container" style="max-width:900px">
-  <a href="/site/programs" class="btn btn-outline btn-sm" style="margin-bottom:16px"><i class="fas fa-arrow-right"></i> العودة للبرامج</a>
+  <a href="<%= (data.base || '/site') %>/programs" class="btn btn-outline btn-sm" style="margin-bottom:16px"><i class="fas fa-arrow-right"></i> العودة للبرامج</a>
   <div class="card">
     <div class="card-body">
       <div class="flex justify-between items-center" style="flex-wrap:wrap;gap:12px;margin-bottom:14px">
@@ -23,7 +23,7 @@
       <% if (p.success_conditions) { %><p style="margin-top:8px;font-size:14px"><b>شروط النجاح:</b> <%= p.success_conditions %></p><% } %>
       <% if (p.certificate_name) { %><p style="margin-top:8px;font-size:14px"><b>الشهادة:</b> <%= p.certificate_name %></p><% } %>
       <div style="margin-top:20px">
-        <a href="/site/contact" class="btn btn-primary btn-lg"><i class="fas fa-calendar-check"></i> سجل الآن</a>
+        <a href="<%= (data.base || '/site') %>/contact" class="btn btn-primary btn-lg"><i class="fas fa-calendar-check"></i> سجل الآن</a>
       </div>
     </div>
   </div>

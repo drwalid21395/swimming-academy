@@ -1,0 +1,83 @@
+<%- include('../partials/layout_top', { title: 'تقارير الحضور والمستحقات', active: 'reports' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-chart-column"></i> تقارير الحضور والمستحقات</div>
+    <div class="page-sub">ملخص حضور المدربين وتكلفة الحصص حسب الشهر</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1" style="flex-wrap:wrap">
+    <form method="get" action="/attendance-reports" class="flex gap-1">
+      <input type="month" name="month" class="form-control" value="<%= month %>">
+      <select name="coach" class="form-control">
+        <option value="0">كل المدربين</option>
+        <% coaches.forEach(function (c) { %><option value="<%= c.id %>" <%= String(Number(filterCoach) === c.id) === 'true' ? 'selected' : '' %>><%= c.full_name %></option><% }); %>
+      </select>
+      <button class="btn btn-outline" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
+    </form>
+    <% if (canExport) { %><a href="/attendance-reports/export?month=<%= month %>" class="btn btn-primary"><i class="fas fa-file-csv"></i> تصدير CSV</a><% } %>
+  </div>
+</div>
+
+<div class="kpi-row no-print">
+  <div class="kpi"><div class="k-val text-primary"><%= summary.totalSessions %></div><div class="k-lbl">إجمالي الحصص</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= summary.presentTotal %></div><div class="k-lbl">حاضر</div></div>
+  <div class="kpi"><div class="k-val text-danger"><%= summary.absentTotal %></div><div class="k-lbl">غائب</div></div>
+  <div class="kpi"><div class="k-val text-warning"><%= summary.lateTotal %></div><div class="k-lbl">متأخر</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= money(summary.costTotal) %></div><div class="k-lbl">قيمة الحصص</div></div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th class="sortable">المدرب<span class="sort-ind"></span></th>
+          <th class="sortable">الإجمالي<span class="sort-ind"></span></th>
+          <th class="sortable">حاضر<span class="sort-ind"></span></th>
+          <th class="sortable">غائب<span class="sort-ind"></span></th>
+          <th class="sortable">متأخر<span class="sort-ind"></span></th>
+          <th class="sortable">ملغاة<span class="sort-ind"></span></th>
+          <th class="sortable">بديل<span class="sort-ind"></span></th>
+          <th class="sortable">معتذر<span class="sort-ind"></span></th>
+          <th class="sortable">القيمة<span class="sort-ind"></span></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (rows.length) { %>
+          <% rows.forEach(function (r) { %>
+            <tr>
+              <td><b><%= r.coach %></b></td>
+              <td><%= r.total %></td>
+              <td class="text-success"><%= r.present %></td>
+              <td class="text-danger"><%= r.absent %></td>
+              <td class="text-warning"><%= r.late %></td>
+              <td><%= r.cancelled %></td>
+              <td><%= r.substitute %></td>
+              <td><%= r.excused %></td>
+              <td class="fw-700"><%= money(r.cost) %></td>
+              <td><a href="/trainer-profile/<%= r.id %>?month=<%= month %>" class="btn btn-ghost btn-sm" title="ملف المدرب"><i class="fas fa-user"></i></a></td>
+            </tr>
+          <% }); %>
+        <% } else { %>
+          <tr><td colspan="10"><div class="empty-state"><i class="fas fa-chart-column"></i><p>لا توجد بيانات لهذا الشهر</p></div></td></tr>
+        <% } %>
+      </tbody>
+      <% if (rows.length) { %>
+      <tfoot>
+        <tr>
+          <td><b>الإجمالي</b></td>
+          <td><b><%= summary.totalSessions %></b></td>
+          <td><b class="text-success"><%= summary.presentTotal %></b></td>
+          <td><b class="text-danger"><%= summary.absentTotal %></b></td>
+          <td><b class="text-warning"><%= summary.lateTotal %></b></td>
+          <td></td><td></td><td></td>
+          <td><b><%= money(summary.costTotal) %></b></td>
+          <td></td>
+        </tr>
+      </tfoot>
+      <% } %>
+    </table>
+  </div>
+</div>
+<%- include('../partials/layout_bottom') %>

@@ -31,7 +31,7 @@ try {
   const roleIds = {};
   const defs = [
     ['system_admin', 'مدير النظام', all()],
-    ['academy_manager', 'مدير الأكاديمية', Object.assign(all(), { users: { view: 0, add: 0, edit: 0, del: 0 }, settings: { view: 1, add: 0, edit: 0, del: 0 }, auditLog: { view: 1, add: 0, edit: 0, del: 0 } })],
+    ['academy_manager', 'مدير الأكاديمية', Object.assign(all(), { users: { view: 0, add: 0, edit: 0, del: 0 }, settings: { view: 1, add: 1, edit: 1, del: 1 }, auditLog: { view: 1, add: 0, edit: 0, del: 0 } })],
     ['reception', 'موظف الاستقبال', (() => { const p = all(); for (const m of ['users','settings','auditLog','revenues','expenses','coachPayments','incoming','outgoing','teams','competitions']) p[m] = { view: 0, add: 0, edit: 0, del: 0 }; p.dashboard.view = 1; return p; })()],
     ['finance', 'المسؤول المالي', (() => { const p = all(); for (const m of ['users','settings','auditLog','sessions','attendance','assessments','tests','teams']) p[m] = { view: 0, add: 0, edit: 0, del: 0 }; return p; })()],
     ['coach', 'الكابتن أو المدرب', (() => { const p = read(); for (const m of ['dashboard','sessions','attendance','assessments','tests','teams','swimmers','notifications','documents']) p[m] = { view: 1, add: 1, edit: 1, del: 0 }; p.subscriptions = { view: 1, add: 0, edit: 0, del: 0 }; return p; })()],

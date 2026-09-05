@@ -142,7 +142,7 @@ router.post('/levels/shared', async function (req, res) {
 /*                           البرامج                              */
 /* ============================================================== */
 const programFields = async function (values) {
-  const coaches = (await db.prepare('SELECT * FROM coaches').all()).map(c => ({ value: c.id, label: c.full_name }));
+  const coaches = (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL').all()).map(c => ({ value: c.id, label: c.full_name }));
   const pools = (await db.prepare('SELECT * FROM pools').all()).map(p => ({ value: p.id, label: p.name }));
   const branches = (await db.prepare('SELECT * FROM branches').all()).map(b => ({ value: b.id, label: b.name }));
   return [
@@ -192,6 +192,7 @@ router.get('/programs', async function (req, res) {
   const rows = await db.prepare(`SELECT p.*, c.full_name AS coach_name, b.name AS branch_name, pool.name AS pool_name,
     (SELECT COUNT(*) FROM swimmers s WHERE s.program_id = p.id) AS enrolled
     FROM programs p LEFT JOIN coaches c ON c.id = p.coach_id LEFT JOIN branches b ON b.id = p.branch_id LEFT JOIN pools pool ON pool.id = p.pool_id
+    WHERE p.deleted_at IS NULL
     ORDER BY p.id`).all();
   const page = {
     title: 'البرامج والدورات', subtitle: 'إدارة البرامج التدريبية والدورات المتخصصة', icon: 'fa-list-check', module: 'programs', active: 'programs',
@@ -207,7 +208,7 @@ router.get('/programs', async function (req, res) {
     rows,
     filters: [
       { name: 'type', label: 'النوع', options: (await programTypes()).map(v => ({ value: v, label: v })) },
-      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT * FROM coaches ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
+      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
       { name: 'status', label: 'الحالة', options: PROGRAM_STATUS.map(v => ({ value: v, label: v })) }
     ],
     canAdd: true, addUrl: '/programs/new', addLabel: 'برنامج جديد',
@@ -249,7 +250,19 @@ router.post('/programs/:id/edit', async function (req, res) {
   res.redirect('/programs');
 });
 router.post('/programs/:id/delete', async function (req, res) {
-  audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'programs', Number(req.params.id), 'حذف برنامج', req);
+  if (!canDel(req.currentUser, 'programs')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return res.redirect('/programs');
+  const p = await db.prepare('SELECT * FROM programs WHERE id = ?').get(id);
+  if (!p) return res.redirect('/programs');
+  try {
+    await db.prepare("UPDATE programs SET deleted_at = datetime('now','localtime') WHERE id = ?").run(id);
+    audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'programs', id, 'حذف برنامج: ' + p.name, req);
+    setFlash(res, { type: 'success', message: 'تم حذف البرنامج ' + p.name + ' مع الاحتفاظ بسجل بياناته' });
+  } catch (e) {
+    console.error('فشل حذف برنامج ' + id + ':', e.message);
+    setFlash(res, { type: 'error', message: 'تعذّر حذف البرنامج: ' + e.message });
+  }
   res.redirect('/programs');
 });
 
@@ -260,13 +273,13 @@ router.get('/groups', async function (req, res) {
   const prog = req.query.program;
   let rows;
   if (prog) rows = await db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name, pool.name AS pool_name, b.name AS branch_name,
-    (SELECT COUNT(*) FROM swimmers s WHERE s.group_id = g.id) AS members FROM groups g
+    (SELECT COUNT(*) FROM swimmers s WHERE s.group_id = g.id AND s.deleted_at IS NULL) AS members FROM groups g
     LEFT JOIN programs p ON p.id = g.program_id LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools pool ON pool.id = g.pool_id
-    LEFT JOIN branches b ON b.id = g.branch_id WHERE g.program_id = ? ORDER BY g.id`).all(prog);
+    LEFT JOIN branches b ON b.id = g.branch_id WHERE g.program_id = ? AND g.deleted_at IS NULL ORDER BY g.id`).all(prog);
   else rows = await db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name, pool.name AS pool_name, b.name AS branch_name,
-    (SELECT COUNT(*) FROM swimmers s WHERE s.group_id = g.id) AS members FROM groups g
+    (SELECT COUNT(*) FROM swimmers s WHERE s.group_id = g.id AND s.deleted_at IS NULL) AS members FROM groups g
     LEFT JOIN programs p ON p.id = g.program_id LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools pool ON pool.id = g.pool_id
-    LEFT JOIN branches b ON b.id = g.branch_id ORDER BY g.id`).all();
+    LEFT JOIN branches b ON b.id = g.branch_id WHERE g.deleted_at IS NULL ORDER BY g.id`).all();
   const page = {
     title: 'المجموعات التدريبية', subtitle: 'تنظيم السباحين في مجموعات حسب البرنامج', icon: 'fa-people-group', module: 'groups', active: 'groups',
     columns: [
@@ -279,8 +292,8 @@ router.get('/groups', async function (req, res) {
     ],
     rows,
     filters: [
-      { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) },
-      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT * FROM coaches ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
+      { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) },
+      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
       { name: 'status', label: 'الحالة', options: [{ value: 'نشطة', label: 'نشطة' }, { value: 'متوقفة', label: 'متوقفة' }] }
     ],
     canAdd: true, addUrl: '/groups/new', addLabel: 'مجموعة جديدة',
@@ -297,8 +310,8 @@ router.get('/groups', async function (req, res) {
 /* مزامنة أعضاء المجموعة من السباحين المرتبطين بها */
 router.post('/groups/:id/sync', async function (req, res) {
   const id = Number(req.params.id);
-  await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) SELECT id, ? FROM swimmers WHERE group_id = ?').run(id, id);
-  await db.prepare('DELETE FROM swimmer_group WHERE group_id = ? AND swimmer_id NOT IN (SELECT id FROM swimmers WHERE group_id = ?)').run(id, id);
+  await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) SELECT id, ? FROM swimmers WHERE group_id = ? AND deleted_at IS NULL').run(id, id);
+  await db.prepare('DELETE FROM swimmer_group WHERE group_id = ? AND swimmer_id NOT IN (SELECT id FROM swimmers WHERE group_id = ? AND deleted_at IS NULL)').run(id, id);
   const count = (await db.prepare('SELECT COUNT(*) c FROM swimmer_group WHERE group_id = ?').get(id)).c;
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'groups', id, 'مزامنة أعضاء المجموعة (' + count + ')', req);
   setFlash(res, { type: 'success', message: 'تمت المزامنة — ' + count + ' عضو' });
@@ -323,7 +336,7 @@ router.get('/groups/:id/edit', async function (req, res) {
   const values = { ...row };
   parseJSON(row.schedule, []).forEach(function (s) { values['day_' + s.day + '_start'] = s.start; values['day_' + s.day + '_end'] = s.end; });
   const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, l.name AS level_name FROM swimmer_group sg JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN levels l ON l.id = s.level_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(row.id);
-  const allSwimmers = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, s.gender, s.birth_date FROM swimmers s WHERE s.id NOT IN (SELECT swimmer_id FROM swimmer_group WHERE group_id = ?) ORDER BY s.full_name`).all(row.id);
+  const allSwimmers = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, s.gender, s.birth_date FROM swimmers s WHERE s.deleted_at IS NULL AND s.id NOT IN (SELECT swimmer_id FROM swimmer_group WHERE group_id = ?) ORDER BY s.full_name`).all(row.id);
   await renderGroupEdit(req, res, { row, values, members, allSwimmers, editMode: true });
 });
 router.post('/groups/:id/edit', async function (req, res) {
@@ -390,8 +403,8 @@ function collectSchedule(b) {
 }
 
 async function renderGroupEdit(req, res, o) {
-  const programs = await db.prepare('SELECT * FROM programs ORDER BY name').all();
-  const coaches = await db.prepare('SELECT * FROM coaches ORDER BY full_name').all();
+  const programs = await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL ORDER BY name').all();
+  const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all();
   const pools = await db.prepare('SELECT * FROM pools ORDER BY name').all();
   const branches = await db.prepare('SELECT * FROM branches ORDER BY name').all();
   const days = [
@@ -407,7 +420,19 @@ async function renderGroupEdit(req, res, o) {
   });
 }
 router.post('/groups/:id/delete', async function (req, res) {
-  audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'groups', Number(req.params.id), 'حذف مجموعة', req);
+  if (!canDel(req.currentUser, 'groups')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return res.redirect('/groups');
+  const g = await db.prepare('SELECT * FROM groups WHERE id = ?').get(id);
+  if (!g) return res.redirect('/groups');
+  try {
+    await db.prepare("UPDATE groups SET deleted_at = datetime('now','localtime') WHERE id = ?").run(id);
+    audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'groups', id, 'حذف مجموعة: ' + g.name, req);
+    setFlash(res, { type: 'success', message: 'تم حذف المجموعة ' + g.name + ' مع الاحتفاظ بسجل بياناتها' });
+  } catch (e) {
+    console.error('فشل حذف مجموعة ' + id + ':', e.message);
+    setFlash(res, { type: 'error', message: 'تعذّر حذف المجموعة: ' + e.message });
+  }
   res.redirect('/groups');
 });
 

@@ -1,0 +1,90 @@
+<%- include('../partials/layout_top', { title: 'سياسة الغياب والتأخير', active: 'settings' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-gears"></i> سياسة الغياب والتأخير</div>
+    <div class="page-sub">قواعد احتساب مستحقات المدربين عند الغياب والتأخير وإلغاء الحصص</div>
+  </div>
+  <div class="spacer"></div>
+  <a href="/payroll" class="btn btn-outline"><i class="fas fa-sack-dollar"></i> المستحقات</a>
+</div>
+
+<div class="card">
+  <div class="card-header"><i class="fas fa-sliders"></i> إعدادات السياسة</div>
+  <div class="card-body">
+    <% if (canSave) { %>
+    <form method="POST" action="/attendance-policy" novalidate>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>نسبة احتساب الحصة عند الغياب (%)</label>
+          <input type="number" name="absence_rate" class="form-control" min="0" max="100" value="<%= pol.absence_rate %>">
+          <div class="form-hint"><i class="fas fa-circle-info"></i> 0 = لا تُحتسب قيمة الحصة عند الغياب</div>
+        </div>
+        <div class="form-group">
+          <label>خصم إضافي ثابت عند الغياب (ج.م)</label>
+          <input type="number" step="0.01" name="absence_deduction" class="form-control" min="0" value="<%= pol.absence_deduction %>">
+        </div>
+        <div class="form-group">
+          <label>سياسة الحصة الملغاة</label>
+          <select name="cancel_paid" class="form-control" id="cancelPaid">
+            <option value="نسبة" <%= pol.cancel_paid === 'نسبة' ? 'selected' : '' %>>بنسبة مئوية</option>
+            <option value="كامل" <%= pol.cancel_paid === 'كامل' ? 'selected' : '' %>>محسوبة بالكامل</option>
+            <option value="غير مستحقة" <%= pol.cancel_paid === 'غير مستحقة' ? 'selected' : '' %>>غير مستحقة</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>نسبة الحصة الملغاة (%)</label>
+          <input type="number" name="cancel_percent" class="form-control" min="0" max="100" value="<%= pol.cancel_percent %>" id="cancelPercent">
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;box-shadow:none;border-color:var(--card-border)">
+        <div class="card-header"><i class="fas fa-clock"></i> طبقات التأخير (دقائق → نسبة الخصم)</div>
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr><th>من (دقيقة)</th><th>إلى (دقيقة)</th><th>الخصم (%)</th><th></th></tr></thead>
+            <tbody id="lateTiersBody">
+              <% (pol.late_tiers || []).forEach(function (t) { %>
+                <tr>
+                  <td><input type="number" name="lt_min[]" class="form-control" value="<%= t.min %>" min="0"></td>
+                  <td><input type="number" name="lt_max[]" class="form-control" value="<%= t.max %>" min="0"></td>
+                  <td><input type="number" name="lt_ded[]" class="form-control" value="<%= t.deduct %>" min="0" max="100"></td>
+                  <td><button type="button" class="btn btn-ghost btn-sm text-danger lt-del"><i class="fas fa-trash"></i></button></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+          <button type="button" class="btn btn-ghost btn-sm" id="ltAdd"><i class="fas fa-plus"></i> إضافة طبقة</button>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> حفظ السياسة</button>
+      </div>
+    </form>
+    <% } else { %>
+      <div class="empty-state"><i class="fas fa-lock"></i><p>ليس لديك صلاحية تعديل السياسة</p></div>
+    <% } %>
+  </div>
+</div>
+
+<script>
+(function () {
+  document.getElementById('cancelPaid').addEventListener('change', function () {
+    document.getElementById('cancelPercent').disabled = this.value !== 'نسبة';
+  });
+  document.getElementById('cancelPercent').disabled = document.getElementById('cancelPaid').value !== 'نسبة';
+  var body = document.getElementById('lateTiersBody');
+  document.getElementById('ltAdd').addEventListener('click', function () {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td><input type="number" name="lt_min[]" class="form-control" value="0" min="0"></td>' +
+                   '<td><input type="number" name="lt_max[]" class="form-control" value="10" min="0"></td>' +
+                   '<td><input type="number" name="lt_ded[]" class="form-control" value="0" min="0" max="100"></td>' +
+                   '<td><button type="button" class="btn btn-ghost btn-sm text-danger lt-del"><i class="fas fa-trash"></i></button></td>';
+    body.appendChild(tr);
+  });
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('.lt-del')) e.target.closest('tr').remove();
+  });
+})();
+</script>
+<%- include('../partials/layout_bottom') %>

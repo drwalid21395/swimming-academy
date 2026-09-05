@@ -1,0 +1,155 @@
+<%- include('../partials/layout_top', { title: 'مستحقات ورواتب', active: 'payroll' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-sack-dollar"></i> مستحقات ورواتب</div>
+    <div class="page-sub">كشوف مستحقات المدربين والموظفين حسب الفترة</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1" style="flex-wrap:wrap">
+    <form method="get" action="/payroll" class="flex gap-1">
+      <input type="month" name="month" class="form-control" value="<%= month %>">
+      <select name="type" class="form-control">
+        <option value="all">الكل</option>
+        <option value="trainer" <%= ptype === 'trainer' ? 'selected' : '' %>>المدربون</option>
+        <option value="staff" <%= ptype === 'staff' ? 'selected' : '' %>>الموظفون</option>
+      </select>
+      <button class="btn btn-outline" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
+    </form>
+    <a href="/deductions?month=<%= month %>" class="btn btn-ghost"><i class="fas fa-scale-balanced"></i> الخصومات والإضافات</a>
+    <a href="/rates" class="btn btn-ghost"><i class="fas fa-tags"></i> الأسعار</a>
+  </div>
+</div>
+
+<div class="card" id="generateCard">
+  <div class="card-header"><i class="fas fa-wand-magic-sparkles"></i> توليد كشوف المستحقات</div>
+  <div class="card-body">
+    <form id="genForm" method="post" novalidate>
+      <div class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="margin:0">
+          <label class="font-11 text-muted">الفترة</label>
+          <input type="month" name="month" class="form-control" value="<%= month %>">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="font-11 text-muted">الفئة</label>
+          <select name="type" class="form-control" id="genType">
+            <option value="trainer">المدربون</option>
+            <option value="staff">الموظفون</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;min-width:230px" id="genPersonWrap">
+          <label class="font-11 text-muted">الشخص (اختياري — لمستحقات شخص بعينه)</label>
+          <select name="ids[]" class="form-control" id="genPerson" style="min-width:230px">
+            <option value="">— جميع أفراد الفئة —</option>
+            <% coaches.forEach(function (c) { %><option value="<%= c.id %>" data-gtype="trainer"><%= c.full_name %></option><% }); %>
+            <% staff.forEach(function (s) { %><option value="<%= s.id %>" data-gtype="staff"><%= s.full_name %></option><% }); %>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-calculator"></i> توليد / تحديث الكشوف</button>
+      </div>
+      <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> يتم احتساب المستحقات من سجلات الحضور والخصومات تلقائياً. عند ترك "الشخص" فارغاً تُولَّد الكشوف لكل أفراد الفئة.</div>
+    </form>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <% var tg = rows.reduce(function (s, r) { return s + (Number(r.gross) || 0); }, 0); %>
+  <% var te = rows.reduce(function (s, r) { return s + (Number(r.extras) || 0); }, 0); %>
+  <% var td = rows.reduce(function (s, r) { return s + (Number(r.deductions) || 0); }, 0); %>
+  <% var tn = rows.reduce(function (s, r) { return s + (Number(r.net) || 0); }, 0); %>
+  <div class="kpi"><div class="k-val text-primary"><%= rows.length %></div><div class="k-lbl">كشوف</div></div>
+  <div class="kpi"><div class="k-val"><%= money(tg) %></div><div class="k-lbl">إجمالي الاستحقاق</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= money(te) %></div><div class="k-lbl">الإضافات</div></div>
+  <div class="kpi"><div class="k-val text-danger"><%= money(td) %></div><div class="k-lbl">الخصومات</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= money(tn) %></div><div class="k-lbl">الصافي</div></div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th class="sortable">الشخص<span class="sort-ind"></span></th>
+          <th>الفئة</th>
+          <th class="sortable">الاستحقاق<span class="sort-ind"></span></th>
+          <th class="sortable">الإضافات<span class="sort-ind"></span></th>
+          <th class="sortable">الخصومات<span class="sort-ind"></span></th>
+          <th class="sortable">الصافي<span class="sort-ind"></span></th>
+          <th class="sortable">المدفوع<span class="sort-ind"></span></th>
+          <th class="sortable">المتبقي<span class="sort-ind"></span></th>
+          <th class="sortable">الحالة<span class="sort-ind"></span></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (rows.length) { %>
+          <% rows.forEach(function (r) { %>
+            <tr>
+              <td><b><%= r.coach_name || r.staff_name || '—' %></b><% if (r.branch_name) { %><br><span class="font-11 text-muted"><%= r.branch_name %></span><% } %></td>
+              <td><% if (r.person_type === 'trainer') { %><span class="badge badge-info"><i class="fas fa-user-tie"></i> مدرب</span><% } else { %><span class="badge badge-purple"><i class="fas fa-user-gear"></i> موظف</span><% } %></td>
+              <td><%= money(r.gross) %></td>
+              <td class="text-success"><%= money(r.extras) %></td>
+              <td class="text-danger"><%= money(r.deductions) %></td>
+              <td class="fw-700"><%= money(r.net) %></td>
+              <td class="text-success"><%= money(r.paid_amount) %></td>
+              <td class="<%= Number(r.remaining) > 0 ? 'text-danger fw-700' : 'text-success fw-700' %>"><%= money(r.remaining) %></td>
+              <td>
+                <% if (r.status === 'مسدد') { %><span class="badge badge-success"><i class="fas fa-check-circle"></i> مسدد</span>
+                <% } else if (r.status === 'مدفوع جزئياً') { %><span class="badge badge-warning"><i class="fas fa-hourglass-half"></i> جزئي</span>
+                <% } else { %><span class="badge badge-danger"><i class="fas fa-hourglass"></i> مستحق</span><% } %>
+              </td>
+              <td>
+                <div class="table-actions">
+                  <a href="/payroll/<%= r.id %>" class="btn btn-ghost btn-sm" title="التفاصيل"><i class="fas fa-eye"></i></a>
+                  <% if (canDel && Number(r.paid_amount) <= 0 && Number(r.approved) !== 1) { %>
+                    <form method="POST" action="/payroll/<%= r.id %>/delete" style="display:inline;margin:0"><button type="submit" class="btn btn-ghost btn-sm text-danger" data-confirm="حذف هذا الكشف؟" title="حذف"><i class="fas fa-trash"></i></button></form>
+                  <% } %>
+                </div>
+              </td>
+            </tr>
+          <% }); %>
+        <% } else { %>
+          <tr><td colspan="10"><div class="empty-state"><i class="fas fa-sack-dollar"></i><p>لا توجد كشوف مستحقات في هذه الفترة — استخدم "توليد الكشوف" أعلاه</p></div></td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function () {
+  var genType = document.getElementById('genType');
+  var genPerson = document.getElementById('genPerson');
+  function filterPerson() {
+    var t = genType.value;
+    Array.prototype.slice.call(genPerson.options).forEach(function (o) {
+      var g = o.getAttribute('data-gtype');
+      if (!g) { o.style.display = ''; return; }
+      o.style.display = g === t ? '' : 'none';
+    });
+    var sel = Array.prototype.slice.call(genPerson.selectedOptions).filter(function (o) { var g = o.getAttribute('data-gtype'); return g && g !== t; });
+    sel.forEach(function (o) { o.selected = false; });
+  }
+  genType.addEventListener('change', filterPerson);
+  filterPerson();
+  document.getElementById('genForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var form = e.target;
+    var fd = new FormData(form);
+    var data = {};
+    fd.forEach(function (v, k) {
+      if (k === 'ids[]') { if (!data.ids) data.ids = []; data.ids.push(v); }
+      else data[k] = v;
+    });
+    var btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    fetch('/payroll/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      btn.disabled = false;
+      if (res.ok) { App.showToast('تم توليد ' + (res.count || 0) + ' كشف', 'success'); setTimeout(function () { location.reload(); }, 700); }
+      else { App.showToast(res.error || 'فشل التوليد', 'error'); }
+    }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+  });
+})();
+</script>
+<%- include('../partials/layout_bottom') %>

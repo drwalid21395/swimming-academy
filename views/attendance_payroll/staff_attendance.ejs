@@ -1,0 +1,154 @@
+<%- include('../partials/layout_top', { title: 'حضور الموظفين', active: 'staffAttendance' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-user-clock"></i> حضور الموظفين</div>
+    <div class="page-sub">تسجيل ومتابعة حضور وغياب الموظفين يومياً — <b><%= fmtDate(date) %></b></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1" style="flex-wrap:wrap">
+    <a href="/staff-attendance?date=<%= yday %>" class="btn btn-ghost btn-sm" title="أمس">أمس</a>
+    <a href="/staff-attendance?date=<%= today() %>" class="btn btn-ghost btn-sm" title="اليوم">اليوم</a>
+    <form method="get" action="/staff-attendance" class="flex gap-1">
+      <input type="date" name="date" class="form-control" value="<%= date %>">
+      <button class="btn btn-outline btn-sm" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
+    </form>
+    <a href="/trainer-attendance?month=<%= date.slice(0,7) %>" class="btn btn-outline btn-sm"><i class="fas fa-user-check"></i> حضور المدربين</a>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="k-val text-success"><%= kpi.present %></div><div class="k-lbl">حاضر</div></div>
+  <div class="kpi"><div class="k-val text-danger"><%= kpi.absent %></div><div class="k-lbl">غائب</div></div>
+  <div class="kpi"><div class="k-val text-warning"><%= kpi.excused %></div><div class="k-lbl">معتذر</div></div>
+  <div class="kpi"><div class="k-val text-primary"><%= kpi.late %></div><div class="k-lbl">متأخر</div></div>
+  <div class="kpi"><div class="k-val"><%= sheet.length %></div><div class="k-lbl">موظفين</div></div>
+</div>
+
+<div class="card" id="staffAttCard">
+  <div class="card-header">
+    <h3><i class="fas fa-users"></i> قائمة حضور يوم <b class="text-primary"><%= fmtDate(date) %></b></h3>
+  </div>
+  <div class="card-body">
+    <% if (sheet.length) { %>
+      <div class="flex gap-1" style="margin-bottom:14px;flex-wrap:wrap">
+        <% if (canAdd) { %>
+          <button class="btn btn-success btn-sm" data-ma="حاضر"><i class="fas fa-check"></i> الكل حاضر</button>
+          <button class="btn btn-outline-danger btn-sm" data-ma="غائب"><i class="fas fa-xmark"></i> الكل غائب</button>
+          <button class="btn btn-outline-warning btn-sm" data-ma="معتذر"><i class="fas fa-book"></i> الكل معتذر</button>
+          <button class="btn btn-outline-primary btn-sm" data-ma="متأخر"><i class="fas fa-clock"></i> الكل متأخر</button>
+          <button class="btn btn-primary btn-sm staff-save-btn" data-date="<%= date %>"><i class="fas fa-floppy-disk"></i> حفظ الحضور</button>
+        <% } %>
+      </div>
+      <div class="att-row" style="border-bottom-width:2px">
+        <div class="att-name"><b>الموظف</b></div>
+        <div class="att-btns">
+          <% STATUS.forEach(function (st) { %><span class="att-btn att-head" title="<%= st.label %>" style="cursor:default"><span class="font-11"><%= st.label %></span></span><% }); %>
+        </div>
+      </div>
+      <% sheet.forEach(function (s) { %>
+        <% var cur = s.att ? s.att.status : ''; %>
+        <% function clsFor(v) { return v === 'حاضر' ? 'active-present' : v === 'غائب' ? 'active-absent' : v === 'معتذر' ? 'active-excused' : v === 'متأخر' ? 'active-late' : v === 'إجازة' ? 'active-leave' : v === 'منصرف مبكراً' ? 'active-early' : ''; } %>
+        <div class="att-row">
+          <div class="att-name">
+            <div class="flex items-center gap-1">
+              <div class="avatar-sm"><%= (s.full_name || 'م').trim().charAt(0) %></div>
+              <div>
+                <b><%= s.full_name %></b>
+                <div class="font-11 text-muted"><%= s.job_title || '' %><% if (s.branch_name) { %> · <%= s.branch_name %><% } %></div>
+              </div>
+            </div>
+          </div>
+          <div class="att-btns">
+            <% STATUS.forEach(function (st) { %>
+              <button class="att-btn <%= (cur || '') === st.value ? clsFor(st.value) : '' %> staff-status" data-status="<%= st.value %>" data-staff="<%= s.id %>" title="<%= st.label %>"><span><%= st.label %></span></button>
+            <% }); %>
+          </div>
+        </div>
+      <% }); %>
+    <% } else { %>
+      <div class="empty-state"><i class="fas fa-user-slash"></i><p>لا يوجد موظفون نشطون</p></div>
+    <% } %>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><i class="fas fa-list"></i> سجل حضور <b><%= month %></b></div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th class="sortable">الموظف<span class="sort-ind"></span></th><th>الحالة</th><th>الحضور</th><th>الانصراف</th></tr></thead>
+      <tbody>
+        <% if (rows.length) { %>
+          <% rows.forEach(function (r) { %>
+            <% var st = STATUS.find(function (s) { return s.value === r.status; }); %>
+            <tr>
+              <td><b><%= fmtDate(r.date) %></b></td>
+              <td><b><%= r.staff_name || ('موظف #' + r.staff_id) %></b><% if (r.branch_name) { %><br><span class="font-11 text-muted"><%= r.branch_name %></span><% } %></td>
+              <td><% if (st) { %><span class="badge <%= st.cls || 'badge-gray' %>"><%= st.label %></span><% } %></td>
+              <td dir="ltr"><%= r.check_in || '—' %></td>
+              <td dir="ltr"><%= r.check_out || '—' %></td>
+            </tr>
+          <% }); %>
+        <% } else { %>
+          <tr><td colspan="5"><div class="empty-state"><i class="fas fa-user-clock"></i><p>لا يوجد حضور مسجل في هذا الشهر</p></div></td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function () {
+  var card = document.getElementById('staffAttCard');
+  if (!card) return;
+
+  function activeCls(status) {
+    return status === 'حاضر' ? 'active-present' : status === 'غائب' ? 'active-absent' : status === 'معتذر' ? 'active-excused' : status === 'متأخر' ? 'active-late' : status === 'إجازة' ? 'active-leave' : 'active-early';
+  }
+  function clearRow(row) {
+    row.querySelectorAll('.staff-status').forEach(function (b) { b.className = 'att-btn staff-status'; });
+  }
+
+  card.addEventListener('click', function (e) {
+    var btn = e.target.closest('.staff-status');
+    if (!btn) return;
+    var row = btn.closest('.att-row');
+    clearRow(row);
+    btn.className = 'att-btn staff-status ' + activeCls(btn.getAttribute('data-status'));
+  });
+
+  card.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-ma]');
+    if (!btn) return;
+    var st = btn.getAttribute('data-ma');
+    var cls = activeCls(st);
+    card.querySelectorAll('.att-row').forEach(function (row) {
+      var b = row.querySelector('.staff-status[data-status="' + st + '"]');
+      if (!b) return;
+      clearRow(row);
+      b.className = 'att-btn staff-status ' + cls;
+    });
+  });
+  document.querySelectorAll('.staff-save-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var statuses = {};
+      card.querySelectorAll('.att-row').forEach(function (row) {
+        var st = row.querySelector('.staff-status, .staff-status[data-status]');
+        if (!st || !st.getAttribute('data-staff')) return;
+        var id = st.getAttribute('data-staff');
+        var active = row.querySelector('.staff-status.active-present, .staff-status.active-absent, .staff-status.active-excused, .staff-status.active-late, .staff-status.active-leave, .staff-status.active-early');
+        statuses[id] = { status: active ? active.getAttribute('data-status') : 'حاضر' };
+      });
+      btn.disabled = true;
+      fetch('/staff-attendance/save-day', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: btn.dataset.date, statuses: statuses })
+      }).then(function (r) { return r.json(); }).then(function (res) {
+        btn.disabled = false;
+        if (res.ok) { App.showToast('تم حفظ حضور الموظفين (' + (res.count || 0) + ')', 'success'); setTimeout(function () { location.reload(); }, 600); }
+        else { App.showToast(res.error || 'فشل الحفظ', 'error'); }
+      }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+    });
+  });
+})();
+</script>
+<%- include('../partials/layout_bottom') %>

@@ -2,12 +2,25 @@
 const path = require('node:path');
 const express = require('express');
 const { db, client, ready } = require('./lib/db');
-const { canView, canAdd, canEdit, canDel, canExport, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON } = require('./lib/helpers');
-const { getAuth, takeFlash } = require('./lib/auth-cookie');
+const { canView, canAdd, canEdit, canDel, canExport, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON, today } = require('./lib/helpers');
+const { getAuth, takeFlash, getCookie } = require('./lib/auth-cookie');
+const { getAcademy, getActiveSubscription, subscriptionStatus, academyRestricted, academyPlanPerms, ACTIONS } = require('./lib/tenant');
+const { withAcademy } = require('./lib/tenant-context');
+const { securityHeaders, stripServerHeader, csrfProtect } = require('./lib/security');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const IS_PROD = process.env.NODE_ENV === 'production';
+
+/* حماية من تجمّد النظام كلياً: أي خطأ غير متعامل معاه في requests
+   (والذي لا يلتقطه Express 4 من الـ async handlers) كان سيقفل العملية،
+   فيُسجَّل ويُستكمل بدلاً من أن يتوقف الموقع كله. */
+process.on('unhandledRejection', function (reason) {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', function (err) {
+  console.error('[uncaughtException]', err);
+});
 
 app.set('trust proxy', 1);
 if (IS_PROD) app.set('view cache', true);
@@ -16,6 +29,13 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '12mb' }));
+
+/* الترويسات الأمنية على كل الردود (بما فيها الملفات الثابتة) */
+app.use(stripServerHeader);
+app.use(securityHeaders);
+
+/* دفاع إضافي ضد CSRF: طلبات من أصل مختلف تُرفض (لا يؤثر على نفس الأصل) */
+app.use(csrfProtect);
 
 /* الملفات الثابتة + المرفقات المخزنة داخل قاعدة البيانات */
 app.use(express.static(path.join(__dirname, 'public')));
@@ -64,6 +84,40 @@ async function currentUser(req) {
       MODULES.forEach(m => { perms[m] = { view: 1, add: 1, edit: 1, del: 1, export: 1 }; });
     }
     u.perms = perms;
+    u.academy_id = u.academy_id ? Number(u.academy_id) : 1;
+    u.is_super = u.user_type === 'system';
+    /* فرض صلاحيات خطة الأكاديمية على مستخدمي الأكاديميات (non-system).
+       صلاحيات الخطة = تقاطع مع صلاحيات المستخدم/الدور: أي وحدة/إجراء غير مفعّل
+       بالخطة يُغلق حتى لو كان مفعلاً للمستخدم. الأكاديمية الأساسية premium
+       والدخول بالنيابة (Super Admin) لا يخضعان للقيود. */
+    if (!u.is_super) {
+      try {
+        const planPerms = await academyPlanPerms(u.academy_id);
+        if (planPerms) {
+          Object.keys(perms).forEach(function (m) {
+            const planActions = planPerms[m] || {};
+            ACTIONS.forEach(function (a) {
+              if (perms[m] && typeof perms[m][a] !== 'undefined') {
+                perms[m][a] = (perms[m][a] && planActions[a]) ? 1 : 0;
+              }
+            });
+          });
+        }
+      } catch (e) { /* تجاهل: لا نقيّد عند خطأ */ }
+    }
+    /* وضع الدخول بالنيابة (Super Admin فقط): أقصد من أكاديمية محددة للدعم الفني */
+    u.impersonatingAcademyId = null;
+    u.impersonatingAcademy = null;
+    if (u.is_super) {
+      const impRaw = getCookie(req, 'swim_imp');
+      if (impRaw) {
+        const impAcademy = await getAcademy(impRaw);
+        if (impAcademy) {
+          u.impersonatingAcademyId = impAcademy.id;
+          u.impersonatingAcademy = impAcademy;
+        }
+      }
+    }
     return u;
   } catch (e) { return null; }
 }
@@ -82,6 +136,7 @@ app.use(async function (req, res, next) {
     res.locals.canView = canView;
     res.locals.canAdd = canAdd;
     res.locals.canEdit = canEdit;
+    res.locals._permCanEdit = canEdit;
     res.locals.canDel = canDel;
     res.locals.canExport = canExport;
     res.locals.money = money;
@@ -90,6 +145,7 @@ app.use(async function (req, res, next) {
     res.locals.dayAr = dayAr;
     res.locals.calcAge = calcAge;
     res.locals.pct = pct;
+    res.locals.today = today;
     res.locals.parseJSON = parseJSON;
     res.locals.statusBadge = function (st) {
       const map = { 'نشط': ['badge-success', 'fa-user-check'], 'متوقف مؤقتاً': ['badge-warning', 'fa-pause'], 'مجمد': ['badge-info', 'fa-snowflake'], 'منسحب': ['badge-danger', 'fa-user-minus'], 'خريج': ['badge-purple', 'fa-graduation-cap'] };
@@ -100,6 +156,24 @@ app.use(async function (req, res, next) {
     const user = await currentUser(req);
     res.locals.user = user;
     res.locals.isAuth = !!user;
+    res.locals.isSuper = !!(user && user.is_super);
+    res.locals.currentPath = req.path;
+    /* سياق الأكاديمية: الأكاديمية الأساسية، أو المستهدف عند الدخول بالنيابة */
+    let academy = null;
+    let subInfo = null;
+    if (user) {
+      const acadId = user.impersonatingAcademyId || user.academy_id;
+      academy = await getAcademy(acadId);
+      if (academy) {
+        const sub = await getActiveSubscription(academy.id);
+        subInfo = subscriptionStatus(sub);
+      }
+    }
+    res.locals.academy = academy;
+    res.locals.academyId = academy ? academy.id : (user ? user.academy_id : null);
+    res.locals.impersonating = user && user.impersonatingAcademy;
+    res.locals.subInfo = subInfo;
+    res.locals.academyRestricted = academy ? academyRestricted(academy, subInfo) : false;
     if (user) {
       const ur = await db.prepare('SELECT COUNT(*) c FROM notification_recipients r JOIN notifications n ON n.id = r.notification_id WHERE r.user_id = ? AND r.is_read = 0').get(user.id);
       res.locals.unreadCount = ur.c;
@@ -120,6 +194,19 @@ app.use(function (req, res, next) {
   next();
 });
 
+/* عزل متعدد الأكاديميات: يفعّل withAcademy(...) لجميع طلبات الأكاديمية.
+   يُستثنى: مسارات المنصة (/platform)، والمسارات العامة، ومستخدمي النظام
+   غير الداخلين بالنيابة (يرون كل شيء على مستوى المنصة). */
+app.use(function (req, res, next) {
+  const u = req.currentUser;
+  if (!u) return next();
+  if (req.path.startsWith('/platform')) return next();
+  if (req.path.startsWith('/site') || req.path.startsWith('/api/site') || req.path === '/login') return next();
+  if (u.is_super && !u.impersonatingAcademyId) return next();
+  const acadId = u.impersonatingAcademyId || u.academy_id;
+  return withAcademy(acadId, next);
+});
+
 /* ======================= توجيه الوحدات ======================= */
 app.use('/', require('./routes/auth'));
 app.use('/', require('./routes/dashboard'));
@@ -132,14 +219,17 @@ app.use('/', require('./routes/correspondence'));
 app.use('/', require('./routes/admin'));
 app.use('/', require('./routes/schools'));
 app.use('/', require('./routes/reports'));
+app.use('/', require('./routes/attendance'));
 app.use('/site', require('./routes/site'));
+app.use('/', require('./routes/platform'));
 
 app.use(function (req, res) {
   res.status(404).render('errors/404', { layout: false, user: res.locals.user, siteName: res.locals.siteName });
 });
 app.use(function (err, req, res, next) {
-  console.error(err);
-  res.status(500).send('حدث خطأ داخلي في النظام: ' + err.message);
+  /* لا نكشف تفاصيل الخطأ للمستخدم (تُسجَّل داخلياً فقط) */
+  console.error('[error]', req.method, req.url, err && err.message, err && err.stack);
+  res.status(500).send('حدث خطأ داخلي في النظام، يرجى المحاولة لاحقاً.');
 });
 
 /* التهيئة عند بدء التشغيل المحلي (على Vercel تعمل تلقائياً مع أول طلب) */

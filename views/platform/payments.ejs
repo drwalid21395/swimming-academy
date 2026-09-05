@@ -1,0 +1,68 @@
+<%- include('../partials/layout_top', { title: title, active: active, pageCss: ['/css/platform.css'] }) %>
+<div class="platform">
+  <div class="pf-hero">
+    <div>
+      <div class="pf-hero-eyebrow"><i class="fas fa-sack-dollar"></i> المدفوعات</div>
+      <div class="pf-hero-title">مراجعة طلبات الدفع</div>
+      <div class="pf-hero-sub">تأكيد أو رفض طلبات دفع الاشتراكات وتجديدها</div>
+    </div>
+    <div class="pf-hero-actions">
+      <div class="pf-tabs" style="background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.28)">
+        <a href="/platform/payments?status=PENDING" style="color:<%= filter==='PENDING'?'#075985':'#e0f2fe' %>;background:<%= filter==='PENDING'?'#fff':'transparent' %>" class="<%= filter==='PENDING'?'active':'' %>">معلق</a>
+        <a href="/platform/payments?status=APPROVED" style="color:<%= filter==='APPROVED'?'#075985':'#e0f2fe' %>;background:<%= filter==='APPROVED'?'#fff':'transparent' %>">مدفوع</a>
+        <a href="/platform/payments?status=REJECTED" style="color:<%= filter==='REJECTED'?'#075985':'#e0f2fe' %>;background:<%= filter==='REJECTED'?'#fff':'transparent' %>">مرفوض</a>
+        <a href="/platform/payments?status=ALL" style="color:<%= filter==='ALL'?'#075985':'#e0f2fe' %>;background:<%= filter==='ALL'?'#fff':'transparent' %>">الكل</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="pf-card">
+    <div class="pf-card-head">
+      <h3><i class="fas fa-list-check"></i> الطلبات</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <span class="pf-badge pf-badge-amber"><%= rows.filter(r=>r.status==='PENDING').length %> معلق</span>
+        <span class="pf-badge pf-badge-green"><%= rows.filter(r=>r.status==='APPROVED').length %> مدفوع</span>
+        <span class="pf-badge pf-badge-red"><%= rows.filter(r=>r.status==='REJECTED').length %> مرفوض</span>
+      </div>
+    </div>
+    <div class="pf-card-body flat">
+      <div class="pf-table">
+        <table>
+          <thead><tr>
+            <th>التاريخ</th><th>الأكاديمية</th><th>الخطة</th><th>المبلغ</th><th>رقم المرسل</th><th>المرجع</th><th>الحالة</th><th>إجراء</th>
+          </tr></thead>
+          <tbody>
+            <% rows.forEach(function (p) { %>
+              <tr>
+                <td dir="ltr" class="pf-entity-s"><%= p.created_at %></td>
+                <td>
+                  <div class="pf-entity-t"><%= p.academy_name || '#' + p.academy_id %></div>
+                  <div class="pf-entity-s" dir="ltr"><%= p.academy_phone || '' %></div>
+                </td>
+                <td><span class="pf-badge pf-badge-violet"><%= p.plan_name %></span></td>
+                <td><b style="font-size:15px"><%= money(p.amount) %></b></td>
+                <td dir="ltr" class="pf-entity-s"><%= p.sender_phone || '—' %></td>
+                <td><span dir="ltr" class="pf-entity-s"><%= p.transaction_reference || '—' %></span></td>
+                <td>
+                  <span class="pf-badge pf-badge-<%= p.status === 'APPROVED' ? 'green' : p.status === 'REJECTED' ? 'red' : 'amber' %>"><%= p.status === 'APPROVED' ? 'مدفوع' : p.status === 'REJECTED' ? 'مرفوض' : 'معلق' %></span>
+                  <% if (p.reviewer_name && p.status !== 'PENDING') { %><div class="pf-entity-s">بواسطة: <%= p.reviewer_name %></div><% } %>
+                </td>
+                <td>
+                  <% if (p.status === 'PENDING') { %>
+                    <form method="POST" action="/platform/payments/<%= p.id %>/review" style="margin:0;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                      <input type="number" name="duration_months" value="1" min="1" class="pf-input" style="width:72px;padding:6px 8px" title="مدة التجديد (شهور)">
+                      <button name="action" value="approve" class="pf-btn success"><i class="fas fa-check"></i> موافقة</button>
+                      <button name="action" value="reject" class="pf-btn danger"><i class="fas fa-xmark"></i></button>
+                    </form>
+                  <% } else { %><span class="pf-entity-s">—</span><% } %>
+                </td>
+              </tr>
+            <% }); %>
+            <% if (!rows.length) { %><tr><td colspan="8"><div class="pf-empty"><i class="fas fa-hand-holding-dollar"></i><p>لا توجد طلبات في هذا التصنيف</p></div></td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('../partials/layout_bottom') %>

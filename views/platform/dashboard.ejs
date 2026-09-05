@@ -1,0 +1,130 @@
+<%- include('../partials/layout_top', { title: title, active: active, pageCss: ['/css/platform.css'] }) %>
+<div class="platform">
+  <div class="pf-hero">
+    <div>
+      <div class="pf-hero-eyebrow"><i class="fas fa-globe"></i> النظام الأساسي · Super Admin</div>
+      <div class="pf-hero-title">لوحة تحكم النظام الأساسي</div>
+      <div class="pf-hero-sub">نظرة شاملة على الأكاديميات والخطط والاشتراكات والمدفوعات</div>
+    </div>
+    <div class="pf-hero-actions">
+      <a href="/platform/academies/new" class="btn-hero"><i class="fas fa-plus"></i> إضافة أكاديمية</a>
+      <a href="/platform/plans/new" class="btn-hero btn-hero-ghost"><i class="fas fa-gem"></i> خطة جديدة</a>
+      <a href="/platform/payments" class="btn-hero btn-hero-ghost"><i class="fas fa-money-check-dollar"></i> طلبات الدفع</a>
+    </div>
+  </div>
+
+  <div class="pf-stats">
+    <div class="pf-stat">
+      <div class="pf-stat-top">
+        <div class="pf-stat-ico" style="background:linear-gradient(135deg,#0ea5e9,#0369a1)"><i class="fas fa-building"></i></div>
+        <span class="pf-trend"><%= stats.academies %></span>
+      </div>
+      <div class="pf-stat-value"><%= stats.academies %></div>
+      <div class="pf-stat-label">إجمالي الأكاديميات</div>
+      <i class="fas fa-building pf-deco"></i>
+    </div>
+    <div class="pf-stat">
+      <div class="pf-stat-top">
+        <div class="pf-stat-ico" style="background:linear-gradient(135deg,#34d399,#059669)"><i class="fas fa-circle-check"></i></div>
+        <span class="pf-trend">فعّالة</span>
+      </div>
+      <div class="pf-stat-value"><%= stats.activeCount %></div>
+      <div class="pf-stat-label">أكاديميات نشطة</div>
+      <i class="fas fa-circle-check pf-deco"></i>
+    </div>
+    <div class="pf-stat">
+      <div class="pf-stat-top">
+        <div class="pf-stat-ico" style="background:linear-gradient(135deg,#fbbf24,#d97706)"><i class="fas fa-clock"></i></div>
+        <span class="pf-trend">تنبيه</span>
+      </div>
+      <div class="pf-stat-value"><%= stats.expiringSoonCount %></div>
+      <div class="pf-stat-label">قاربت انتهاء الاشتراك</div>
+      <i class="fas fa-clock pf-deco"></i>
+    </div>
+    <div class="pf-stat">
+      <div class="pf-stat-top">
+        <div class="pf-stat-ico" style="background:linear-gradient(135deg,#f87171,#dc2626)"><i class="fas fa-ban"></i></div>
+        <span class="pf-trend">عاجل</span>
+      </div>
+      <div class="pf-stat-value"><%= stats.suspendedCount + stats.expiredCount %></div>
+      <div class="pf-stat-label">موقوفة / منتهية</div>
+      <i class="fas fa-ban pf-deco"></i>
+    </div>
+    <div class="pf-stat">
+      <div class="pf-stat-top">
+        <div class="pf-stat-ico" style="background:linear-gradient(135deg,#a78bfa,#7c3aed)"><i class="fas fa-hourglass-half"></i></div>
+        <span class="pf-trend">بانتظار</span>
+      </div>
+      <div class="pf-stat-value"><%= stats.pendingPayments %></div>
+      <div class="pf-stat-label">طلبات دفع معلقة</div>
+      <i class="fas fa-hourglass-half pf-deco"></i>
+    </div>
+    <div class="pf-stat">
+      <div class="pf-stat-top">
+        <div class="pf-stat-ico" style="background:linear-gradient(135deg,#fde68a,#b45309)"><i class="fas fa-sack-dollar"></i></div>
+        <span class="pf-trend">هذا الشهر</span>
+      </div>
+      <div class="pf-stat-value"><%= money(stats.monthlyRevenue) %></div>
+      <div class="pf-stat-label">إيرادات الاشتراكات</div>
+      <i class="fas fa-sack-dollar pf-deco"></i>
+    </div>
+    <div class="pf-stat">
+      <div class="pf-stat-top">
+        <div class="pf-stat-ico" style="background:linear-gradient(135deg,#60a5fa,#2563eb)"><i class="fas fa-users"></i></div>
+        <span class="pf-trend">عبر المنصة</span>
+      </div>
+      <div class="pf-stat-value"><%= stats.totalUsers %></div>
+      <div class="pf-stat-label">مستخدمي المنصة</div>
+      <i class="fas fa-users pf-deco"></i>
+    </div>
+    <div class="pf-stat">
+      <div class="pf-stat-top">
+        <div class="pf-stat-ico" style="background:linear-gradient(135deg,#2dd4bf,#0d9488)"><i class="fas fa-person-swimming"></i></div>
+        <span class="pf-trend">عبر المنصة</span>
+      </div>
+      <div class="pf-stat-value"><%= stats.totalStudents %></div>
+      <div class="pf-stat-label">اللاعبون عبر المنصة</div>
+      <i class="fas fa-person-swimming pf-deco"></i>
+    </div>
+  </div>
+
+  <div class="pf-card">
+    <div class="pf-card-head">
+      <h3><i class="fas fa-building-columns"></i> الأكاديميات &nbsp;<span class="pf-badge pf-badge-blue"><%= rows.length %></span></h3>
+      <a href="/platform/academies" class="pf-btn">عرض الكل <i class="fas fa-arrow-left"></i></a>
+    </div>
+    <div class="pf-card-body flat">
+      <div class="pf-table">
+        <table>
+          <thead><tr>
+            <th>الأكاديمية</th><th>المالك</th><th>الخطة</th><th>اللاعبون</th><th>المستخدمون</th>
+            <th>انتهاء الاشتراك</th><th>الحالة</th><th></th>
+          </tr></thead>
+          <tbody>
+            <% rows.forEach(function (r) { %>
+              <tr>
+                <td>
+                  <div class="pf-entity">
+                    <div class="pf-entity-av" style="background:linear-gradient(135deg,#0ea5e9,#0369a1)"><% if (r.a.logo) { %><img src="<%= r.a.logo %>"><% } else { %><i class="fas fa-building"></i><% } %></div>
+                    <div><div class="pf-entity-t"><%= r.a.name %></div><div class="pf-entity-s">@<%= r.a.username || '—' %></div></div>
+                  </div>
+                </td>
+                <td><%= r.a.owner_name || '—' %></td>
+                <td><span class="pf-badge pf-badge-violet"><%= r.plan ? r.plan.name : 'بدون خطة' %></span></td>
+                <td><b><%= r.studentCount %></b></td>
+                <td><%= r.userCount %></td>
+                <td><span dir="ltr" class="pf-entity-s"><%= r.st.expiry_date || '—' %></span></td>
+                <td><span class="pf-badge pf-badge-<%= r.badge %>"><%= r.statusLabel %></span></td>
+                <td><div class="pf-row-actions"><a href="/platform/academies/<%= r.a.id %>" class="pf-btn"><i class="fas fa-eye"></i> عرض</a></div></td>
+              </tr>
+            <% }); %>
+            <% if (!rows.length) { %>
+              <tr><td colspan="8"><div class="pf-empty"><i class="fas fa-building-circle-exclamation"></i><p>لا توجد أكاديميات بعد</p></div></td></tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('../partials/layout_bottom') %>

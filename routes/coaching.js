@@ -6,14 +6,14 @@ const { setFlash } = require('../lib/auth-cookie');
 const router = express.Router();
 
 async function swimmerOptions() {
-  return (await db.prepare('SELECT id, full_name, membership_no, level_id FROM swimmers ORDER BY full_name').all())
+  return (await db.prepare('SELECT id, full_name, membership_no, level_id FROM swimmers WHERE deleted_at IS NULL ORDER BY full_name').all())
     .map(s => ({ value: s.id, label: s.full_name + ' (' + s.membership_no + ')', level: s.level_id || '' }));
 }
 async function coachOptions() {
-  return (await db.prepare('SELECT * FROM coaches ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name }));
+  return (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name }));
 }
 async function programOptions() {
-  return (await db.prepare('SELECT * FROM programs ORDER BY name').all()).map(p => ({ value: p.id, label: p.name }));
+  return (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL ORDER BY name').all()).map(p => ({ value: p.id, label: p.name }));
 }
 async function levelOptions() {
   return (await db.prepare('SELECT * FROM levels ORDER BY order_no').all()).map(l => ({ value: l.id, label: l.name }));
@@ -92,10 +92,10 @@ async function parseScores(b) {
 router.get('/assessments', async function (req, res) {
   if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const rows = await db.prepare(`SELECT 'تقييم' AS kind, a.id AS id, a.date AS date, a.overall_percent AS overall_percent, a.ready_to_advance AS ready_to_advance, a.level_id AS level_id, a.coach_id AS coach_id, a.notes AS notes, a.swimmer_id AS swimmer_id, s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name, l.name AS level_name, NULL AS t_type, NULL AS t_race, NULL AS time_seconds, NULL AS test_status, NULL AS distance_m, NULL AS result_note FROM assessments a
-    LEFT JOIN swimmers s ON s.id = a.swimmer_id LEFT JOIN coaches c ON c.id = a.coach_id LEFT JOIN levels l ON l.id = a.level_id
+    LEFT JOIN swimmers s ON s.id = a.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = a.coach_id LEFT JOIN levels l ON l.id = a.level_id
     UNION ALL
     SELECT 'اختبار' AS kind, t.id AS id, t.date AS date, NULL AS overall_percent, t.passed AS ready_to_advance, NULL AS level_id, t.coach_id AS coach_id, t.result_note AS notes, t.swimmer_id AS swimmer_id, s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name, l.name AS level_name, t.type AS t_type, t.race_type AS t_race, t.time_seconds AS time_seconds, t.status AS test_status, t.distance_m AS distance_m, t.result_note AS result_note FROM tests t
-    LEFT JOIN swimmers s ON s.id = t.swimmer_id LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN levels l ON l.id = t.level_id
+    LEFT JOIN swimmers s ON s.id = t.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN levels l ON l.id = t.level_id
     ORDER BY date DESC`).all();
   const page = {
     title: 'التقييمات الفنية', subtitle: 'تقييم مهارات السباحين ونتائج الاختبارات', icon: 'fa-clipboard-check', module: 'assessments', active: 'assessments',
@@ -314,7 +314,7 @@ const testFields = async function (values) {
 
 /* مجموعات التدريب مع السباحين (لنموذج الاختبار الجماعي) */
 async function testGroupsWithSwimmers() {
-  const groups = await db.prepare('SELECT g.id, g.name, g.coach_id FROM groups g ORDER BY g.name').all();
+  const groups = await db.prepare('SELECT g.id, g.name, g.coach_id FROM groups g WHERE g.deleted_at IS NULL ORDER BY g.name').all();
   const result = [];
   for (const g of groups) {
     result.push({ id: g.id, name: g.name, coach_id: g.coach_id, swimmers: await groupSwimmers(g.id) });
@@ -323,7 +323,7 @@ async function testGroupsWithSwimmers() {
 }
 async function groupSwimmers(gid) {
   return await db.prepare(`SELECT s.id, s.full_name, s.membership_no, l.name AS level_name FROM swimmer_group sg
-    JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN levels l ON l.id = s.level_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(gid);
+    JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN levels l ON l.id = s.level_id WHERE sg.group_id = ? AND s.deleted_at IS NULL ORDER BY s.full_name`).all(gid);
 }
 
 /* حفظ نتيجة اختبار لسباح واحد (سجل مستقل في الاختبارات) + ترقية عند اجتياز اختبار المستوى */
@@ -348,7 +348,7 @@ async function saveTestResult(o) {
 router.get('/tests', async function (req, res) {
   if (!canView(req.currentUser, 'tests')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const rows = await db.prepare(`SELECT t.*, l.name AS level_name, s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name FROM tests t
-    LEFT JOIN swimmers s ON s.id = t.swimmer_id LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN levels l ON l.id = t.level_id ORDER BY t.date DESC`).all();
+    LEFT JOIN swimmers s ON s.id = t.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN levels l ON l.id = t.level_id ORDER BY t.date DESC`).all();
   const page = {
     title: 'الاختبارات', subtitle: 'اختبارات المستويات والأزمنة', icon: 'fa-vial-circle-check', module: 'tests', active: 'tests',
     columns: [
@@ -556,7 +556,7 @@ router.get('/teams/:id', async function (req, res) {
   const t = await db.prepare(`SELECT t.*, c.full_name AS coach_name, b.name AS branch_name FROM teams t LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN branches b ON b.id = t.branch_id WHERE t.id = ?`).get(id);
   if (!t) return res.redirect('/teams');
   const members = await db.prepare(`SELECT tm.*, s.full_name, s.membership_no, s.birth_date FROM team_members tm JOIN swimmers s ON s.id = tm.swimmer_id WHERE tm.team_id = ? ORDER BY s.full_name`).all(id);
-  const swimmers = await db.prepare(`SELECT id, full_name, membership_no FROM swimmers WHERE id NOT IN (SELECT swimmer_id FROM team_members WHERE team_id = ?) ORDER BY full_name`).all(id)
+  const swimmers = await db.prepare(`SELECT id, full_name, membership_no FROM swimmers WHERE deleted_at IS NULL AND id NOT IN (SELECT swimmer_id FROM team_members WHERE team_id = ?) ORDER BY full_name`).all(id)
     .map(s => ({ value: s.id, label: s.full_name + ' (' + s.membership_no + ')' }));
   res.render('team_detail', { title: 'تفاصيل الفريق', active: 'teams', t, members, swimmers, money,
     canEdit: canEdit(req.currentUser, 'teams'), canDel: canDel(req.currentUser, 'teams') });
@@ -671,7 +671,7 @@ router.get('/competitions/:id', async function (req, res) {
   if (!c) return res.redirect('/competitions');
   const results = await db.prepare(`SELECT cr.*, s.full_name, s.membership_no FROM competition_results cr LEFT JOIN swimmers s ON s.id = cr.swimmer_id WHERE cr.competition_id = ? ORDER BY cr.distance_m, cr.time_seconds`).all(id);
   const teamIds = (await db.prepare('SELECT DISTINCT team_id FROM team_members').all()).map(t => t.team_id);
-  const swimmers = (await db.prepare('SELECT id, full_name, membership_no FROM swimmers ORDER BY full_name').all()).map(s => ({ value: s.id, label: s.full_name + ' (' + s.membership_no + ')' }));
+  const swimmers = (await db.prepare('SELECT id, full_name, membership_no FROM swimmers WHERE deleted_at IS NULL ORDER BY full_name').all()).map(s => ({ value: s.id, label: s.full_name + ' (' + s.membership_no + ')' }));
   res.render('competition_detail', { title: 'تفاصيل البطولة', active: 'competitions', c, results, swimmers, money,
     canEdit: canEdit(req.currentUser, 'competitions'), canDel: canDel(req.currentUser, 'competitions') });
 });

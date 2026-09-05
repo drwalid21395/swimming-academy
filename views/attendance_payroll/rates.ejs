@@ -1,0 +1,163 @@
+<%- include('../partials/layout_top', { title: 'أسعار الحصص والأجور', active: 'payroll' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-tags"></i> أسعار الحصص والأجور</div>
+    <div class="page-sub">تحديد أسعار الحصص للمدربين ونظام أجور الموظفين</div>
+  </div>
+  <div class="spacer"></div>
+  <a href="/payroll" class="btn btn-outline"><i class="fas fa-sack-dollar"></i> المستحقات</a>
+</div>
+
+<div class="grid-2" style="align-items:start">
+  <div class="card">
+    <div class="card-header"><i class="fas fa-user-tie"></i> سعر حصة المدرب</div>
+    <div class="card-body">
+      <form id="trainerRateForm" method="post" novalidate>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>المدرب <span class="req">*</span></label>
+            <select name="coach_id" class="form-control" id="trainerSel" required>
+              <option value="">— اختر المدرب —</option>
+              <% coaches.forEach(function (c) { %><option value="<%= c.id %>"><%= c.full_name %></option><% }); %>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>سعر الحصة الافتراضي <span class="req">*</span></label>
+            <input type="number" step="0.01" name="default_rate" id="tr_default" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label>سعر الساعة</label>
+            <input type="number" step="0.01" name="hourly_rate" id="tr_hourly" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>حصة خاصة</label>
+            <input type="number" step="0.01" name="private_rate" id="tr_private" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>حصة جماعية</label>
+            <input type="number" step="0.01" name="group_rate" id="tr_group" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>فرع (سعر مختلف)</label>
+            <select name="branch_id" class="form-control">
+              <option value="">— الافتراضي —</option>
+              <% branches.forEach(function (b) { %><option value="<%= b.id %>"><%= b.name %></option><% }); %>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>سعر هذا الفرع</label>
+            <input type="number" step="0.01" name="branch_rate" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>فترة السريان (اختياري)</label>
+            <input type="month" name="period" class="form-control" value="<%= today().slice(0,7) %>">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> حفظ أسعار المدرب</button>
+        </div>
+      </form>
+      <div class="form-hint" style="margin-top:10px"><i class="fas fa-circle-info"></i> عند عدم ضبط السعر يُستخدم <b>راتب الحصة</b> من ملف المدرب تلقائياً.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><i class="fas fa-user-gear"></i> نظام أجور الموظف</div>
+    <div class="card-body">
+      <form id="staffRateForm" method="post" novalidate>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>الموظف <span class="req">*</span></label>
+            <select name="staff_id" class="form-control" id="staffSel" required>
+              <option value="">— اختر الموظف —</option>
+              <% staff.forEach(function (s) { %><option value="<%= s.id %>"><%= s.full_name %></option><% }); %>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>نظام الأجر</label>
+            <select name="pay_system" class="form-control" id="paySystem">
+              <option value="monthly">شهري</option>
+              <option value="shift">بالشيفت / الساعة</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>الراتب الشهري</label>
+            <input type="number" step="0.01" name="monthly_salary" id="sr_monthly" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>أيام العمل</label>
+            <input type="number" name="work_days_count" id="sr_days" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>ساعات العمل</label>
+            <input type="number" step="0.01" name="work_hours" id="sr_hours" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>قيمة اليوم (لخصم الغياب)</label>
+            <input type="number" step="0.01" name="day_value" id="sr_dayval" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>قيمة الساعة</label>
+            <input type="number" step="0.01" name="hourly_value" id="sr_hourval" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>قيمة ساعات الإضافية</label>
+            <input type="number" step="0.01" name="overtime_hour_value" id="sr_ot" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>قيمة الشيفت</label>
+            <input type="number" step="0.01" name="shift_value" id="sr_shift" class="form-control">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> حفظ أجور الموظف</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var tRates = <%= JSON.stringify(tRates) %>;
+  var sRates = <%= JSON.stringify(sRates) %>;
+  document.getElementById('trainerSel').addEventListener('change', function () {
+    var t = tRates[this.value];
+    if (!t) return;
+    document.getElementById('tr_default').value = t.default_rate || '';
+    document.getElementById('tr_hourly').value = t.hourly_rate || '';
+    document.getElementById('tr_private').value = t.private_rate || '';
+    document.getElementById('tr_group').value = t.group_rate || '';
+  });
+  document.getElementById('staffSel').addEventListener('change', function () {
+    var s = sRates[this.value];
+    if (!s) return;
+    document.getElementById('paySystem').value = s.pay_system === 'shift' ? 'shift' : 'monthly';
+    document.getElementById('sr_monthly').value = s.monthly_salary || '';
+    document.getElementById('sr_days').value = s.work_days_count || '';
+    document.getElementById('sr_hours').value = s.work_hours || '';
+    document.getElementById('sr_dayval').value = s.day_value || '';
+    document.getElementById('sr_hourval').value = s.hourly_value || '';
+    document.getElementById('sr_ot').value = s.overtime_hour_value || '';
+    document.getElementById('sr_shift').value = s.shift_value || '';
+  });
+  function bindForm(id, url) {
+    var form = document.getElementById(id);
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var fd = new FormData(form); var data = {};
+      fd.forEach(function (v, k) { data[k] = v; });
+      var btn = form.querySelector('button[type="submit"]'); btn.disabled = true;
+      fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+        .then(function (r) { return r.json(); }).then(function (res) {
+          btn.disabled = false;
+          if (res.ok) { App.showToast('تم الحفظ', 'success'); setTimeout(function () { location.reload(); }, 600); }
+          else { App.showToast(res.error || 'فشل الحفظ', 'error'); }
+        }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+    });
+  }
+  bindForm('trainerRateForm', '/rates/trainer');
+  bindForm('staffRateForm', '/rates/staff');
+})();
+</script>
+<%- include('../partials/layout_bottom') %>

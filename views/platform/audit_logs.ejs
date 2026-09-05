@@ -1,0 +1,37 @@
+<%- include('../partials/layout_top', { title: title, active: active, pageCss: ['/css/platform.css'] }) %>
+<div class="platform">
+  <div class="pf-hero">
+    <div>
+      <div class="pf-hero-eyebrow"><i class="fas fa-clock-rotate-left"></i> التدقيق</div>
+      <div class="pf-hero-title">سجل النشاط</div>
+      <div class="pf-hero-sub">تتبّع كامل العمليات على المنصة</div>
+    </div>
+    <div class="pf-hero-actions">
+      <a href="/platform/audit-logs" class="btn-hero btn-hero-ghost"><i class="fas fa-rotate"></i> تحديث</a>
+    </div>
+  </div>
+
+  <div class="pf-card">
+    <div class="pf-card-head"><h3><i class="fas fa-list"></i> العمليات</h3></div>
+    <div class="pf-card-body flat">
+      <div class="pf-table">
+        <table>
+          <thead><tr><th>التاريخ</th><th>المستخدم</th><th>الإجراء</th><th>الحدث</th><th>التفاصيل</th></tr></thead>
+          <tbody>
+            <% rows.forEach(function (r) { %>
+              <tr>
+                <td dir="ltr" class="pf-entity-s"><%= r.created_at %></td>
+                <td><div class="pf-entity-t"><%= r.user_name || '—' %></div><div class="pf-entity-s">#<%= r.user_id %></div></td>
+                <td><span class="pf-badge pf-badge-violet"><%= r.action %></span></td>
+                <td class="pf-entity-t"><%= r.entity %><span class="pf-entity-s"> #<%= r.entity_id %></span></td>
+                <td class="pf-entity-s" style="max-width:280px"><%= r.details || '—' %></td>
+              </tr>
+            <% }); %>
+            <% if (!rows.length) { %><tr><td colspan="5"><div class="pf-empty"><i class="fas fa-shield-halved"></i><p>لا يوجد نشاط بعد</p></div></td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('../partials/layout_bottom') %>

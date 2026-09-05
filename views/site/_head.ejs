@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><%= title %> | <%= data.siteName %></title>
   <link rel="stylesheet" href="/vendor/fa-all.min.css">
-  <link rel="stylesheet" href="/css/style.css?v=20">
+  <link rel="stylesheet" href="/css/style.css?v=21">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>">
   <style>
     body { background: linear-gradient(180deg, var(--site-bg, #f8fafc) 0%, #fff 100%); }
@@ -29,20 +29,54 @@
     .hero-bg { position: absolute; inset: 0; opacity: .08; font-size: 180px; display: flex; align-items: center; justify-content: center; }
     @media (max-width:768px){ .site-hero h1{font-size:28px} .site-hero{padding:48px 18px} .site-container{padding:24px 16px} }
   </style>
+  <% if (typeof data !== 'undefined' && data && /^#[0-9a-fA-F]{6}$/.test(data.primaryColor)) {
+    const _clamp = (n) => Math.max(0, Math.min(255, Math.round(n)));
+    const _h = data.primaryColor.replace('#','');
+    const _R = parseInt(_h.slice(0,2),16)/255, _G = parseInt(_h.slice(2,4),16)/255, _B = parseInt(_h.slice(4,6),16)/255;
+    const _lumOf = (hex) => { const h=hex.replace('#',''); const r=parseInt(h.slice(0,2),16)/255,g=parseInt(h.slice(2,4),16)/255,b=parseInt(h.slice(4,6),16)/255; const f=v=>v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); return 0.2126*f(r)+0.7152*f(g)+0.0722*f(b); };
+    const _mixC = (pct, target) => { const t=parseInt(target.slice(1),16); const tr=(t>>16)&255,tg=(t>>8)&255,tb=t&255; return '#'+[_clamp(_R*255*(1-pct)+tr*pct),_clamp(_G*255*(1-pct)+tg*pct),_clamp(_B*255*(1-pct)+tb*pct)].map(n=>n.toString(16).padStart(2,'0')).join(''); };
+    const _dark = _mixC(0.55,'#0f172a');
+    const _dark2 = _mixC(0.75,'#0f172a');
+    const _soft = _mixC(0.88,'#ffffff');
+    const _lightMix = _mixC(0.35,'#ffffff');
+    const _lm = _lumOf(data.primaryColor);
+    const _onHero = _lumOf(_dark) > 0.5 ? '#0f172a' : '#ffffff';
+    const _onLight = _lm > 0.55 ? '#0f172a' : (_lm > 0.32 ? _mixC(0.62,'#000000') : data.primaryColor);
+  %>
+  <style>
+    :root {
+      --primary: <%= data.primaryColor %>;
+      --primary-dark: <%= _dark %>;
+      --primary-light: <%= _lightMix %>;
+      --primary-soft: <%= _soft %>;
+      --site-grad-dark: <%= _dark2 %>;
+      --site-grad-mid: <%= _dark %>;
+      --site-grad: <%= data.primaryColor %>;
+      --site-grad-light: <%= _lightMix %>;
+      --link-on-light: <%= _onLight %>;
+    }
+    .site-hero { background: linear-gradient(135deg, var(--site-grad-dark) 0%, var(--site-grad-mid) 55%, var(--site-grad-mid) 80%, var(--site-grad) 100%) !important; }
+    .site-hero h1, .site-hero p, .site-hero .hero-bg { color: #ffffff !important; }
+    .site-logo .logo-icon { background: linear-gradient(135deg, <%= data.primaryColor %>, var(--site-grad-light)) !important; box-shadow: 0 4px 12px <%= _dark %>55 !important; }
+    .site-nav a:hover, .site-nav a.active { background: var(--primary-soft); color: <%= _onLight %>; }
+    .site-hero .btn-primary { background: <%= data.primaryColor %> !important; color: <%= _lm > 0.4 ? '#0f172a' : '#ffffff' %> !important; }
+  </style>
+  <% } %>
 </head>
 <body>
 <div class="site-topbar">
   <div class="inner">
-    <a href="/site" class="site-logo" style="text-decoration:none;color:var(--text)">
+    <a href="<%= data.base || '/site' %>" class="site-logo" style="text-decoration:none;color:var(--text)">
       <div class="logo-icon"><% if (data.logo) { %><img src="<%= data.logo %>" alt="logo" class="logo-img"><% } else { %><i class="fas fa-water"></i><% } %></div>
       <div><b><%= data.siteName %></b><div style="font-size:12px;color:var(--text-muted)"><%= data.slogan %></div></div>
     </a>
     <nav class="site-nav">
-      <a href="/site" class="<%= page === 'home' ? 'active' : '' %>">الرئيسية</a>
-      <a href="/site/programs" class="<%= page === 'programs' ? 'active' : '' %>">البرامج</a>
-      <a href="/site/coaches" class="<%= page === 'coaches' ? 'active' : '' %>">الكباتن</a>
-      <a href="/site/announcements" class="<%= page === 'announcements' ? 'active' : '' %>">الإعلانات</a>
-      <a href="/site/contact" class="<%= page === 'contact' ? 'active' : '' %>">تواصل معنا</a>
+      <a href="<%= data.base || '/site' %>" class="<%= page === 'home' ? 'active' : '' %>">الرئيسية</a>
+      <a href="<%= (data.base || '/site') %>/programs" class="<%= page === 'programs' ? 'active' : '' %>">البرامج</a>
+      <a href="<%= (data.base || '/site') %>/coaches" class="<%= page === 'coaches' ? 'active' : '' %>">الكباتن</a>
+      <a href="<%= (data.base || '/site') %>/news" class="<%= page === 'news' ? 'active' : '' %>"><i class="fas fa-newspaper"></i> الأخبار والمركز الإعلامي</a>
+      <a href="<%= (data.base || '/site') %>/announcements" class="<%= page === 'announcements' ? 'active' : '' %>">الإعلانات</a>
+      <a href="<%= (data.base || '/site') %>/contact" class="<%= page === 'contact' ? 'active' : '' %>">تواصل معنا</a>
       <a href="/login" class="btn btn-primary btn-sm" style="margin-inline-start:8px"><i class="fas fa-right-to-bracket"></i> دخول الإدارة</a>
     </nav>
   </div>

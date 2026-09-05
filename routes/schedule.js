@@ -32,8 +32,8 @@ function sesStatusBadge(st) {
 /* مزامنة أعضاء المجموعة من عمود group_id في السباحين */
 async function syncGroup(groupId) {
   if (!groupId) return;
-  await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) SELECT id, ? FROM swimmers WHERE group_id = ?').run(groupId, groupId);
-  await db.prepare('DELETE FROM swimmer_group WHERE group_id = ? AND swimmer_id NOT IN (SELECT id FROM swimmers WHERE group_id = ?)').run(groupId, groupId);
+  await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) SELECT id, ? FROM swimmers WHERE group_id = ? AND deleted_at IS NULL').run(groupId, groupId);
+  await db.prepare('DELETE FROM swimmer_group WHERE group_id = ? AND swimmer_id NOT IN (SELECT id FROM swimmers WHERE group_id = ? AND deleted_at IS NULL)').run(groupId, groupId);
 }
 
 /* وقت بدء افتراضي للمجموعة من جدولها */
@@ -57,7 +57,7 @@ router.get('/sessions', async function (req, res) {
     LEFT JOIN groups g ON g.id = se.group_id
     LEFT JOIN coaches c ON c.id = se.coach_id
     LEFT JOIN pools p ON p.id = se.pool_id
-    WHERE 1=1`;
+    WHERE 1=1 AND se.deleted_at IS NULL`;
   const params = [];
   if (group) { sql += ' AND se.group_id = ?'; params.push(group); }
   if (coach) { sql += ' AND se.coach_id = ?'; params.push(coach); }
@@ -80,8 +80,8 @@ router.get('/sessions', async function (req, res) {
     ],
     rows,
     filters: [
-      { name: 'group_id', label: 'المجموعة', options: (await db.prepare('SELECT * FROM groups ORDER BY name').all()).map(g => ({ value: g.id, label: g.name })) },
-      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT * FROM coaches ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
+      { name: 'group_id', label: 'المجموعة', options: (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL ORDER BY name').all()).map(g => ({ value: g.id, label: g.name })) },
+      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
       { name: 'status', label: 'الحالة', options: SES_STATUS }
     ],
     canAdd: canAdd(req.currentUser, 'sessions'),
@@ -98,8 +98,8 @@ router.get('/sessions', async function (req, res) {
 });
 
 const sessionFields = async function (values) {
-  const groups = (await db.prepare('SELECT * FROM groups').all()).map(g => ({ value: g.id, label: g.name }));
-  const coaches = (await db.prepare('SELECT * FROM coaches').all()).map(c => ({ value: c.id, label: c.full_name }));
+  const groups = (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL').all()).map(g => ({ value: g.id, label: g.name }));
+  const coaches = (await db.prepare('SELECT * FROM coaches WHERE deleted_at IS NULL').all()).map(c => ({ value: c.id, label: c.full_name }));
   const pools = (await db.prepare('SELECT * FROM pools').all()).map(p => ({ value: p.id, label: p.name }));
   return [
     { key: 'group_id', label: 'المجموعة التدريبية', type: 'select', options: groups, required: true, section: 'بيانات الحصة', sectionIcon: 'fa-calendar-days' },
@@ -170,10 +170,9 @@ router.post('/sessions/:id/edit', async function (req, res) {
 router.post('/sessions/:id/delete', async function (req, res) {
   if (!canDel(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
-  await db.prepare('DELETE FROM attendance WHERE session_id = ?').run(id);
-  await db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
-  audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'sessions', id, 'حذف حصة', req);
-  setFlash(res, { type: 'success', message: 'تم حذف الحصة' });
+  await db.prepare("UPDATE sessions SET deleted_at = datetime('now','localtime') WHERE id = ?").run(id);
+  audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'sessions', id, 'حذف حصة (مع الاحتفاظ بالسجل)', req);
+  setFlash(res, { type: 'success', message: 'تم حذف الحصة مع الاحتفاظ بسجل الحضور' });
   res.redirect('/sessions');
 });
 
@@ -188,21 +187,21 @@ router.get('/attendance', async function (req, res) {
   }
   const date = req.query.date || today();
   const groupRows = await db.prepare(`SELECT g.*, c.full_name AS coach_name, p.name AS pool_name FROM groups g
-    LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools p ON p.id = g.pool_id ORDER BY g.name`).all();
+    LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools p ON p.id = g.pool_id WHERE g.deleted_at IS NULL ORDER BY g.name`).all();
   const groups = [];
   for (const g of groupRows) {
     await syncGroup(g.id);
     const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no FROM swimmer_group sg JOIN swimmers s ON s.id = sg.swimmer_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(g.id);
-    const session = await db.prepare(`SELECT * FROM sessions WHERE group_id = ? AND date = ? ORDER BY start_time LIMIT 1`).get(g.id, date);
+    const session = await db.prepare(`SELECT * FROM sessions WHERE group_id = ? AND date = ? AND deleted_at IS NULL ORDER BY start_time LIMIT 1`).get(g.id, date);
     const attMap = {};
     if (session) (await db.prepare('SELECT swimmer_id, status FROM attendance WHERE session_id = ?').all(session.id)).forEach(function (a) { attMap[a.swimmer_id] = a.status; });
     groups.push({ ...g, members, session, attMap });
   }
   const daily = {
-    present: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.date=? AND a.status='present'`).get(date)).c,
-    absent: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.date=? AND a.status='absent'`).get(date)).c,
-    excused: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.date=? AND a.status='excused'`).get(date)).c,
-    late: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.date=? AND a.status='late'`).get(date)).c
+    present: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='present'`).get(date)).c,
+    absent: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='absent'`).get(date)).c,
+    excused: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='excused'`).get(date)).c,
+    late: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='late'`).get(date)).c
   };
   res.render('attendance', { title: 'الحضور والغياب', active: 'attendance', groups, daily, date, today: today(), canSave: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance'),
     yday: addDays(today(), -1), dyday: addDays(today(), -2), tomorrow: addDays(today(), 1), isPast: date < today() });
@@ -259,7 +258,7 @@ router.post('/attendance/group-save', async function (req, res) {
   const d = req.body.date || today();
   const group = await db.prepare('SELECT * FROM groups WHERE id = ?').get(gid);
   if (!group) return res.status(400).json({ ok: false, error: 'المجموعة غير موجودة' });
-  let session = await db.prepare('SELECT * FROM sessions WHERE group_id = ? AND date = ? ORDER BY start_time LIMIT 1').get(gid, d);
+  let session = await db.prepare('SELECT * FROM sessions WHERE group_id = ? AND date = ? AND deleted_at IS NULL ORDER BY start_time LIMIT 1').get(gid, d);
   if (!session) {
     const info = await db.prepare(`INSERT INTO sessions (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, note) VALUES (?,?,?,?,?,?,?,?,?,?)`)
       .run(gid, group.name + ' - ' + d, d, groupStartTime(group), null, group.coach_id, group.pool_id, 'scheduled', 0, 'أُنشئت تلقائياً من شاشة الحضور');

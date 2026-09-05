@@ -4,7 +4,7 @@
   <p style="color:var(--text-muted);margin-bottom:28px">دورات مكثفة وتعليمية للسباحة لجميع الأعمار</p>
   <div class="dash-grid">
     <% programs.forEach(function (p) { %>
-      <a href="/site/programs/<%= p.id %>" class="program-card" style="text-decoration:none;color:var(--text)">
+      <a href="<%= (data.base || '/site') %>/programs/<%= p.id %>" class="program-card" style="text-decoration:none;color:var(--text)">
         <div class="flex justify-between items-center">
           <span class="badge badge-primary"><%= p.type %></span>
           <span class="fw-700" style="color:var(--primary);font-size:18px"><%= money(p.price) %></span>

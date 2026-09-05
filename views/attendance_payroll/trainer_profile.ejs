@@ -1,0 +1,92 @@
+<%- include('../partials/layout_top', { title: title, active: 'trainerAttendance' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-user-tie"></i> <%= train.full_name %></div>
+    <div class="page-sub"><%= train.qualification || '' %><% if (train.specialization) { %> · <%= train.specialization %><% } %> · الفترة: <b><%= month %></b></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1" style="flex-wrap:wrap">
+    <form method="get" action="/trainer-profile/<%= train.id %>" class="flex gap-1">
+      <input type="month" name="month" class="form-control" value="<%= month %>">
+      <button class="btn btn-outline btn-sm" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
+    </form>
+    <a href="/trainer-attendance?month=<%= month %>" class="btn btn-ghost btn-sm"><i class="fas fa-list"></i> كل المدربين</a>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <% var total = atts.length, present = 0, absent = 0, late = 0, cancelled = 0, cost = 0; %>
+  <% atts.forEach(function (a) { if (a.status === 'حاضر') present++; else if (a.status === 'غائب') absent++; else if (a.status === 'متأخر') late++; else if (a.status === 'ملغاة') cancelled++; }); %>
+  <div class="kpi"><div class="k-val text-primary"><%= total %></div><div class="k-lbl">حصص</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= present %></div><div class="k-lbl">حاضر</div></div>
+  <div class="kpi"><div class="k-val text-danger"><%= absent %></div><div class="k-lbl">غائب</div></div>
+  <div class="kpi"><div class="k-val text-warning"><%= late %></div><div class="k-lbl">متأخر</div></div>
+  <div class="kpi"><div class="k-val text-muted"><%= cancelled %></div><div class="k-lbl">ملغاة</div></div>
+</div>
+
+<div class="grid-2" style="align-items:start">
+  <div class="card">
+    <div class="card-header"><i class="fas fa-clipboard-user"></i> سجل الحصص (<%= month %>)</div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th>المجموعة</th><th>الوقت</th><th class="sortable">الحالة<span class="sort-ind"></span></th><th class="sortable">القيمة<span class="sort-ind"></span></th></tr></thead>
+        <tbody>
+          <% if (atts.length) { %>
+            <% atts.forEach(function (a) { %>
+              <% var st = STATUS.find(function (s) { return s.value === a.status; }); %>
+              <tr>
+                <td><%= fmtDate(a.date) %></td>
+                <td><%= a.group_name || ('حصة #' + a.session_id) %><% if (a.branch_name) { %><br><span class="font-11 text-muted"><%= a.branch_name %></span><% } %></td>
+                <td dir="ltr"><%= a.start_time %></td>
+                <td><% if (st) { %><span class="badge <%= st.cls %>"><%= st.label %></span><% } %></td>
+                <td><%= money(a.session_rate || 0) %></td>
+              </tr>
+            <% }); %>
+          <% } else { %>
+            <tr><td colspan="5"><div class="empty-state"><i class="fas fa-clipboard-user"></i><p>لا توجد حصص مسجلة في هذا الشهر</p></div></td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="card">
+      <div class="card-header"><i class="fas fa-tags"></i> الأسعار</div>
+      <div class="card-body">
+        <div class="detail-grid">
+          <div class="detail-item"><div class="dl">سعر الحصة الافتراضي</div><div class="dv fw-700"><%= money(rate.effective) %></div></div>
+          <div class="detail-item"><div class="dl">سعر الساعة</div><div class="dv"><%= money(rate.hourly_rate) %></div></div>
+          <div class="detail-item"><div class="dl">حصة خاصة</div><div class="dv"><%= money(rate.private_rate) %></div></div>
+          <div class="detail-item"><div class="dl">حصة جماعية</div><div class="dv"><%= money(rate.group_rate) %></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><i class="fas fa-scale-balanced"></i> الخصومات والإضافات</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th>النوع</th><th class="sortable">المبلغ<span class="sort-ind"></span></th></tr></thead>
+          <tbody>
+            <% if (adjustments.length) { %>
+              <% adjustments.forEach(function (x) { %>
+                <tr>
+                  <td><%= fmtDate(x.date) %></td>
+                  <td><% if (x.adj_type === 'bonus') { %><span class="badge badge-success"><%= x.adj_category || 'إضافة' %></span><% } else { %><span class="badge badge-danger"><%= x.adj_category || 'خصم' %></span><% } %></td>
+                  <td class="<%= x.adj_type === 'bonus' ? 'text-success' : 'text-danger' %>"><%= money(x.amount) %></td>
+                </tr>
+              <% }); %>
+            <% } else { %>
+              <tr><td colspan="3"><div class="empty-state"><i class="fas fa-scale-balanced"></i><p>لا توجد قيود</p></div></td></tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-body">
+        <a href="/deductions?month=<%= month %>" class="btn btn-ghost btn-sm"><i class="fas fa-scale-balanced"></i> إدارة الخصومات والإضافات</a>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('../partials/layout_bottom') %>

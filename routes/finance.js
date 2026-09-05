@@ -7,14 +7,14 @@ const { setFlash } = require('../lib/auth-cookie');
 const router = express.Router();
 
 async function swimmerOptions() {
-  return (await db.prepare('SELECT id, full_name, membership_no FROM swimmers ORDER BY full_name').all())
+  return (await db.prepare('SELECT id, full_name, membership_no FROM swimmers WHERE deleted_at IS NULL ORDER BY full_name').all())
     .map(s => ({ value: s.id, label: s.full_name + ' (' + s.membership_no + ')' }));
 }
 async function programOptions() {
-  return (await db.prepare('SELECT * FROM programs ORDER BY name').all()).map(p => ({ value: p.id, label: p.name }));
+  return (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL ORDER BY name').all()).map(p => ({ value: p.id, label: p.name }));
 }
 async function groupOptions() {
-  return (await db.prepare('SELECT * FROM groups ORDER BY name').all()).map(g => ({ value: g.id, label: g.name }));
+  return (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL ORDER BY name').all()).map(g => ({ value: g.id, label: g.name }));
 }
 
 /* حساب الإجمالي بعد الخصم والضريبة */
@@ -47,7 +47,7 @@ router.get('/subscriptions', async function (req, res) {
     filters: [
       { name: 'status', label: 'الحالة', options: ['نشط', 'مكتمل', 'منتهي', 'مجمد', 'ملغي'].map(v => ({ value: v, label: v })) },
       { name: 'payment_method', label: 'طريقة الدفع', options: ['نقدي', 'تحويل بنكي', 'بطاقة', 'محفظة إلكترونية', 'شيك'].map(v => ({ value: v, label: v })) },
-      { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) }
+      { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) }
     ],
     canAdd: canAdd(req.currentUser, 'subscriptions'), addUrl: canAdd(req.currentUser, 'subscriptions') ? '/subscriptions/new' : null, addLabel: 'اشتراك جديد',
     actions: () => row => {
@@ -413,7 +413,7 @@ router.get('/coach-payments', async function (req, res) {
     rows,
     filters: [
       { name: 'status', label: 'الحالة', options: ['مستحق', 'مدفوع جزئياً', 'مسدد'].map(v => ({ value: v, label: v })) },
-      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT * FROM coaches ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) }
+      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) }
     ],
     canAdd: canAdd(req.currentUser, 'coachPayments'), addUrl: canAdd(req.currentUser, 'coachPayments') ? '/coach-payments/new' : null, addLabel: 'استحقاق جديد',
     actions: () => row => [
@@ -425,7 +425,7 @@ router.get('/coach-payments', async function (req, res) {
 });
 const cpFields = async function (values) {
   return [
-    { key: 'coach_id', label: 'الكابتن', type: 'select', options: (await db.prepare('SELECT * FROM coaches ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })), required: true, section: 'بيانات الاستحقاق', sectionIcon: 'fa-coins' },
+    { key: 'coach_id', label: 'الكابتن', type: 'select', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })), required: true, section: 'بيانات الاستحقاق', sectionIcon: 'fa-coins' },
     { key: 'period', label: 'الفترة', type: 'text', placeholder: '2026-01', required: true },
     { key: 'amount_due', label: 'المبلغ المستحق', type: 'number', number: true, section: 'الحساب', sectionIcon: 'fa-calculator' },
     { key: 'bonus', label: 'المكافأة', type: 'number', number: true },

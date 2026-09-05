@@ -1,0 +1,42 @@
+<%- include('../partials/layout_top', { title: title, active: active, pageCss: ['/css/platform.css'] }) %>
+<div class="platform">
+  <div class="pf-hero">
+    <div>
+      <div class="pf-hero-eyebrow"><i class="fas fa-gem"></i> خطط الاشتراك</div>
+      <div class="pf-hero-title">خطط الأكاديميات</div>
+      <div class="pf-hero-sub">اختر حدود ومزايا كل خطة — ويمكن تخصيصها بحرية</div>
+    </div>
+    <div class="pf-hero-actions">
+      <a href="/platform/plans/new" class="btn-hero"><i class="fas fa-plus"></i> خطة جديدة</a>
+    </div>
+  </div>
+
+  <div class="pf-plans">
+    <% plans.forEach(function (p) { %>
+      <div class="pf-plan <%= (p.code === 'premium' || p.is_system) ? 'hl' : '' %>">
+        <div class="pf-plan-head">
+          <div class="pf-plan-name"><i class="fas fa-gem"></i> <%= p.name %></div>
+          <div class="pf-plan-price"><%= money(p.monthly_price) %> <small>ج / شهرياً</small></div>
+        </div>
+        <% let _pf = []; try { _pf = JSON.parse(p.features || '[]'); } catch (e) {} _pf = _pf.filter(k => k.indexOf('__') > -1); var _total = FEATURES.filter(f => f.key.indexOf('__') > -1).length; %>
+        <div class="pf-plan-body">
+          <ul class="pf-plan-feat">
+            <li><i class="fas fa-check"></i> اللاعبون <span class="pf-feat-k"><%= p.max_students === -1 ? '∞' : p.max_students %></span></li>
+            <li><i class="fas fa-check"></i> المستخدمون <span class="pf-feat-k"><%= p.max_users === -1 ? '∞' : p.max_users %></span></li>
+            <li><i class="fas fa-check"></i> الفروع <span class="pf-feat-k"><%= p.max_branches === -1 ? '∞' : p.max_branches %></span></li>
+            <li><i class="fas fa-check"></i> التخزين <span class="pf-feat-k"><%= p.storage_limit === 0 ? 'بدون' : p.storage_limit + ' م.ب' %></span></li>
+            <li><i class="fas fa-shield-halved"></i> الصلاحيات المفعّلة <span class="pf-feat-k"><span class="pf-badge <%= _pf.length ? 'pf-badge-blue' : 'pf-badge-gray' %>"><%= _pf.length %> من <%= _total %></span></span></li>
+            <li><i class="fas fa-check" style="visibility:hidden"></i> الحالة <span class="pf-feat-k"><span class="pf-badge pf-badge-<%= p.status === 'active' ? 'green' : 'gray' %>"><%= p.status === 'active' ? 'مفعلة' : 'معطلة' %></span></span></li>
+          </ul>
+          <div class="pf-plan-foot">
+            <a href="/platform/plans/<%= p.id %>/edit" class="pf-btn primary"><i class="fas fa-pen"></i> تعديل الصلاحيات</a>
+          </div>
+        </div>
+      </div>
+    <% }); %>
+    <% if (!plans.length) { %>
+      <div class="pf-empty" style="grid-column:1/-1"><i class="fas fa-box-open"></i><p>لا توجد خطط بعد</p></div>
+    <% } %>
+  </div>
+</div>
+<%- include('../partials/layout_bottom') %>

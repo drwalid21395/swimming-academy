@@ -1,0 +1,166 @@
+<%- include('../partials/layout_top', { title: title, active: active, pageCss: ['/css/platform.css'] }) %>
+<div class="platform">
+  <div class="pf-cover">
+    <div class="pf-cover-band">
+      <div class="pf-actions">
+        <form method="POST" action="/platform/academies/<%= a.id %>/impersonate" style="margin:0"><button class="pf-btn"><i class="fas fa-person-walking-dashed-line-arrow-right"></i> الدخول بالنيابة</button></form>
+        <a href="/platform/academies/<%= a.id %>/edit" class="pf-btn"><i class="fas fa-pen"></i> تعديل</a>
+        <% if (+a.premium !== 1) { %>
+          <form method="POST" action="/platform/academies/<%= a.id %>/status" style="margin:0">
+            <input type="hidden" name="status" value="<%= a.status === 'suspended' ? 'active' : 'suspended' %>">
+            <button class="pf-btn"><%= a.status === 'suspended' ? '<i class="fas fa-play"></i> تفعيل' : '<i class="fas fa-pause"></i> إيقاف' %></button>
+          </form>
+        <% } %>
+      </div>
+    </div>
+    <div class="pf-cover-body">
+      <div class="pf-cover-head">
+        <div class="pf-cover-avatar" id="cv-avatar" title="اضغط لتغيير اللوجو" onclick="if(event.target.tagName!=='INPUT'){var i=this.querySelector('input[type=file]');if(i)i.click();}">
+          <form method="POST" action="/platform/academies/<%= a.id %>/logo" enctype="multipart/form-data" id="cv-logo-form">
+            <span class="cv-frame"><% if (a.logo) { %><img src="<%= a.logo %>"><% } else { %><i class="fas fa-building"></i><% } %></span>
+            <span class="cv-hint"><i class="fas fa-camera"></i> تغيير اللوجو</span>
+            <input type="file" name="logo" accept="image/*" onchange="this.form.submit()">
+          </form>
+        </div>
+        <div class="pf-cover-meta">
+          <h2>
+            <%= a.name %>
+            <% if (+a.premium === 1) { %><span class="pf-badge pf-badge-brand"><i class="fas fa-crown"></i> الأساسية</span><% } %>
+            <span class="pf-badge pf-badge-<%= a.subInfo.status === 'ACTIVE' ? 'green' : a.subInfo.status === 'EXPIRING_SOON' ? 'amber' : 'red' %>"><%= a.subInfo.label %></span>
+          </h2>
+          <p>@<%= a.username || '—' %> · المالك: <%= a.owner_name || '—' %> · أُنشئت <span dir="ltr"><%= a.created_at %></span></p>
+        </div>
+      </div>
+      <div class="pf-mini" style="margin-top:18px">
+        <div class="pf-mini-item"><div class="pf-mini-v"><%= a.studentCount %></div><div class="pf-mini-l"><i class="fas fa-person-swimming"></i> اللاعبون</div></div>
+        <div class="pf-mini-item"><div class="pf-mini-v"><%= a.userCount %></div><div class="pf-mini-l"><i class="fas fa-users"></i> المستخدمون</div></div>
+        <div class="pf-mini-item"><div class="pf-mini-v"><%= a.guardianCount %></div><div class="pf-mini-l"><i class="fas fa-people-roof"></i> أولياء الأمور</div></div>
+        <div class="pf-mini-item"><div class="pf-mini-v"><%= a.subsCount %></div><div class="pf-mini-l"><i class="fas fa-file-contract"></i> الاشتراكات</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pf-grid-2">
+    <div class="pf-card">
+      <div class="pf-card-head"><h3><i class="fas fa-address-card"></i> معلومات الأكاديمية</h3></div>
+      <div class="pf-card-body">
+        <div class="pf-info">
+          <div class="pf-info-row"><span>الخطة</span><b><span class="pf-badge pf-badge-violet"><%= a.plan_name || '—' %></span></b></div>
+          <div class="pf-info-row"><span>الهاتف</span><b dir="ltr"><%= a.phone || '—' %></b></div>
+          <div class="pf-info-row"><span>الواتساب</span><b dir="ltr"><%= a.whatsapp || '—' %></b></div>
+          <div class="pf-info-row"><span>البريد</span><b dir="ltr"><%= a.email || '—' %></b></div>
+          <div class="pf-info-row"><span>العنوان</span><b><%= a.address || '—' %></b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pf-card">
+      <div class="pf-card-head"><h3><i class="fas fa-file-signature"></i> الاشتراك الحالي</h3></div>
+      <div class="pf-card-body">
+        <div class="pf-info">
+          <div class="pf-info-row"><span>النوع</span><b><%= a.plan_name || 'لا توجد خطة' %></b></div>
+          <div class="pf-info-row"><span>تاريخ الانتهاء</span><b dir="ltr"><%= a.sub ? a.sub.expiry_date : '—' %></b></div>
+          <div class="pf-info-row"><span>الأيام المتبقية</span><b><%= a.subInfo.daysLeft != null ? a.subInfo.daysLeft + ' يوم' : '—' %></b></div>
+        </div>
+        <% if (+a.premium !== 1) { %>
+          <div style="margin-top:18px;border-top:1px dashed var(--pf-line);padding-top:16px">
+            <div style="font-weight:800;font-size:13.5px;margin-bottom:12px;color:var(--pf-text)"><i class="fas fa-rotate"></i> تجديد الاشتراك</div>
+            <form method="POST" action="/platform/academies/<%= a.id %>/renew">
+              <div class="pf-form-grid">
+                <div class="pf-field"><label>الخطة</label>
+                  <select name="plan_id" class="pf-input">
+                    <option value="">نفس الخطة</option>
+                    <% plans.forEach(function (pl) { %>
+                      <option value="<%= pl.id %>" <%= a.plan_id == pl.id ? 'selected' : '' %>><%= pl.name %></option>
+                    <% }); %>
+                  </select>
+                </div>
+                <div class="pf-field"><label>المدة (شهور)</label><input name="duration_months" type="number" value="1" min="1" class="pf-input"></div>
+                <div class="pf-field"><label>السعر (جنيه)</label><input name="price" type="number" step="0.01" value="0" class="pf-input"></div>
+              </div>
+              <button class="pf-btn primary lg" style="margin-top:12px"><i class="fas fa-rotate"></i> تجديد الاشتراك</button>
+            </form>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <div class="pf-grid-2">
+    <div class="pf-card">
+      <div class="pf-card-head"><h3><i class="fas fa-users"></i> المستخدمون</h3><span class="pf-badge pf-badge-blue"><%= users.length %></span></div>
+      <div class="pf-card-body flat">
+        <div class="pf-table">
+          <table>
+            <thead><tr><th>المستخدم</th><th>النوع</th><th>الحالة</th></tr></thead>
+            <tbody>
+              <% users.forEach(function (u) { %>
+                <tr>
+                  <td><div class="pf-entity-t"><%= u.full_name %></div><div class="pf-entity-s">@<%= u.username %></div></td>
+                  <td><%= u.user_type || '—' %></td>
+                  <td><span class="pf-badge pf-badge-<%= u.status === 'active' ? 'green' : 'red' %>"><%= u.status === 'active' ? 'نشط' : 'موقوف' %></span></td>
+                </tr>
+              <% }); %>
+              <% if (!users.length) { %><tr><td colspan="3"><div class="pf-empty"><i class="fas fa-users-slash"></i><p>لا يوجد مستخدمون</p></div></td></tr><% } %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="pf-card">
+      <div class="pf-card-head"><h3><i class="fas fa-clock-rotate-left"></i> سجل الاشتراكات</h3></div>
+      <div class="pf-card-body flat">
+        <div class="pf-table">
+          <table>
+            <thead><tr><th>البداية</th><th>الانتهاء</th><th>السعر</th></tr></thead>
+            <tbody>
+              <% subsHistory.forEach(function (s) { %>
+                <tr>
+                  <td dir="ltr" class="pf-entity-s"><%= s.start_date %></td>
+                  <td dir="ltr" class="pf-entity-s"><%= s.expiry_date %></td>
+                  <td><b><%= money(s.price) %></b></td>
+                </tr>
+              <% }); %>
+              <% if (!subsHistory.length) { %><tr><td colspan="3"><div class="pf-empty"><i class="fas fa-file-circle-xmark"></i><p>لا توجد اشتراكات</p></div></td></tr><% } %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pf-card">
+    <div class="pf-card-head"><h3><i class="fas fa-sack-dollar"></i> المدفوعات</h3><span class="pf-badge pf-badge-blue"><%= payments.length %></span></div>
+    <div class="pf-card-body flat">
+      <div class="pf-table">
+        <table>
+          <thead><tr><th>التاريخ</th><th>المبلغ</th><th>الطريقة</th><th>المرجع</th><th>الحالة</th></tr></thead>
+          <tbody>
+            <% payments.forEach(function (p) { %>
+              <tr>
+                <td dir="ltr" class="pf-entity-s"><%= p.created_at %></td>
+                <td><b><%= money(p.amount) %></b></td>
+                <td><%= p.payment_method || '—' %></td>
+                <td><span dir="ltr" class="pf-entity-s"><%= p.transaction_reference || '—' %></span></td>
+                <td><span class="pf-badge pf-badge-<%= p.status === 'APPROVED' ? 'green' : 'amber' %>"><%= p.status === 'APPROVED' ? 'مدفوع' : 'معلق' %></span></td>
+              </tr>
+            <% }); %>
+            <% if (!payments.length) { %><tr><td colspan="5"><div class="pf-empty"><i class="fas fa-coins"></i><p>لا توجد مدفوعات بعد</p></div></td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+  .platform #cv-avatar{position:relative}
+  .platform #cv-avatar form{position:absolute;inset:0;margin:0;display:flex;align-items:center;justify-content:center}
+  .platform #cv-avatar .cv-frame{display:contents}
+  .platform #cv-avatar .cv-frame img{width:100%;height:100%;object-fit:cover;display:block;position:relative;z-index:0}
+  .platform #cv-avatar .cv-frame i{pointer-events:none}
+  .platform #cv-avatar input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:2;border:none}
+  .platform #cv-avatar .cv-hint{position:absolute;inset:auto 0 0 0;background:rgba(0,0,0,.7);color:#fff;font-size:11px;padding:6px 4px;text-align:center;display:flex;align-items:center;justify-content:center;gap:5px;opacity:0;transition:opacity .15s;pointer-events:none;z-index:1;border-radius:0 0 14px 14px;white-space:nowrap}
+  .platform #cv-avatar:hover .cv-hint{opacity:1}
+</style>
+<%- include('../partials/layout_bottom') %>

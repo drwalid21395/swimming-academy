@@ -1,0 +1,127 @@
+<%- include('../partials/layout_top', { title: 'صفحة الحضور السريع', active: 'trainerAttendance' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-bolt"></i> صفحة الحضور السريع</div>
+    <div class="page-sub">تسجيل حضور المدربين حسب الحصة بضغطة واحدة — <b><%= fmtDate(date) %></b></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1" style="flex-wrap:wrap">
+    <a href="/staff-hours?date=<%= days[0] %>" class="btn <%= date === days[0] ? 'btn-primary' : 'btn-ghost' %> btn-sm">اليوم (اليوم)</a>
+    <a href="/staff-hours?date=<%= yday %>" class="btn <%= date === yday ? 'btn-primary' : 'btn-ghost' %> btn-sm">أمس</a>
+    <a href="/staff-hours?date=<%= prevDates[1] %>" class="btn <%= date === prevDates[1] ? 'btn-primary' : 'btn-ghost' %> btn-sm">قبل يومين</a>
+    <form method="get" action="/staff-hours" class="flex gap-1">
+      <input type="date" name="date" class="form-control" value="<%= date %>">
+      <button class="btn btn-outline btn-sm" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
+    </form>
+    <a href="/trainer-attendance?month=<%= date.slice(0,7) %>" class="btn btn-outline btn-sm"><i class="fas fa-list"></i> سجل المدربين</a>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="k-val text-primary"><%= stats.total %></div><div class="k-lbl">حصص اليوم</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= stats.marked %></div><div class="k-lbl">تم التسجيل</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= stats.present %></div><div class="k-lbl">حاضر</div></div>
+  <div class="kpi"><div class="k-val text-danger"><%= stats.absent %></div><div class="k-lbl">غائب</div></div>
+  <div class="kpi"><div class="k-val text-warning"><%= stats.late %></div><div class="k-lbl">متأخر</div></div>
+  <div class="kpi"><div class="k-val"><%= stats.cancelled %></div><div class="k-lbl">ملغاة</div></div>
+</div>
+
+<% if (sessions.length) { %>
+  <% sessions.forEach(function (s) { %>
+    <% var att = attMap[s.id + ':' + s.coach_id]; %>
+    <div class="card att-session-card" data-session="<%= s.id %>" style="margin-bottom:14px">
+      <div class="card-header att-session-head">
+        <h3><i class="fas fa-people-group"></i> <%= s.group_name || ('حصة #' + s.id) %>
+          <span class="badge badge-success"><i class="fas fa-clock"></i> <%= s.start_time %><% if (s.end_time) { %> — <%= s.end_time %><% } %></span>
+          <% if (s.is_virtual) { %><span class="badge badge-info"><i class="fas fa-calendar-repeat"></i> من جدول المجموعة</span><% } %>
+          <% if (s.ses_status === 'cancelled') { %><span class="badge badge-gray"><i class="fas fa-ban"></i> ملغاة</span><% } %>
+        </h3>
+        <span class="text-muted font-12"><i class="fas fa-user-tie"></i> <%= s.coach_name || 'بدون مدرب' %> · <i class="fas fa-water"></i> <%= s.pool_name || '—' %> · <i class="fas fa-building"></i> <%= s.branch_id || '—' %></span>
+      </div>
+      <div class="card-body">
+        <% if (s.coach_id) { %>
+          <% var att = attMap ? attMap[s.id + ':' + s.coach_id] : null; %>
+          <div class="flex gap-1" style="flex-wrap:wrap;align-items:center;margin-bottom:12px">
+            <div class="btn-group" role="group">
+              <% STATUS.forEach(function (st) { %>
+                <button class="btn btn-sm <%= (att && att.status === st.value) ? 'btn-primary' : 'btn-ghost' %> ses-status" data-status="<%= st.value %>" data-session="<%= s.is_virtual ? s.group_id : s.id %>" data-group="<%= s.group_id %>" data-virtual="<%= s.is_virtual ? 1 : 0 %>" data-coach="<%= s.coach_id %>" title="<%= st.label %>"><i class="fas <%= st.icon %>"></i> <%= st.label %></button>
+              <% }); %>
+            </div>
+            <div class="spacer"></div>
+            <button class="btn btn-success btn-sm ses-save" data-session="<%= s.is_virtual ? s.group_id : s.id %>" data-group="<%= s.group_id %>" data-virtual="<%= s.is_virtual ? 1 : 0 %>" data-coach="<%= s.coach_id %>" data-date="<%= date %>"><i class="fas fa-floppy-disk"></i> حفظ</button>
+          </div>
+
+          <div class="flex gap-1" style="flex-wrap:wrap;align-items:center">
+            <div class="form-group" style="margin:0"><label class="font-11 text-muted">قيمة الحصة (ج.م)</label><input type="number" step="0.01" class="form-control ses-rate" data-session="<%= s.id %>" style="width:130px" value="<%= att && att.session_rate != null ? att.session_rate : '' %>" placeholder="تلقائي"></div>
+            <% if (att && att.status === 'متأخر') { %>
+              <div class="form-group" style="margin:0"><label class="font-11 text-muted">دقائق التأخير</label><input type="number" class="form-control ses-late" data-session="<%= s.id %>" style="width:100px" value="<%= att.late_minutes || 0 %>"></div>
+            <% } %>
+            <div class="form-group" style="margin:0;min-width:200px"><label class="font-11 text-muted">ملاحظة</label><input type="text" class="form-control ses-note" data-session="<%= s.id %>" value="<%= att && att.note ? att.note : '' %>" placeholder="اختيارية"></div>
+          </div>
+        <% } else { %>
+          <div class="empty-state"><i class="fas fa-user-slash"></i><p>لا يوجد مدرب مرتبط بهذه الحصة — اختر مدرباً من سجل الحصص</p></div>
+        <% } %>
+      </div>
+    </div>
+  <% }); %>
+<% } else { %>
+  <div class="card"><div class="card-body">
+    <div class="empty-state"><i class="fas fa-calendar-xmark"></i><p>لا توجد حصص في هذا اليوم</p></div>
+  </div></div>
+<% } %>
+
+<script>
+(function () {
+  var openCard = null;
+  function currentValue(session, coach, field) {
+    var card = document.querySelector('.att-session-card[data-session="' + session + '"]');
+    if (!card) return null;
+    var el = card.querySelector('.ses-' + field);
+    return el ? el.value : null;
+  }
+  document.querySelectorAll('.ses-status').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var card = btn.closest('.att-session-card');
+      var session = btn.getAttribute('data-session');
+      var coach = btn.getAttribute('data-coach');
+      card.querySelectorAll('.ses-status').forEach(function (b) { b.classList.remove('btn-primary'); b.classList.add('btn-ghost'); });
+      btn.classList.remove('btn-ghost'); btn.classList.add('btn-primary');
+      btn.dataset.chosen = '1';
+      var lateWrap = card.querySelector('.ses-late');
+      if (lateWrap) lateWrap.closest('.form-group').style.display = btn.getAttribute('data-status') === 'متأخر' ? '' : 'none';
+    });
+  });
+  document.querySelectorAll('.ses-save').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var card = btn.closest('.att-session-card');
+      var session = btn.getAttribute('data-session');
+      var coach = btn.getAttribute('data-coach');
+      var isVirtual = btn.getAttribute('data-virtual') === '1';
+      var groupId = btn.getAttribute('data-group');
+      var date = btn.getAttribute('data-date');
+      var chosen = card.querySelector('.ses-status.btn-primary');
+      var status = chosen ? chosen.getAttribute('data-status') : 'حاضر';
+      var rateEl = card.querySelector('.ses-rate');
+      var lateEl = card.querySelector('.ses-late');
+      var noteEl = card.querySelector('.ses-note');
+      var payload = {
+        status: status,
+        session_rate: rateEl ? rateEl.value : '',
+        late_minutes: lateEl ? (lateEl.value || 0) : 0,
+        note: noteEl ? noteEl.value : ''
+      };
+      if (isVirtual) { payload.group_id = groupId; payload.date = date; }
+      var url = isVirtual ? '/staff-hours/save-group' : '/staff-hours/save/' + session;
+      btn.disabled = true;
+      fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      }).then(function (r) { return r.json(); }).then(function (res) {
+        btn.disabled = false;
+        if (res.ok) { App.showToast('تم حفظ حضور الحصة (' + status + ')', 'success'); }
+        else { App.showToast(res.error || 'فشل الحفظ', 'error'); }
+      }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+    });
+  });
+})();
+</script>
+<%- include('../partials/layout_bottom') %>

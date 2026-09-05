@@ -1,0 +1,144 @@
+<%- include('../partials/layout_top', { title: title, active: 'payroll' }) %>
+<div class="page-head no-print">
+  <div>
+    <div class="page-title"><i class="fas fa-file-invoice-dollar"></i> كشف حساب: <b><%= row.coach_name || row.staff_name %></b></div>
+    <div class="page-sub">الفترة: <b><%= month %></b> · <%= row.person_type === 'trainer' ? 'مدرب' : 'موظف' %><% if (row.branch_name) { %> · <%= row.branch_name %><% } %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1" style="flex-wrap:wrap">
+    <a href="/payroll?month=<%= month %>" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل الكشوف</a>
+    <button class="btn btn-primary" data-print onclick="window.print()"><i class="fas fa-file-pdf"></i> طباعة / PDF</button>
+  </div>
+</div>
+
+<div class="kpi-row no-print">
+  <div class="kpi"><div class="k-val"><%= money(row.gross) %></div><div class="k-lbl">الاستحقاق</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= money(row.extras) %></div><div class="k-lbl">الإضافات</div></div>
+  <div class="kpi"><div class="k-val text-danger"><%= money(row.deductions) %></div><div class="k-lbl">الخصومات</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= money(row.net) %></div><div class="k-lbl">الصافي</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= money(row.paid_amount) %></div><div class="k-lbl">المدفوع</div></div>
+  <div class="kpi"><div class="k-val <%= Number(row.remaining) > 0 ? 'text-danger' : 'text-success' %>"><%= money(row.remaining) %></div><div class="k-lbl">المتبقي</div></div>
+</div>
+
+<% if (canEdit && Number(row.remaining) > 0) { %>
+<div class="card no-print">
+  <div class="card-header"><i class="fas fa-money-bill-wave"></i> تسجيل دفعة</div>
+  <div class="card-body">
+    <form id="payForm" method="post" class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="margin:0"><label class="font-11 text-muted">المبلغ (كحد أقصى <b><%= fmtMoney(row.remaining) %></b>)</label><input type="number" step="0.01" name="amount" class="form-control" value="<%= row.remaining %>" min="0.01" max="<%= row.remaining %>" style="width:140px" required></div>
+      <div class="form-group" style="margin:0"><label class="font-11 text-muted">التاريخ</label><input type="date" name="paid_date" class="form-control" value="<%= today() %>"></div>
+      <div class="form-group" style="margin:0"><label class="font-11 text-muted">طريقة الدفع</label>
+        <select name="method" class="form-control">
+          <% PAY_METHODS.forEach(function (m) { %><option value="<%= m %>"><%= m %></option><% }); %>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;min-width:180px"><label class="font-11 text-muted">ملاحظة</label><input type="text" name="note" class="form-control" placeholder="اختيارية"></div>
+      <button type="submit" class="btn btn-success btn-lg"><i class="fas fa-hand-holding-usd"></i> صرف دفعة</button>
+      <% if (!Number(row.approved)) { %><button type="button" class="btn btn-outline btn-lg" id="approveBtn"><i class="fas fa-check"></i> اعتماد الكشف</button><% } %>
+    </form>
+    <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> عند الصرف يتم تسجيل دفعة و إنشاء مصروف تلقائياً في سجل المصروفات (فئة: رواتب وأجور).</div>
+  </div>
+</div>
+<% } %>
+
+<div class="grid-2" style="align-items:start">
+  <div class="card">
+    <div class="card-header"><i class="fas fa-list-check"></i> تفصيل الحساب (<%= statementRows.length %> بند)</div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th>البيان</th><th class="sortable">الحالة<span class="sort-ind"></span></th><th class="sortable">القيمة<span class="sort-ind"></span></th></tr></thead>
+        <tbody>
+          <% if (statementRows.length) { %>
+            <% statementRows.forEach(function (a) { %>
+              <tr>
+                <td><%= fmtDate(a.date) %></td>
+                <td><%= row.person_type === 'trainer' ? (a.group_name || 'حصة #' + a.session_id) : 'حضور يوم' %><% if (a.start_time) { %> <span class="font-11 text-muted" dir="ltr">(<%= a.start_time %>)</span><% } %></td>
+                <td><% var st = STATUS && STATUS.find ? STATUS.find(function (s) { return s.value === a.status; }) : null; if (st) { %><span class="badge <%= st.cls %>"><%= st.label %></span><% } else { %><span class="badge badge-gray"><%= a.status %></span><% } %></td>
+                <td><%= money(a.session_rate || a.shift_value || 0) %></td>
+              </tr>
+            <% }); %>
+          <% } else { %>
+            <tr><td colspan="4"><div class="empty-state"><i class="fas fa-list"></i><p>لا توجد بنود في هذا الشهر</p></div></td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="card">
+      <div class="card-header"><i class="fas fa-scale-balanced"></i> الخصومات والإضافات (<%= adjustments.length %>)</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th>النوع</th><th>التصنيف</th><th class="sortable">المبلغ<span class="sort-ind"></span></th></tr></thead>
+          <tbody>
+            <% if (adjustments.length) { %>
+              <% adjustments.forEach(function (x) { %>
+                <tr>
+                  <td><%= fmtDate(x.date) %></td>
+                  <td><% if (x.adj_type === 'bonus') { %><span class="badge badge-success">إضافة</span><% } else { %><span class="badge badge-danger">خصم</span><% } %></td>
+                  <td><%= x.adj_category || '—' %></td>
+                  <td class="<%= x.adj_type === 'bonus' ? 'text-success' : 'text-danger' %>"><%= money(x.amount) %></td>
+                </tr>
+              <% }); %>
+            <% } else { %>
+              <tr><td colspan="4"><div class="empty-state"><i class="fas fa-scale-balanced"></i><p>لا توجد قيود</p></div></td></tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><i class="fas fa-receipt"></i> سجل الدفعات (<%= pays.length %>)</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th class="sortable">المبلغ<span class="sort-ind"></span></th><th>طريقة</th><th>بواسطة</th></tr></thead>
+          <tbody>
+            <% if (pays.length) { %>
+              <% pays.forEach(function (p) { %>
+                <tr>
+                  <td><%= fmtDate(p.paid_date) %></td>
+                  <td class="fw-700 text-success"><%= money(p.amount) %></td>
+                  <td><span class="badge badge-primary"><%= p.method %></span></td>
+                  <td class="font-12"><%= p.payer_name || '—' %><% if (p.note) { %><br><span class="text-muted"><%= p.note %></span><% } %></td>
+                </tr>
+              <% }); %>
+            <% } else { %>
+              <tr><td colspan="4"><div class="empty-state"><i class="fas fa-receipt"></i><p>لم تُسجل أي دفعات بعد</p></div></td></tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var payForm = document.getElementById('payForm');
+  if (payForm) payForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var fd = new FormData(e.target); var data = {};
+    fd.forEach(function (v, k) { data[k] = v; });
+    var btn = e.target.querySelector('button[type="submit"]'); btn.disabled = true;
+    fetch('/payroll/<%= row.id %>/pay', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      btn.disabled = false;
+      if (res.ok) { App.showToast('تم صرف ' + money(res.paidNow), 'success'); setTimeout(function () { location.reload(); }, 700); }
+      else { App.showToast(res.error || 'فشل الصرف', 'error'); }
+    }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+  });
+  var approveBtn = document.getElementById('approveBtn');
+  if (approveBtn) approveBtn.addEventListener('click', function () {
+    App.showConfirm('اعتماد هذا الكشف؟', function () {
+      fetch('/payroll/<%= row.id %>/approve', { method: 'POST' }).then(function (r) { return r.json(); }).then(function (res) {
+        if (res.ok) { App.showToast('تم الاعتماد', 'success'); setTimeout(function () { location.reload(); }, 600); }
+        else { App.showToast('فشل الاعتماد', 'error'); }
+      });
+    });
+  });
+})();
+</script>
+<%- include('../partials/layout_bottom') %>

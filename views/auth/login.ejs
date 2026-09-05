@@ -7,6 +7,29 @@
   <link rel="stylesheet" href="/vendor/fa-all.min.css">
   <link rel="stylesheet" href="/css/style.css?v=21">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>">
+  <% if (typeof primaryColor !== 'undefined' && primaryColor && /^#[0-9a-fA-F]{6}$/.test(primaryColor)) {
+    const _clamp = (n) => Math.max(0, Math.min(255, Math.round(n)));
+    const _h = primaryColor.replace('#','');
+    const _R = parseInt(_h.slice(0,2),16)/255, _G = parseInt(_h.slice(2,4),16)/255, _B = parseInt(_h.slice(4,6),16)/255;
+    const _mix = (pct, target) => { const t=parseInt(target.slice(1),16); return '#'+[_clamp(_R*255*(1-pct)+((t>>16)&255)*pct),_clamp(_G*255*(1-pct)+((t>>8)&255)*pct),_clamp(_B*255*(1-pct)+(t&255)*pct)].map(n=>n.toString(16).padStart(2,'0')).join(''); };
+    const _lumOf = (hex) => { const h=hex.replace('#',''); const r=parseInt(h.slice(0,2),16)/255,g=parseInt(h.slice(2,4),16)/255,b=parseInt(h.slice(4,6),16)/255; const f=v=>v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); return 0.2126*f(r)+0.7152*f(g)+0.0722*f(b); };
+    const _dark = _mix(0.55,'#0f172a');
+    const _lm = _lumOf(primaryColor);
+    const _onBtn = _lm > 0.4 ? '#0f172a' : '#ffffff';
+  %>
+  <style>
+    :root {
+      --primary: <%= primaryColor %>;
+      --primary-dark: <%= _dark %>;
+      --primary-light: <%= _mix(0.35,'#ffffff') %>;
+      --primary-soft: <%= _mix(0.88,'#ffffff') %>;
+    }
+    .auth-card { border-top: 6px solid <%= primaryColor %>; }
+    .auth-logo { color: <%= _onBtn %>; }
+    .btn-primary { background: <%= primaryColor %> !important; color: <%= _onBtn %> !important; }
+    .btn-primary:hover { background: <%= _dark %> !important; }
+  </style>
+  <% } %>
 </head>
 <body>
 <div class="auth-page">

@@ -1,0 +1,153 @@
+<%- include('../partials/layout_top', { title: title, active: active, pageCss: ['/css/platform.css'] }) %>
+<div class="platform">
+  <div class="pf-hero">
+    <div>
+      <div class="pf-hero-eyebrow"><i class="fas fa-gem"></i> خطط الاشتراك</div>
+      <div class="pf-hero-title"><%= p && p.id ? 'تعديل خطة' : 'خطة جديدة' %></div>
+      <div class="pf-hero-sub">حدّد بيانات الخطة وحدودها ومزاياها</div>
+    </div>
+    <div class="pf-hero-actions"><a href="/platform/plans" class="btn-hero btn-hero-ghost"><i class="fas fa-arrow-right"></i> العودة للخطط</a></div>
+  </div>
+
+  <div class="pf-card">
+    <div class="pf-card-body">
+      <form method="POST" action="/platform/plans">
+        <input type="hidden" name="plan_id" value="<%= p ? p.id : '' %>">
+
+        <div class="pf-sec-title"><i class="fas fa-id-card"></i> البيانات الأساسية</div>
+        <div class="pf-form-grid" style="margin-top:14px">
+          <div class="pf-field"><label>اسم الخطة <span class="req">*</span></label><input class="pf-input" name="name" value="<%= p ? p.name : '' %>" required placeholder="مثال: الخطة الأساسية"></div>
+          <div class="pf-field"><label>الكود</label><input class="pf-input" name="code" dir="ltr" value="<%= p ? p.code : '' %>" style="text-align:left" placeholder="basic"></div>
+          <div class="pf-field"><label>السعر الشهري (جنيه) <span class="req">*</span></label><input class="pf-input" name="monthly_price" type="number" step="0.01" value="<%= p ? p.monthly_price : '' %>" required placeholder="0"></div>
+          <div class="pf-field"><label>الحالة</label>
+            <select name="status" class="pf-input">
+              <option value="active" <%= (p && p.status === 'active') ? 'selected' : '' %>>مفعلة</option>
+              <option value="inactive" <%= (p && p.status === 'inactive') ? 'selected' : '' %>>معطلة</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="pf-sec-title"><i class="fas fa-sack-dollar"></i> حدود الخطة</div>
+        <div class="pf-hint" style="margin:8px 0 0">(-1 = غير محدود)</div>
+        <div class="pf-form-grid" style="margin-top:8px">
+          <div class="pf-field"><label>أقصى عدد لاعبين</label><input class="pf-input" name="max_students" type="number" value="<%= p ? p.max_students : '-1' %>"></div>
+          <div class="pf-field"><label>أقصى عدد مدرّبين</label><input class="pf-input" name="max_teachers" type="number" value="<%= p ? p.max_teachers : '-1' %>"></div>
+          <div class="pf-field"><label>أقصى عدد موظفين</label><input class="pf-input" name="max_employees" type="number" value="<%= p ? p.max_employees : '-1' %>"></div>
+          <div class="pf-field"><label>أقصى عدد مستخدمين</label><input class="pf-input" name="max_users" type="number" value="<%= p ? p.max_users : '-1' %>"></div>
+          <div class="pf-field"><label>أقصى عدد فروع</label><input class="pf-input" name="max_branches" type="number" value="<%= p ? p.max_branches : '1' %>"></div>
+          <div class="pf-field"><label>سعة التخزين (ميجابايت)</label><input class="pf-input" name="storage_limit" type="number" value="<%= p ? p.storage_limit : '0' %>"></div>
+        </div>
+
+        <div class="pf-sec-title" style="align-items:center">
+          <span><i class="fas fa-shield-halved"></i> صلاحيات خطة الأكاديمية</span>
+          <span class="pf-hint" style="margin:0;font-size:13px">حدّد لكل وحدة الإجراءات المتاحة (الفحص / الإضافة / التعديل / الحذف / التصدير). الإجراء غير المفعّل بالخطة يُغلق دائمًا لمستخدمي الأكاديمية.</span>
+        </div>
+
+        <div class="pf-perm-actions">
+          <button type="button" class="pf-btn sm" data-perm-toggle="all"><i class="fas fa-check-double"></i> تحديد الكل</button>
+          <button type="button" class="pf-btn sm ghost" data-perm-toggle="none"><i class="fas fa-circle-xmark"></i> إلغاء الكل</button>
+        </div>
+
+        <% (FEATURE_GROUPS || []).forEach(function (g) { %>
+          <div class="pf-perm-group">
+            <div class="pf-perm-group-title">
+              <span><%= g.group %></span>
+              <div style="display:flex;gap:6px">
+                <button type="button" class="pf-btn xs ghost" data-perm-group="toggle"><i class="fas fa-check-double"></i> الكل</button>
+                <button type="button" class="pf-btn xs ghost" data-perm-group="clear"><i class="fas fa-eraser"></i></button>
+              </div>
+            </div>
+            <div class="pf-perm-row pf-perm-row-head">
+              <div class="pf-perm-mod">الوحدة</div>
+              <% ACTIONS.forEach(function (a) { %><div class="pf-perm-act"><%= ACTION_LABELS[a] %></div><% }); %>
+              <div class="pf-perm-all">الكل</div>
+            </div>
+            <% g.modules.forEach(function (m) { %>
+              <div class="pf-perm-row">
+                <div class="pf-perm-mod"><%= m.label %></div>
+                <% ACTIONS.forEach(function (a) { %>
+                  <div class="pf-perm-act">
+                    <label class="pf-check">
+                      <input type="checkbox" name="features" value="<%= m.key %>__<%= a %>" data-perm-mod="<%= m.key %>" <%= p && features.indexOf(m.key + '__' + a) > -1 ? 'checked' : '' %>>
+                      <span class="pf-check-box"><i class="fas fa-check"></i></span>
+                    </label>
+                  </div>
+                <% }); %>
+                <div class="pf-perm-all">
+                  <label class="pf-check">
+                    <input type="checkbox" data-perm-modall="<%= m.key %>">
+                    <span class="pf-check-box"><i class="fas fa-check"></i></span>
+                  </label>
+                </div>
+              </div>
+            <% }); %>
+          </div>
+        <% }); %>
+
+        <div class="pf-sec-title"><i class="fas fa-star"></i> المزايا الإضافية</div>
+        <div class="pf-chips">
+          <% (EXTRA_FEATURES || []).forEach(function (f) { %>
+            <label class="pf-chip">
+              <input type="checkbox" name="features" value="<%= f.key %>" <%= p && features.indexOf(f.key) > -1 ? 'checked' : '' %>>
+              <span class="pf-chip-box"><i class="fas fa-check"></i></span>
+              <span class="pf-chip-label"><%= f.label %></span>
+            </label>
+          <% }); %>
+        </div>
+
+        <div class="pf-field" style="margin-top:22px"><label>ملاحظات</label><textarea class="pf-input" name="notes" rows="3" placeholder="أي تفاصيل إضافية عن الخطة..."><%= p ? p.notes : '' %></textarea></div>
+
+        <script>
+        (function () {
+          function setInputs(pred, on) {
+            document.querySelectorAll('.pf-perm-group input[name="features"]').forEach(function (i) {
+              if (pred(i)) i.checked = on;
+            });
+          }
+          document.querySelectorAll('[data-perm-toggle]').forEach(function (b) {
+            b.addEventListener('click', function () {
+              var all = b.getAttribute('data-perm-toggle') === 'all';
+              setInputs(function () { return true; }, all);
+              syncAll();
+            });
+          });
+          document.querySelectorAll('[data-perm-group]').forEach(function (b) {
+            b.addEventListener('click', function () {
+              var group = b.closest('.pf-perm-group');
+              var on = b.getAttribute('data-perm-group') === 'toggle';
+              group.querySelectorAll('input[name="features"]').forEach(function (i) { i.checked = on; });
+            });
+          });
+          document.querySelectorAll('[data-perm-modall]').forEach(function (c) {
+            c.addEventListener('change', function () {
+              var m = c.getAttribute('data-perm-modall');
+              document.querySelectorAll('input[name="features"][data-perm-mod="' + m + '"]').forEach(function (i) { i.checked = c.checked; });
+              syncAll();
+            });
+          });
+          function syncAll() {
+            (FEATURE_GROUPS || []).forEach(function (g) {
+              g.modules.forEach(function (m) {
+                var c = document.querySelector('[data-perm-modall="' + m.key + '"]');
+                if (!c) return;
+                var boxes = document.querySelectorAll('input[name="features"][data-perm-mod="' + m.key + '"]');
+                var any = Array.prototype.some.call(boxes, function (i) { return i.checked; });
+                var all = boxes.length > 0 && Array.prototype.every.call(boxes, function (i) { return i.checked; });
+                c.checked = all;
+                c.indeterminate = any && !all;
+              });
+            });
+          }
+          syncAll();
+        })();
+        </script>
+
+        <div class="pf-form-actions">
+          <button class="pf-btn primary lg" type="submit"><i class="fas fa-save"></i> حفظ الخطة</button>
+          <a href="/platform/plans" class="pf-btn lg"><i class="fas fa-xmark"></i> إلغاء</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<%- include('../partials/layout_bottom') %>
