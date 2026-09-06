@@ -3,6 +3,7 @@ const express = require('express');
 const { db } = require('../lib/db');
 const { fmtDate, money, dayAr, today, calcAge } = require('../lib/helpers');
 const { withAcademy } = require('../lib/tenant-context');
+const { sendReminder, logMessage } = require('../lib/whatsapp');
 const router = express.Router();
 
 const DEFAULT_COLOR = '#0284c7';
@@ -173,10 +174,12 @@ async function submitReserve(req, res, acad, base) {
   if (!values.swimmer_name) {
     return renderPage(req, res, acad, base, 'reserve', { message: 'يرجى إدخال اسم السباح لحجز مكانه', values });
   }
+  let programName = '';
+  let age = null;
   await withAcademy(acad.id, async () => {
     const prog = await db.prepare('SELECT name FROM programs WHERE id = ? AND deleted_at IS NULL').get(Number(b.program_id) || 0);
-    const programName = (prog && prog.name) || (b.program_name ? String(b.program_name).trim() : '');
-    const age = calcAge(values.birth_date);
+    programName = (prog && prog.name) || (b.program_name ? String(b.program_name).trim() : '');
+    age = calcAge(values.birth_date);
     const info = await db.prepare(`INSERT INTO reservations
       (program_id, program_name, swimmer_name, birth_date, age, gender, phone, whatsapp, initial_level, guardian_phone, swimmer_number, notes)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
@@ -207,7 +210,33 @@ async function submitReserve(req, res, acad, base) {
       for (const u of recipients) await insR.run(notif.lastInsertRowid, u.id);
     } catch (e) { /* الإشعار يعرض حتى لو تعذر إسناد مستلمين */ }
   });
-  return renderPage(req, res, acad, base, 'reserve', { message: 'تم استلام حجز ' + values.swimmer_name + ' بنجاح، سنتواصل معكم قريباً لتأكيد المقعد.' });
+
+  /* رسالة تأكيد واتساب لأولياء الأمور (أفضل جهد: عبر Cloud API أو رابط wa.me) */
+  const waPhone = values.whatsapp || values.phone || '';
+  if (waPhone) {
+    const text = [
+      'السلام عليكم ورحمة الله وبركاته',
+      'تم تأكيد استلام حجز ' + values.swimmer_name + ' في ' + acad.name + (programName ? ' ببرنامج ' + programName : '') + '.',
+      'سيتم التواصل معكم قريباً لتأكيد المقعد وتفاصيل الجدول.',
+      'مع خالص الشكر — ' + acad.name
+    ].join('\n');
+    try {
+      const r = await sendReminder({ phone: waPhone, text });
+      await logMessage({ phone: waPhone, message: text, mode: r.mode || 'link', status: 'sent', trigger: 'reserve' });
+    } catch (e) { /* لا يمنع إتمام الحجز */ }
+  }
+
+  const confirmed = {
+    swimmer_name: values.swimmer_name,
+    program_name: programName,
+    birth_date: values.birth_date,
+    age: age,
+    phone: values.phone,
+    whatsapp: values.whatsapp,
+    initial_level: values.initial_level,
+    notes: values.notes
+  };
+  return renderPage(req, res, acad, base, 'reserve', { confirmed });
 }
 
 router.post('/reserve', async function (req, res) {

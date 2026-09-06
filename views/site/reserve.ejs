@@ -35,6 +35,27 @@
       <p>اختر البرنامج المناسب وأدخل بيانات السباح وسنتواصل معكم لتأكيد الحجز</p>
     </div>
     <div class="reserve-body">
+      <% if (confirmed) { %>
+        <div style="text-align:center;padding:14px 0 6px">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:74px;height:74px;border-radius:50%;font-size:34px;color:#fff;background:linear-gradient(135deg,#059669,#10b981);box-shadow:0 10px 24px rgba(5,150,105,.35)"><i class="fas fa-check"></i></span>
+          <h2 style="margin:14px 0 4px;font-size:22px;color:var(--text)">تم تأكيد الحجز بنجاح</h2>
+          <p style="margin:0;font-size:14px;color:var(--text-muted)">أهلاً بك <%= confirmed.swimmer_name %> — سنتواصل معكم قريباً لتأكيد المقعد وتفاصيل الجدول.</p>
+        </div>
+        <div style="margin:20px 0;border:1px dashed var(--card-border);border-radius:14px;background:var(--bg, #f8fafc);padding:16px 20px">
+          <div style="font-size:13px;display:grid;grid-template-columns:1fr 1fr;gap:10px 18px">
+            <% if (confirmed.program_name) { %><div><span style="color:var(--text-muted)">البرنامج:</span> <b><%= confirmed.program_name %></b></div><% } %>
+            <div><span style="color:var(--text-muted)">اسم السباح:</span> <b><%= confirmed.swimmer_name %></b></div>
+            <% if (confirmed.birth_date) { %><div><span style="color:var(--text-muted)">تاريخ الميلاد:</span> <b><%= confirmed.birth_date %></b></div><% } %>
+            <% if (confirmed.age !== null && confirmed.age !== undefined && confirmed.age !== '') { %><div><span style="color:var(--text-muted)">السن:</span> <b><%= confirmed.age %> سنة</b></div><% } %>
+            <% if (confirmed.phone) { %><div><span style="color:var(--text-muted)">الهاتف:</span> <b dir="ltr"><%= confirmed.phone %></b></div><% } %>
+            <% if (confirmed.initial_level) { %><div><span style="color:var(--text-muted)">المستوى المبدئي:</span> <b><%= confirmed.initial_level %></b></div><% } %>
+            <% if (confirmed.notes) { %><div style="grid-column:1/-1"><span style="color:var(--text-muted)">ملاحظات:</span> <b><%= confirmed.notes %></b></div><% } %>
+          </div>
+        </div>
+        <div style="text-align:center;margin-bottom:8px">
+          <a href="<%= (data.base || '/site') %>" class="btn-reserve" style="width:auto;padding:11px 26px;font-size:14px"><i class="fas fa-home"></i> العودة للرئيسية</a>
+        </div>
+      <% } else { %>
       <% if (message) { %>
         <div class="alert alert-success" style="margin-bottom:18px;border-radius:12px">
           <i class="fas fa-circle-check"></i> <%= message %>
@@ -108,6 +129,7 @@
           <button type="submit" class="btn-reserve"><i class="fas fa-calendar-check"></i> تأكيد الحجز الآن</button>
         </div>
       </form>
+      <% } %>
     </div>
   </div>
 </div>

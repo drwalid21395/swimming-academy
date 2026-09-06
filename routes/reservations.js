@@ -1,7 +1,7 @@
 /** حجوزات الموقع: متابعة طلبات حجز الأماكن القادمة من الموقع التعريفي */
 const express = require('express');
 const { db } = require('../lib/db');
-const { audit, fmtDateTime, canView, canDel, canExport } = require('../lib/helpers');
+const { audit, fmtDateTime, today, canView, canDel, canEdit, canExport } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
 const router = express.Router();
 
@@ -42,11 +42,77 @@ router.get('/reservations', async function (req, res) {
   res.render('reservations', { page, fmtDateTime });
 });
 
+/* تحويل الحجز إلى سباح: إنشاء ولي أمر + سباح وربطهم، ثم تسكين المجموعة من صفحة السباح */
+async function convertReservation(req, res, r) {
+  if (r.swimmer_id) { setFlash(res, { type: 'error', message: 'تم تحويل الحجز إلى سباح مسبقاً' }); return res.redirect('/reservations'); }
+
+  /* رقم العضوية التالي */
+  const last = await db.prepare('SELECT membership_no FROM swimmers ORDER BY id DESC LIMIT 1').get();
+  const num = parseInt((last && last.membership_no || 'SW-0000').replace(/\D/g, ''), 10) || 0;
+  const membership_no = 'SW-' + String(num + 1).padStart(4, '0');
+
+  /* المستوى المبدئي من الحجز */
+  let levelId = r.level_id || null;
+  if (!levelId && r.initial_level) {
+    const lvl = await db.prepare('SELECT id FROM levels WHERE name = ?').get(r.initial_level);
+    if (lvl) levelId = lvl.id;
+  }
+
+  /* إنشاء ولي الأمر */
+  let guardianId = null;
+  const gPhone = String(r.guardian_phone || r.phone || '').trim();
+  if (gPhone) {
+    const g = await db.prepare(`INSERT INTO guardians (full_name, phone, whatsapp, relation, notes)
+      VALUES (?,?,?,?,?)`)
+      .run(String(r.swimmer_name || '') + ' - ولي الأمر', gPhone, String(r.whatsapp || '').trim() || null, 'ولي أمر',
+        'حول من حجز رقم ' + r.id + (r.notes ? ': ' + r.notes : ''));
+    guardianId = g.lastInsertRowid;
+  }
+
+  /* إنشاء السباح */
+  const sw = await db.prepare(`INSERT INTO swimmers (membership_no, full_name, birth_date, gender, phone, guardian_id, level_id, program_id, registration_date, status, notes)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(membership_no, r.swimmer_name, r.birth_date || null, r.gender || 'ذكر', String(r.phone || '').trim() || null,
+      guardianId, levelId, r.program_id || null, today(), 'نشط',
+      'حول من حجز رقم ' + r.id + (r.notes ? ': ' + r.notes : ''));
+  const swimmerId = sw.lastInsertRowid;
+
+  /* ربط الحجز بالسباح وولي الأمر */
+  await db.prepare(`UPDATE reservations SET status = 'تم التحويل لسباح', swimmer_id = ?, guardian_id = ?, converted_at = datetime('now','localtime') WHERE id = ?`)
+    .run(swimmerId, guardianId, r.id);
+
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'reservations', r.id,
+    'تحويل الحجز إلى سباح (' + membership_no + ') وانتظار تسكين المجموعة', req);
+
+  /* إشعار للمسؤولين لاستكمال تسكين المجموعة */
+  try {
+    const n = await db.prepare('INSERT INTO notifications (title, message, type, link, is_broadcast, created_by) VALUES (?,?,?,?,?,?)')
+      .run('تحويل حجز لسباح: ' + r.swimmer_name, 'رقم العضوية: ' + membership_no + ' | البرنامج: ' + (r.program_name || '—'), 'حجوزات', '/swimmers/' + swimmerId, 1, req.currentUser.id);
+    const rcpts = await db.prepare("SELECT id FROM users WHERE status='active'").all();
+    const insR = db.prepare('INSERT INTO notification_recipients (notification_id, user_id) VALUES (?,?)');
+    for (const rc of rcpts) await insR.run(n.lastInsertRowid, rc.id);
+  } catch (e) { /* تجاهل أخطاء الإشعار */ }
+
+  setFlash(res, {
+    type: 'success',
+    message: 'تم تحويل الحجز إلى السباح ' + r.swimmer_name + ' (' + membership_no + ') وولي الأمر — بقي فقط تسكين المجموعة من صفحة السباح'
+  });
+  return res.redirect('/swimmers/' + swimmerId);
+}
+
 router.post('/reservations/:id/status', async function (req, res) {
   if (!canView(req.currentUser, 'reservations')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
   const st = String(req.body.status || '');
   if (!RESERVE_STATUS.includes(st)) { setFlash(res, { type: 'error', message: 'حالة غير صالحة' }); return res.redirect('/reservations'); }
+  const r = await db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
+  if (!r) { setFlash(res, { type: 'error', message: 'الحجز غير موجود' }); return res.redirect('/reservations'); }
+
+  /* اختيار «تم التحويل لسباح» ينفذ التحويل الكامل تلقائياً */
+  if (st === 'تم التحويل لسباح' && !r.swimmer_id) {
+    return convertReservation(req, res, r);
+  }
+
   await db.prepare('UPDATE reservations SET status = ? WHERE id = ?').run(st, id);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'reservations', id, 'تحديث حالة الحجز إلى: ' + st, req);
   setFlash(res, { type: 'success', message: 'تم تحديث حالة الحجز إلى: ' + st });
@@ -120,6 +186,15 @@ router.get('/reports/reservations.xls', async function (req, res) {
   res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
   res.setHeader('Content-Disposition', "attachment; filename=\"reservations.xls\"; filename*=UTF-8''" + encodeURIComponent('حجوزات-الموقع.xls'));
   res.send(html);
+});
+
+/* ===== تحويل الحجز إلى سباح (زر مستقل) ===== */
+router.post('/reservations/:id/convert', async function (req, res) {
+  if (!canEdit(req.currentUser, 'reservations')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const id = Number(req.params.id);
+  const r = await db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
+  if (!r) { setFlash(res, { type: 'error', message: 'الحجز غير موجود' }); return res.redirect('/reservations'); }
+  return convertReservation(req, res, r);
 });
 
 module.exports = router;
