@@ -66,17 +66,17 @@
           <label class="form-label">الأيام <span class="text-muted font-12">(أضف حصة لكل يوم تختاره)</span></label>
           <div id="compDays">
             <% defaultDays.forEach(function (d, i) { %>
-              <div class="comp-day-row flex gap-1" style="margin-bottom:8px;align-items:flex-end">
-                <div style="flex:2;min-width:140px">
+              <div class="comp-day-row flex gap-1">
+                <div class="cd-date">
                   <input type="date" name="days[<%= i %>][date]" value="<%= d.date %>" class="form-control">
                 </div>
-                <div style="flex:1;min-width:100px">
+                <div class="cd-start">
                   <input type="time" name="days[<%= i %>][start]" value="<%= d.start %>" class="form-control">
                 </div>
-                <div style="flex:1;min-width:100px">
+                <div class="cd-end">
                   <input type="time" name="days[<%= i %>][end]" value="<%= d.end || '' %>" class="form-control">
                 </div>
-                <button type="button" class="btn btn-outline-danger btn-sm" data-remove-day title="حذف اليوم"><i class="fas fa-xmark"></i></button>
+                <button type="button" class="btn btn-outline-danger btn-sm cd-remove" data-remove-day title="حذف اليوم"><i class="fas fa-xmark"></i></button>
               </div>
             <% }); %>
           </div>
@@ -136,7 +136,7 @@
     </div>
   </div>
 
-  <div class="flex gap-1" style="margin-top:16px">
+  <div class="flex gap-1 form-actions" style="margin-top:16px">
     <button type="submit" class="btn btn-danger" data-confirm="هل أنت متأكد من إلغاء هذه الحصة وتنفيذ التعويض المحدد؟" data-action="submit"><i class="fas fa-ban"></i> إلغاء الحصة وتنفيذ التعويض</button>
     <a href="/sessions/<%= s.id %>" class="btn btn-outline">إلغاء الأمر</a>
   </div>
@@ -144,11 +144,11 @@
 
 <script>
 (function () {
-  var dayRowHtml = '<div class="comp-day-row flex gap-1" style="margin-bottom:8px;align-items:flex-end">' +
-    '<div style="flex:2;min-width:140px"><input type="date" name="days[__i__][date]" class="form-control"></div>' +
-    '<div style="flex:1;min-width:100px"><input type="time" name="days[__i__][start]" value="<%= s.start_time %>" class="form-control"></div>' +
-    '<div style="flex:1;min-width:100px"><input type="time" name="days[__i__][end]" value="<%= s.end_time || '' %>" class="form-control"></div>' +
-    '<button type="button" class="btn btn-outline-danger btn-sm" data-remove-day title="حذف اليوم"><i class="fas fa-xmark"></i></button>' +
+  var dayRowHtml = '<div class="comp-day-row flex gap-1">' +
+    '<div class="cd-date"><input type="date" name="days[__i__][date]" class="form-control"></div>' +
+    '<div class="cd-start"><input type="time" name="days[__i__][start]" value="<%= s.start_time %>" class="form-control"></div>' +
+    '<div class="cd-end"><input type="time" name="days[__i__][end]" value="<%= s.end_time || '' %>" class="form-control"></div>' +
+    '<button type="button" class="btn btn-outline-danger btn-sm cd-remove" data-remove-day title="حذف اليوم"><i class="fas fa-xmark"></i></button>' +
     '</div>';
 
   function reindex() {
