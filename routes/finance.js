@@ -87,7 +87,17 @@ const subFields = async function (values) {
 
 router.get('/subscriptions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  res.render('form', { form: { title: 'اشتراك جديد', subtitle: 'تسجيل اشتراك سباح', icon: 'fa-plus', active: 'subscriptions', action: '/subscriptions/new', fields: await subFields({ total: 0, paid_amount: 0 }), values: {}, submitLabel: 'حفظ الاشتراك', cancelUrl: '/subscriptions', csrf: '' } });
+  const prefill = {};
+  if (req.query.swimmer_id) {
+    const wid = Number(req.query.swimmer_id);
+    const sw = await db.prepare('SELECT * FROM swimmers WHERE id = ?').get(wid);
+    if (sw) {
+      prefill.swimmer_id = sw.id;
+      if (sw.program_id) prefill.program_id = sw.program_id;
+      if (sw.group_id) prefill.group_id = sw.group_id;
+    }
+  }
+  res.render('form', { form: { title: 'اشتراك جديد', subtitle: 'تسجيل اشتراك سباح', icon: 'fa-plus', active: 'subscriptions', action: '/subscriptions/new', fields: await subFields({ total: 0, paid_amount: 0, ...prefill }), values: prefill, submitLabel: 'حفظ الاشتراك', cancelUrl: '/subscriptions', csrf: '' } });
 });
 router.post('/subscriptions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });

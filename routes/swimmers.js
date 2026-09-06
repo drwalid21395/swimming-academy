@@ -285,6 +285,7 @@ router.get('/swimmers', async function (req, res) {
       { href: '/reports/swimmers.xls', label: 'ملف السباحين Excel', icon: 'fa-file-excel', cls: 'btn-outline' }
     ] : [],
     actions: user => row => [
+      { label: 'اشترك', icon: 'fa-file-contract', href: '/subscriptions/new?swimmer_id=' + row.id },
       { label: 'عرض', icon: 'fa-eye', href: '/swimmers/' + row.id },
       { label: 'تعديل', icon: 'fa-pen', href: '/swimmers/' + row.id + '/edit' },
       { label: 'حذف', icon: 'fa-trash', href: '/swimmers/' + row.id + '/delete', confirm: 'هل أنت متأكد من حذف هذا السباح؟ سيتم الاحتفاظ بسجل بياناته.', cls: 'text-danger' }
