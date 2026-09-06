@@ -9,6 +9,7 @@
     <a href="/sessions" class="btn btn-outline"><i class="fas fa-arrow-right"></i> الحصص</a>
     <a href="/attendance/session/<%= s.id %>" class="btn btn-primary"><i class="fas fa-clipboard-user"></i> تسجيل الحضور</a>
     <% if (page.canEdit) { %><a href="/sessions/<%= s.id %>/edit" class="btn btn-primary"><i class="fas fa-pen"></i> تعديل</a><% } %>
+    <% if (s.status !== 'cancelled' && page.canEdit) { %><a href="/sessions/<%= s.id %>/cancel" class="btn btn-outline-danger"><i class="fas fa-ban"></i> إلغاء وتعويض</a><% } %>
   </div>
 </div>
 

@@ -220,6 +220,7 @@ router.get('/attendance/session/:id', async function (req, res) {
   res.render('attendance_session', {
     title: 'تسجيل الحضور', active: 'attendance',
     s, members, date: today(), money,
+    page: { canEdit: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance') },
     canSave: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance')
   });
 });
@@ -277,6 +278,127 @@ router.post('/attendance/group-save', async function (req, res) {
   }
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'attendance', session.id, 'حضور مجموعة #' + gid + ' (' + n + ' سباح)', req);
   res.json({ ok: true, count: n });
+});
+
+/* ============================================================== */
+/*              إلغاء الحصة + حصص تعويضية + مدّ التاريخ             */
+/* ============================================================== */
+function addDaysStr(dateStr, n) {
+  const d = new Date(String(dateStr) + 'T12:00:00');
+  if (isNaN(d)) return '';
+  d.setDate(d.getDate() + Number(n || 0));
+  return d.toISOString().slice(0, 10);
+}
+
+/* صفحة إلغاء الحصة: اختيار المجموعات/السباحين/الأيام التعويضية + مد التاريخ */
+router.get('/sessions/:id/cancel', async function (req, res) {
+  if (!canEdit(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const id = Number(req.params.id);
+  const s = await db.prepare(`SELECT se.*, g.name AS group_name, c.full_name AS coach_name, p.name AS pool_name
+    FROM sessions se
+    LEFT JOIN groups g ON g.id = se.group_id
+    LEFT JOIN coaches c ON c.id = se.coach_id
+    LEFT JOIN pools p ON p.id = se.pool_id
+    WHERE se.id = ?`).get(id);
+  if (!s) return res.redirect('/sessions');
+  const members = s.group_id
+    ? await db.prepare(`SELECT s.id, s.full_name, s.membership_no FROM swimmer_group sg
+        JOIN swimmers s ON s.id = sg.swimmer_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(s.group_id)
+    : [];
+  const groups = await db.prepare('SELECT id, name FROM groups WHERE deleted_at IS NULL ORDER BY name').all();
+  const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all();
+  const pools = await db.prepare('SELECT id, name FROM pools ORDER BY name').all();
+  /* يوم افتراضي للحصة التعويضية: نفس يوم الأسبوع بعد أسبوع، بنفس موعد الحصة */
+  const defaultDays = [{
+    date: addDaysStr(s.date, 7) || '',
+    start: s.start_time || '16:00',
+    end: s.end_time || ''
+  }];
+  res.render('session_cancel', { title: 'إلغاء الحصة وتعويض', active: 'sessions', s, members, groups, coaches, pools, defaultDays });
+});
+
+/* تنفيذ الإلغاء وإنشاء الحصص التعويضية ومدّ التواريخ */
+router.post('/sessions/:id/cancel', async function (req, res) {
+  if (!canEdit(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const id = Number(req.params.id);
+  const b = req.body;
+  const s = await db.prepare('SELECT * FROM sessions WHERE id = ?').get(id);
+  if (!s) return res.redirect('/sessions');
+  const reason = String(b.reason || '').trim();
+
+  const toIds = (v) => {
+    if (v === null || v === undefined) return [];
+    if (Array.isArray(v)) return v.map(Number).filter(n => n > 0);
+    const n = Number(v);
+    return n > 0 ? [n] : [];
+  };
+
+  /* 1) تغيير حالة الحصة إلى "ملغاة" مع سبب الإلغاء */
+  const note = [s.note || '', reason ? ('سبب الإلغاء: ' + reason) : ''].filter(x => String(x).trim()).join('\n').trim();
+  await db.prepare("UPDATE sessions SET status = 'cancelled', note = ? WHERE id = ?").run(note, id);
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'sessions', id, 'إلغاء حصة' + (reason ? ' — ' + reason : ''), req);
+
+  /* 2) الحصص التعويضية */
+  const createdIds = [];
+  let createdCount = 0;
+  if (b.add_comp === '1') {
+    const groupIds = toIds(b.groups).length ? toIds(b.groups) : (s.group_id ? [s.group_id] : []);
+    const days = Array.isArray(b.days)
+      ? b.days.filter(d => d && (d.date || d.start || d.end))
+      : [];
+    const compCoach = Number(b.comp_coach_id) || s.coach_id || null;
+    const compPool = Number(b.comp_pool_id) || s.pool_id || null;
+    const ins = db.prepare(`INSERT INTO sessions (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, original_date, note, created_by)
+      VALUES (?,?,?,?,?,?,?,'scheduled',1,?,?,?)`);
+    for (const gid of groupIds) {
+      const g = await db.prepare('SELECT name FROM groups WHERE id = ?').get(gid);
+      for (const d of days) {
+        if (!d.date) continue;
+        const info = await ins.run(gid, (g ? g.name : 'مجموعة') + ' - ' + d.date + ' (تعويضية عن ' + fmtDate(s.date) + ')', d.date, d.start || s.start_time || '16:00', d.end || null, compCoach, compPool, s.date, 'تعويضية عن حصة ' + fmtDate(s.date) + (reason ? ' — ' + reason : ''), req.currentUser.id);
+        createdIds.push(info.lastInsertRowid);
+        createdCount++;
+      }
+    }
+    if (createdCount) audit(req.currentUser.id, req.currentUser.full_name, 'add', 'sessions', createdIds[0], 'إنشاء ' + createdCount + ' حصة تعويضية', req);
+  } else {
+    audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'sessions', id, 'إلغاء حصة بدون تعويض', req);
+  }
+
+  /* 3) نطاق السباحين (المستفيدون من مدّ التاريخ وإضافة الرصيد) */
+  let swimmerIds = [];
+  if (b.scope === 'selected') {
+    swimmerIds = toIds(b.swimmers);
+  } else if (s.group_id) {
+    swimmerIds = (await db.prepare('SELECT swimmer_id FROM swimmer_group WHERE group_id = ?').all(s.group_id)).map(r => r.swimmer_id);
+  }
+
+  /* 4) مدّ تاريخ انتهاء الاشتراك بعدد الأيام المحدد */
+  let extendedCount = 0;
+  if (b.extend === '1' && swimmerIds.length) {
+    const ndays = Math.max(1, Math.min(365, Number(b.extend_days) || 1));
+    const placeholders = swimmerIds.map(() => '?').join(',');
+    const info = await db.prepare(`UPDATE subscriptions SET end_date = date(end_date, '+' || ? || ' days'), notes = COALESCE(notes || char(10), '') || 'تم مدّ الاشتراك ' || ? || ' يوم بعد إلغاء حصة بتاريخ ' || ?
+      WHERE swimmer_id IN (${placeholders}) AND status = 'نشط' AND end_date IS NOT NULL`)
+      .run(ndays, ndays, s.date, ...swimmerIds);
+    extendedCount = info.changes;
+    audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'subscriptions', id, 'مدّ ' + extendedCount + ' اشتراكاً بـ ' + ndays + ' يوم', req);
+  }
+
+  /* 5) إضافة الحصص التعويضية إلى رصيد الاشتراك */
+  let balanceAdded = 0;
+  if (b.add_to_balance === '1' && createdCount > 0 && swimmerIds.length) {
+    const placeholders = swimmerIds.map(() => '?').join(',');
+    const info = await db.prepare(`UPDATE subscriptions SET sessions_total = sessions_total + ?
+      WHERE swimmer_id IN (${placeholders}) AND status = 'نشط'`).run(createdCount, ...swimmerIds);
+    balanceAdded = info.changes;
+    audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'subscriptions', id, 'إضافة ' + createdCount + ' حصة لرصيد ' + balanceAdded + ' اشتراك', req);
+  }
+
+  setFlash(res, {
+    type: 'success',
+    message: 'تم إلغاء الحصة' + (createdCount ? ' وإنشاء ' + createdCount + ' حصة تعويضية' : '') + (extendedCount ? ' ومدّ ' + extendedCount + ' اشتراكاً' : '') + (balanceAdded ? ' وإضافة ' + createdCount + ' حصة لرصيد ' + balanceAdded + ' اشتراك' : '')
+  });
+  res.redirect('/sessions/' + id);
 });
 
 module.exports = router;

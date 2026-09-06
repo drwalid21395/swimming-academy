@@ -1,0 +1,185 @@
+<%- include('partials/layout_top', { title: 'إلغاء الحصة وتعويض', active: 'sessions' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-ban"></i> إلغاء الحصة وتعويض السباحين</div>
+    <div class="page-sub"><b><%= s.group_name || '—' %></b> · <%= fmtDate(s.date) %> · <%= s.start_time %> — <%= s.end_time || '' %> · <%= s.coach_name || '—' %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="/sessions/<%= s.id %>" class="btn btn-outline"><i class="fas fa-arrow-right"></i> رجوع</a>
+  </div>
+</div>
+
+<% if (s.status === 'cancelled') { %>
+  <div class="alert alert-warning"><i class="fas fa-triangle-exclamation"></i> هذه الحصة ملغاة مسبقاً — يمكنك إضافة تعويض إضافي أو مدّ التواريخ من هنا.</div>
+<% } else { %>
+  <div class="alert alert-info"><i class="fas fa-circle-info"></i> سيتم تغيير حالة الحصة إلى <b>«ملغاة»</b> وتنفيذ التعويض الذي تختاره بالأسفل.</div>
+<% } %>
+
+<form method="POST" action="/sessions/<%= s.id %>/cancel">
+  <div class="dash-grid">
+    <!-- ============ بيانات الإلغاء ============ -->
+    <div class="card">
+      <div class="card-header"><h3><i class="fas fa-circle-info"></i> بيانات الإلغاء</h3></div>
+      <div class="card-body">
+        <label class="form-label">سبب الإلغاء (اختياري)</label>
+        <textarea name="reason" class="form-control" rows="2" placeholder="مثال: عطل في حمام السباحة، أجازة رسمية، ظروف الطقس..."></textarea>
+      </div>
+    </div>
+
+    <!-- ============ الحصة التعويضية ============ -->
+    <div class="card">
+      <div class="card-header">
+        <h3><i class="fas fa-arrows-rotate"></i> حصة تعويضية (حصة زيادة)</h3>
+        <label class="switch-sm" title="تفعيل إضافة حصة تعويضية">
+          <input type="checkbox" name="add_comp" value="1" id="addCompChk" checked>
+          <span></span>
+        </label>
+      </div>
+      <div class="card-body" id="compBody">
+        <label class="form-label">للمجموعات <span class="text-muted font-12">(اختر المجموعة أو المجموعات التي ستُضاف لها الحصة)</span></label>
+        <div class="flex gap-1" style="flex-wrap:wrap">
+          <% groups.forEach(function (g) { %>
+            <label class="check-chip">
+              <input type="checkbox" name="groups" value="<%= g.id %>" <%= String(g.id) === String(s.group_id) ? 'checked' : '' %>>
+              <span class="chip-label"><i class="fas fa-people-group"></i> <%= g.name %></span>
+            </label>
+          <% }); %>
+        </div>
+
+        <div class="flex gap-1" style="margin-top:16px;flex-wrap:wrap">
+          <div style="flex:1;min-width:180px">
+            <label class="form-label">الكابتن</label>
+            <select name="comp_coach_id" class="form-control">
+              <% coaches.forEach(function (c) { %><option value="<%= c.id %>" <%= s.coach_id === c.id ? 'selected' : '' %>><%= c.full_name %></option><% }); %>
+            </select>
+          </div>
+          <div style="flex:1;min-width:180px">
+            <label class="form-label">حمام السباحة</label>
+            <select name="comp_pool_id" class="form-control">
+              <% pools.forEach(function (p) { %><option value="<%= p.id %>" <%= s.pool_id === p.id ? 'selected' : '' %>><%= p.name %></option><% }); %>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-top:16px">
+          <label class="form-label">الأيام <span class="text-muted font-12">(أضف حصة لكل يوم تختاره)</span></label>
+          <div id="compDays">
+            <% defaultDays.forEach(function (d, i) { %>
+              <div class="comp-day-row flex gap-1" style="margin-bottom:8px;align-items:flex-end">
+                <div style="flex:2;min-width:140px">
+                  <input type="date" name="days[<%= i %>][date]" value="<%= d.date %>" class="form-control">
+                </div>
+                <div style="flex:1;min-width:100px">
+                  <input type="time" name="days[<%= i %>][start]" value="<%= d.start %>" class="form-control">
+                </div>
+                <div style="flex:1;min-width:100px">
+                  <input type="time" name="days[<%= i %>][end]" value="<%= d.end || '' %>" class="form-control">
+                </div>
+                <button type="button" class="btn btn-outline-danger btn-sm" data-remove-day title="حذف اليوم"><i class="fas fa-xmark"></i></button>
+              </div>
+            <% }); %>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="addDayBtn"><i class="fas fa-plus"></i> إضافة يوم</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ مد التاريخ + نطاق السباحين ============ -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-header">
+      <h3><i class="fas fa-calendar-plus"></i> مدّ تاريخ الاشتراك + نطاق السباحين</h3>
+    </div>
+    <div class="card-body">
+      <div class="flex gap-1" style="flex-wrap:wrap;margin-bottom:16px">
+        <label class="check-chip">
+          <input type="radio" name="scope" value="all" id="scopeAll" checked>
+          <span class="chip-label"><i class="fas fa-users"></i> كل أعضاء مجموعة الحصة</span>
+        </label>
+        <label class="check-chip">
+          <input type="radio" name="scope" value="selected" id="scopeSelected">
+          <span class="chip-label"><i class="fas fa-user-check"></i> سباحون محددون فقط</span>
+        </label>
+      </div>
+
+      <div id="swimmersBox" style="display:none">
+        <div class="flex gap-1" style="flex-wrap:wrap">
+          <% members.forEach(function (m) { %>
+            <label class="check-chip">
+              <input type="checkbox" name="swimmers" value="<%= m.id %>" checked>
+              <span class="chip-label"><%= m.full_name %></span>
+            </label>
+          <% }); %>
+        </div>
+      </div>
+
+      <div class="flex gap-1" style="margin-top:16px;flex-wrap:wrap;align-items:flex-end">
+        <div style="min-width:220px">
+          <label class="check-chip">
+            <input type="checkbox" name="extend" value="1" id="extendChk">
+            <span class="chip-label"><i class="fas fa-calendar-plus"></i> مدّ تاريخ انتهاء الاشتراك</span>
+          </label>
+          <div class="flex gap-1" style="margin-top:8px;align-items:center">
+            <input type="number" name="extend_days" id="extendDays" class="form-control" style="width:100px" min="1" max="365" value="7" disabled>
+            <span class="text-muted font-12">يوم</span>
+          </div>
+        </div>
+        <div style="min-width:260px">
+          <label class="check-chip">
+            <input type="checkbox" name="add_to_balance" value="1" id="balanceChk">
+            <span class="chip-label"><i class="fas fa-layer-group"></i> إضافة الحصص التعويضية إلى رصيد الاشتراك</span>
+          </label>
+          <div class="font-12 text-muted" style="margin-top:4px">يُستحق للسباحين المختارين الحصص التي ستنشئها، ويُطبّق على اشتراكاتهم النشطة فقط.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex gap-1" style="margin-top:16px">
+    <button type="submit" class="btn btn-danger" data-confirm="هل أنت متأكد من إلغاء هذه الحصة وتنفيذ التعويض المحدد؟" data-action="submit"><i class="fas fa-ban"></i> إلغاء الحصة وتنفيذ التعويض</button>
+    <a href="/sessions/<%= s.id %>" class="btn btn-outline">إلغاء الأمر</a>
+  </div>
+</form>
+
+<script>
+(function () {
+  var dayRowHtml = '<div class="comp-day-row flex gap-1" style="margin-bottom:8px;align-items:flex-end">' +
+    '<div style="flex:2;min-width:140px"><input type="date" name="days[__i__][date]" class="form-control"></div>' +
+    '<div style="flex:1;min-width:100px"><input type="time" name="days[__i__][start]" value="<%= s.start_time %>" class="form-control"></div>' +
+    '<div style="flex:1;min-width:100px"><input type="time" name="days[__i__][end]" value="<%= s.end_time || '' %>" class="form-control"></div>' +
+    '<button type="button" class="btn btn-outline-danger btn-sm" data-remove-day title="حذف اليوم"><i class="fas fa-xmark"></i></button>' +
+    '</div>';
+
+  function reindex() {
+    var rows = document.querySelectorAll('#compDays .comp-day-row');
+    rows.forEach(function (row, i) {
+      row.querySelectorAll('input').forEach(function (inp) {
+        var n = inp.getAttribute('name');
+        if (n && n.indexOf('days[') === 0) inp.setAttribute('name', 'days[' + i + '][' + n.split('][')[1]);
+      });
+    });
+  }
+  document.getElementById('addDayBtn').addEventListener('click', function () {
+    var idx = document.querySelectorAll('#compDays .comp-day-row').length;
+    var div = document.createElement('div');
+    div.innerHTML = dayRowHtml.split('__i__').join(idx);
+    document.getElementById('compDays').appendChild(div.firstChild);
+    reindex();
+  });
+  document.getElementById('compDays').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-remove-day]');
+    if (btn) { btn.closest('.comp-day-row').remove(); reindex(); }
+  });
+  document.getElementById('addCompChk').addEventListener('change', function (e) {
+    document.getElementById('compBody').style.display = e.target.checked ? '' : 'none';
+  });
+  document.getElementById('extendChk').addEventListener('change', function (e) {
+    document.getElementById('extendDays').disabled = !e.target.checked;
+  });
+  document.getElementById('scopeSelected').addEventListener('change', function (e) {
+    document.getElementById('swimmersBox').style.display = e.target.checked ? '' : 'none';
+  });
+})();
+</script>
+<%- include('partials/layout_bottom') %>

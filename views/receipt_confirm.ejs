@@ -1,0 +1,74 @@
+<%- include('partials/layout_top', { title: 'تأكيد إرسال الإيصال', active: 'subscriptions' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fab fa-whatsapp" style="color:#25d366"></i> إيصال الاشتراك #<%= s.id %></div>
+    <div class="page-sub"><b><%= s.swimmer_name || '—' %></b> · <%= s.program_name || '—' %> · سيُرسل إلى <b dir="ltr"><%= phone %></b></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="/subscriptions/<%= s.id %>" class="btn btn-outline"><i class="fas fa-arrow-right"></i> رجوع للاشتراك</a>
+  </div>
+</div>
+
+<div class="dash-grid">
+  <div class="card">
+    <div class="card-header"><h3><i class="fab fa-whatsapp" style="color:#25d366"></i> معاينة رسالة الإيصال</h3></div>
+    <div class="card-body">
+      <div class="whatsapp-preview" style="background:#e5ddd5;border-radius:14px;padding:16px;max-width:520px;">
+        <div style="background:#dcf8c6;border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.9;white-space:pre-wrap;box-shadow:0 1px 1px rgba(0,0,0,.12);"><%= text %></div>
+        <div style="font-size:11px;color:#667;margin-top:6px;text-align:left;">WhatsApp</div>
+      </div>
+      <p class="text-muted" style="margin-top:14px;margin-bottom:0;"><i class="fas fa-circle-info"></i> هذه هي الرسالة التي ستصل لولي الأمر بالضبط. تأكد من صحتها ثم اضغط «تأكيد وإرسال».</p>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-file-contract"></i> ملخص الاشتراك</h3></div>
+    <div class="card-body">
+      <div class="detail-grid">
+        <div class="detail-item"><div class="dl">السباح</div><div class="dv"><%= s.swimmer_name %> (<%= s.membership_no %>)</div></div>
+        <div class="detail-item"><div class="dl">ولي الأمر</div><div class="dv"><%= s.guardian_name || '—' %></div></div>
+        <div class="detail-item"><div class="dl">البرنامج</div><div class="dv"><%= s.program_name || '—' %></div></div>
+        <div class="detail-item"><div class="dl">الفترة</div><div class="dv"><%= fmtDate(s.start_date) %> — <%= fmtDate(s.end_date) %></div></div>
+        <div class="detail-item"><div class="dl">الإجمالي</div><div class="dv"><b><%= money(s.total) %></b></div></div>
+        <div class="detail-item"><div class="dl">المدفوع</div><div class="dv text-success"><%= money(s.paid_amount) %></div></div>
+        <div class="detail-item"><div class="dl">المتبقي</div><div class="dv <%= s.remaining > 0 ? 'text-danger' : 'text-success' %>"><%= money(s.remaining) %></div></div>
+        <div class="detail-item"><div class="dl">طريقة الدفع</div><div class="dv"><%= s.payment_method %></div></div>
+        <div class="detail-item"><div class="dl">رقم الإيصال</div><div class="dv"><%= s.receipt_no || '—' %></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body" style="display:flex;gap:10px;align-items:center;">
+    <a href="<%= waUrl %>" id="waSendBtn" target="_blank" rel="noopener" class="btn btn-success" style="min-width:210px;justify-content:center;"><i class="fab fa-whatsapp"></i> تأكيد وإرسال الإيصال</a>
+    <a href="/subscriptions/<%= s.id %>" class="btn btn-outline">إلغاء (دون إرسال)</a>
+  </div>
+  <div class="card-body text-muted" style="padding-top:0;display:flex;gap:16px;flex-wrap:wrap;font-size:12px;">
+    <span><i class="fas fa-lightbulb"></i> سيُفتح واتساب في تبويب جديد على رقم ولي الأمر مباشرة — إذا لم يفتح تلقائياً استخدم <a href="<%= waUrl %>" id="waFallback" target="_blank" rel="noopener">الرابط اليدوي</a>.</span>
+    <span><i class="fas fa-circle-info"></i> على الحاسوب تأكد من تسجيل دخولك إلى واتساب ويب في التبويب الجديد (web.whatsapp.com).</span>
+  </div>
+</div>
+<script>
+(function () {
+  var btn = document.getElementById('waSendBtn');
+  if (!btn) return;
+  var subId = <%= s.id %>;
+  function logSend() {
+    setTimeout(function () {
+      try { fetch('/subscriptions/' + subId + '/receipt/send', { method: 'POST', keepalive: true }); } catch (e) {}
+    }, 400);
+  }
+  btn.addEventListener('click', function (ev) {
+    ev.preventDefault();
+    var open = function () {
+      try { window.open(btn.href, '_blank', 'noopener'); } catch (e) {}
+      logSend();
+    };
+    var sc = (window.App && typeof window.App.showConfirm === 'function') ? window.App.showConfirm : null;
+    if (sc) sc('هل أنت متأكد من إرسال الإيصال إلى ولي الأمر عبر واتساب؟', open);
+    else open();
+  });
+})();
+</script>
+<%- include('partials/layout_bottom') %>

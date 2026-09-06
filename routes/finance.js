@@ -2,7 +2,7 @@
 const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, today, daysAhead, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
-const { buildRenewalMessage, sendReminder, logMessage } = require('../lib/whatsapp');
+const { buildRenewalMessage, buildReceiptMessage, sendReminder, waLinkFor, logMessage } = require('../lib/whatsapp');
 const { setFlash } = require('../lib/auth-cookie');
 const router = express.Router();
 
@@ -105,6 +105,8 @@ router.post('/subscriptions/new', async function (req, res) {
   const total = b.total !== '' && b.total != null ? Number(b.total) : computeTotal(b.price, b.discount, b.tax);
   const paid = Number(b.paid_amount || 0);
   const remaining = Math.round((total - paid) * 100) / 100;
+  const subInfo = await db.prepare('SELECT full_name, membership_no FROM swimmers WHERE id = ?').get(b.swimmer_id);
+  const swimmerName = (subInfo && subInfo.full_name) || ('سباح #' + b.swimmer_id);
   const info = await db.prepare(`INSERT INTO subscriptions (swimmer_id, program_id, group_id, start_date, end_date, sessions_total, sessions_used, price, discount, tax, total, paid_amount, remaining, payment_method, receipt_no, paid_date, is_installment, status, notes, created_by)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(b.swimmer_id, b.program_id || null, b.group_id || null, b.start_date || today(), b.end_date || null, Number(b.sessions_total || 8), 0, Number(b.price || 0), Number(b.discount || 0), Number(b.tax || 0), total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), b.is_installment === '1' ? 1 : 0, b.status || 'نشط', b.notes || '', req.currentUser.id);
@@ -112,12 +114,21 @@ router.post('/subscriptions/new', async function (req, res) {
   if (paid > 0) {
     await db.prepare('INSERT INTO payments (subscription_id, swimmer_id, amount, method, receipt_no, paid_date, staff_id, note) VALUES (?,?,?,?,?,?,?,?)')
       .run(info.lastInsertRowid, b.swimmer_id, paid, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), req.currentUser.id, 'دفعة الاشتراك');
-    await db.prepare(`INSERT INTO revenues (category, date, description, amount, payment_method, payer, status, created_by) VALUES ('اشتراكات', ?, ?, ?, ?, ?, 'معتمد', ?)`)
-      .run(b.paid_date || today(), 'اشتراك: ' + b.swimmer_id + ' - إيصال ' + (b.receipt_no || ''), paid, b.payment_method || 'نقدي', req.currentUser.id);
   }
+  /* تسجيل الاشتراك في الإيرادات دائماً (إنشاء أو تجديد) — بالمبلغ المدفوع فعلياً */
+  await db.prepare(`INSERT INTO revenues (category, date, description, amount, payment_method, payer, status, created_by) VALUES ('اشتراكات', ?, ?, ?, ?, ?, ?, ?)`)
+    .run(b.paid_date || today(), 'اشتراك: ' + swimmerName + (b.receipt_no ? ' - إيصال ' + b.receipt_no : ''), paid, b.payment_method || 'نقدي', swimmerName, paid > 0 ? 'معتمد' : 'مسجل', req.currentUser.id);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'subscriptions', info.lastInsertRowid, 'اشتراك جديد', req);
+  /* إتمام الاشتراك: نعرض لولي الأمر إيصالاً بتفاصيل الاشتراك عبر واتساب، مع تأكيد قبل الإرسال.
+     نقرأ رقم ولي الأمر، وإن وُجد نُظهر شاشة تأكيد للمعاينة قبل أي إرسال. */
+  const subId = info.lastInsertRowid;
+  const guard = await db.prepare('SELECT gu.full_name AS guardian_name, COALESCE(gu.whatsapp, gu.phone) AS phone FROM swimmers sw LEFT JOIN guardians gu ON gu.id = sw.guardian_id WHERE sw.id = ?').get(b.swimmer_id);
+  const guardianPhone = guard ? String(guard.phone || '').trim() : '';
+  if (guardianPhone) {
+    return res.redirect('/subscriptions/' + subId + '/receipt?confirm=1');
+  }
   setFlash(res, { type: 'success', message: 'تم تسجيل الاشتراك' });
-  res.redirect('/subscriptions/' + info.lastInsertRowid);
+  res.redirect('/subscriptions/' + subId);
 });
 
 router.get('/subscriptions/:id', async function (req, res) {
@@ -151,6 +162,76 @@ router.get('/subscriptions/:id/whatsapp', async function (req, res) {
   if (r.mode === 'link' && r.url) return res.redirect(r.url);
   setFlash(res, { type: 'success', message: 'تم إرسال تذكير الواتساب تلقائياً لولي الأمر' });
   res.redirect('/subscriptions/' + id);
+});
+
+/* ================= إيصال الاشتراك عبر واتساب (مع تأكيد قبل الإرسال) ================= */
+/* جلب بيانات الاشتراك + سباح + ولي أمر + برنامج + مجموعة + إعدادات الأكاديمية لبناء نص الإيصال */
+async function receiptPayload(id) {
+  const s = await db.prepare(`SELECT sub.*, sw.full_name AS swimmer_name, sw.membership_no, p.name AS program_name, g.name AS group_name,
+      gu.full_name AS guardian_name, COALESCE(gu.whatsapp, gu.phone) AS phone
+    FROM subscriptions sub
+    LEFT JOIN swimmers sw ON sw.id = sub.swimmer_id
+    LEFT JOIN programs p ON p.id = sub.program_id
+    LEFT JOIN groups g ON g.id = sub.group_id
+    LEFT JOIN guardians gu ON gu.id = sw.guardian_id
+    WHERE sub.id = ?`).get(Number(id));
+  if (!s) return null;
+  const st = await db.prepare("SELECT key, value FROM settings").all();
+  const sm = {};
+  st.forEach(r => { sm[r.key] = r.value; });
+  const text = buildReceiptMessage({
+    academyName: sm.site_name || sm.academy_name || 'الأكاديمية',
+    guardianName: s.guardian_name,
+    swimmerName: s.swimmer_name,
+    membershipNo: s.membership_no,
+    programName: s.program_name,
+    groupName: s.group_name,
+    startDate: s.start_date ? fmtDate(s.start_date) : '',
+    endDate: s.end_date ? fmtDate(s.end_date) : '',
+    sessionsTotal: s.sessions_total,
+    sessionsUsed: s.sessions_used,
+    price: Number(s.price || 0),
+    discount: Number(s.discount || 0),
+    tax: Number(s.tax || 0),
+    total: Number(s.total || 0),
+    paidAmount: Number(s.paid_amount || 0),
+    remaining: Number(s.remaining || 0),
+    paymentMethod: s.payment_method,
+    receiptNo: s.receipt_no
+  });
+  return { s, text, phone: String(s.phone || '').trim() };
+}
+
+/* صفحة معاينة الإيصال قبل الإرسال (تأكيد بصري بأن الادمن يرى ما سيُرسل لولي الأمر) */
+router.get('/subscriptions/:id/receipt', async function (req, res) {
+  if (!canView(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const pay = await receiptPayload(req.params.id);
+  if (!pay) return res.redirect('/subscriptions');
+  if (!pay.phone) {
+    setFlash(res, { type: 'error', message: 'لا يوجد رقم واتساب/هاتف مسجل لولي الأمر' });
+    return res.redirect('/subscriptions/' + req.params.id);
+  }
+  res.render('receipt_confirm', { title: 'تأكيد إرسال إيصال الاشتراك', active: 'subscriptions',
+    s: pay.s, text: pay.text, phone: pay.phone,
+    waUrl: waLinkFor(pay.phone, pay.text, req.get('user-agent')) });
+});
+
+/* تنفيذ الإرسال بعد التأكيد: فتح واتساب مباشرة على رقم ولي الأمر (رابط wa.me فوري دون انتظار Cloud API) */
+router.post('/subscriptions/:id/receipt/send', async function (req, res) {
+  if (!canView(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const id = Number(req.params.id);
+  const pay = await receiptPayload(id);
+  if (!pay) return res.redirect('/subscriptions');
+  if (!pay.phone) {
+    setFlash(res, { type: 'error', message: 'لا يوجد رقم واتساب/هاتف مسجل لولي الأمر' });
+    return res.redirect('/subscriptions/' + id);
+  }
+  const url = waLinkFor(pay.phone, pay.text, req.get('user-agent'));
+  await logMessage({ subscription_id: id, swimmer_id: pay.s.swimmer_id, swimmer_name: pay.s.swimmer_name, guardian_name: pay.s.guardian_name,
+    phone: pay.phone, message: pay.text, mode: 'link', status: 'sent', trigger: 'receipt', created_by: req.currentUser.id });
+  audit(req.currentUser.id, req.currentUser.full_name, 'send', 'whatsapp', id, 'إيصال اشتراك (واتساب رابط — فتح فوري)', req);
+  setFlash(res, { type: 'success', message: 'تم تجهيز الإيصال — سيُفتح واتساب على محادثة ولي الأمر لإرسال الرسالة' });
+  return res.redirect(url);
 });
 router.get('/subscriptions/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -222,6 +303,8 @@ router.post('/payments/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'payments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
   const amount = Number(b.amount || 0);
+  const payInfo = await db.prepare('SELECT full_name FROM swimmers WHERE id = ?').get(b.swimmer_id);
+  const payerName = (payInfo && payInfo.full_name) || ('سباح #' + b.swimmer_id);
   const info = await db.prepare('INSERT INTO payments (subscription_id, swimmer_id, amount, method, receipt_no, paid_date, staff_id, note) VALUES (?,?,?,?,?,?,?,?)')
     .run(b.subscription_id || null, b.swimmer_id, amount, b.method || 'نقدي', b.receipt_no || '', b.paid_date || today(), req.currentUser.id, b.note || '');
   if (b.subscription_id) {
@@ -230,7 +313,7 @@ router.post('/payments/new', async function (req, res) {
     await db.prepare('INSERT INTO subscription_history (subscription_id, swimmer_id, action, details, user_name) VALUES (?,?,?,?,?)').run(b.subscription_id, b.swimmer_id, 'دفع', 'دفعة ' + money(amount), req.currentUser.full_name);
   }
   await db.prepare("INSERT INTO revenues (category, date, description, amount, payment_method, payer, status, created_by) VALUES ('اشتراكات', ?, ?, ?, ?, ?, 'معتمد', ?)")
-    .run(b.paid_date || today(), 'دفعة ' + money(amount) + ' — ' + (b.receipt_no || ''), amount, b.method || 'نقدي', req.currentUser.id);
+    .run(b.paid_date || today(), 'دفعة ' + money(amount) + ' — ' + payerName + (b.receipt_no ? ' - إيصال ' + b.receipt_no : ''), amount, b.method || 'نقدي', payerName, req.currentUser.id);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'payments', info.lastInsertRowid, 'دفعة ' + money(amount), req);
   setFlash(res, { type: 'success', message: 'تم تسجيل الدفعة' });
   res.redirect('/payments');
