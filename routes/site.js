@@ -107,7 +107,7 @@ async function renderPage(req, res, acad, base, page, params) {
     if (page === 'reserve') {
       const programs = await db.prepare("SELECT * FROM programs WHERE deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id").all();
       const levels = await db.prepare('SELECT * FROM levels ORDER BY order_no, id').all();
-      return res.render('site/reserve', { data, programs, levels, money, message: params.message || '', values: params.values || {}, layout: false });
+      return res.render('site/reserve', { data, programs, levels, money, message: params.message || '', values: params.values || {}, confirmed: params.confirmed || null, layout: false });
     }
     return res.redirect(base);
   });
