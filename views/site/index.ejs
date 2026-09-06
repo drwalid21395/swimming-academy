@@ -3,12 +3,13 @@
   <div class="hero-bg"><i class="fas fa-water"></i></div>
   <h1><i class="fas fa-person-swimming"></i> <%= data.siteName %></h1>
   <p><%= data.slogan %><br>نعلّم السباحة لجميع الأعمار من المبتدئين حتى المحترفين، مع نخبة من أمهر الكباتن.</p>
-  <a href="<%= (data.base || '/site') %>/contact" class="btn btn-lg" style="background:#fff;color:var(--primary)"><i class="fas fa-calendar-check"></i> احجز مقعدًا للتجربة</a>
+  <a href="<%= (data.base || '/site') %>/reserve" class="btn btn-lg" style="background:var(--primary);color:#fff;border:2px solid rgba(255,255,255,.65)"><i class="fas fa-calendar-check"></i> احجز مكانك الآن</a>
 </div>
 
 <div class="site-container">
   <h2 style="text-align:center;margin-bottom:8px">برامجنا التدريبية</h2>
   <p style="text-align:center;color:var(--text-muted);margin-bottom:28px">دورات مخصصة لكل مستوى وقدرة</p>
+  <div style="text-align:center;margin-bottom:26px"><a href="<%= (data.base || '/site') %>/reserve" class="btn btn-primary btn-lg"><i class="fas fa-calendar-check"></i> احجز مكانك في أحد البرامج</a></div>
   <div class="dash-grid">
     <% programs.forEach(function (p) { %>
       <a href="<%= (data.base || '/site') %>/programs/<%= p.id %>" class="program-card" style="text-decoration:none;color:var(--text)">

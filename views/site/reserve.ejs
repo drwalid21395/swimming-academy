@@ -1,0 +1,135 @@
+<%- include('_head', { title: 'احجز مكانك', page: 'reserve' }) %>
+<style>
+  .reserve-wrap { max-width: 820px; margin: 40px auto; padding: 0 16px; }
+  .reserve-card { border: 1px solid var(--card-border); border-radius: 20px; background: var(--card,#fff); box-shadow: var(--shadow); overflow: hidden; }
+  .reserve-head { padding: 26px 30px; color: #fff; background: linear-gradient(120deg, var(--site-grad-dark,#0369a1) 0%, var(--site-grad-mid,#0284c7) 55%, var(--site-grad,#0ea5e9) 100%); }
+  .reserve-head h1 { font-size: 24px; margin: 0 0 6px; }
+  .reserve-head p { margin: 0; font-size: 14px; opacity: .92; }
+  .reserve-body { padding: 26px 30px; }
+  .reserve-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group.full { grid-column: 1 / -1; }
+  .form-group label { font-size: 13px; font-weight: 700; color: var(--text); }
+  .form-group label small { font-weight: 400; color: var(--text-muted); }
+  .form-group input, .form-group select, .form-group textarea {
+    border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 12px; font-size: 14px;
+    background: var(--card,#fff); color: var(--text); width: 100%; box-sizing: border-box;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft, rgba(2,132,199,.15));
+  }
+  .btn-reserve {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; padding: 13px 18px; border: none; border-radius: 12px; cursor: pointer;
+    font-size: 16px; font-weight: 800; color: #fff;
+    background: linear-gradient(120deg, var(--site-grad-dark,#0369a1), var(--site-grad,#0ea5e9));
+    box-shadow: 0 6px 18px var(--primary-dark,#0284c7)55; transition: transform .15s, box-shadow .15s;
+  }
+  .btn-reserve:hover { transform: translateY(-2px); box-shadow: 0 10px 24px var(--primary-dark,#0284c7)66; }
+  @media (max-width:640px){ .reserve-grid { grid-template-columns: 1fr; } .reserve-head, .reserve-body { padding: 20px; } }
+</style>
+<div class="reserve-wrap">
+  <div class="reserve-card">
+    <div class="reserve-head">
+      <h1><i class="fas fa-calendar-check"></i> احجز مكانك في <%= data.siteName %></h1>
+      <p>اختر البرنامج المناسب وأدخل بيانات السباح وسنتواصل معكم لتأكيد الحجز</p>
+    </div>
+    <div class="reserve-body">
+      <% if (message) { %>
+        <div class="alert alert-success" style="margin-bottom:18px;border-radius:12px">
+          <i class="fas fa-circle-check"></i> <%= message %>
+        </div>
+      <% } %>
+      <% const v = values || {}; %>
+      <form method="POST" action="<%= (data.base || '/site') %>/reserve">
+        <div class="reserve-grid">
+          <div class="form-group full">
+            <label>البرنامج التدريبي <span class="text-danger">*</span></label>
+            <select name="program_id" id="progSelect" required>
+              <option value="">— اختر البرنامج —</option>
+              <% programs.forEach(function (p) { %>
+                <option value="<%= p.id %>" <%= String(v.program_id) == String(p.id) ? 'selected' : '' %>>
+                  <%= p.name %> — <%= p.type || '' %> (<%= p.sessions_count %> حصة · <%= p.age_from %>-<%= p.age_to %> سنة · <%= money(p.price) %>)
+                </option>
+              <% }); %>
+            </select>
+            <input type="hidden" name="program_name" id="programNameInput" value="">
+          </div>
+          <div class="form-group">
+            <label>اسم السباح <span class="text-danger">*</span></label>
+            <input type="text" name="swimmer_name" required placeholder="الاسم الثلاثي" value="<%= v.swimmer_name || '' %>">
+          </div>
+          <div class="form-group">
+            <label>النوع</label>
+            <select name="gender">
+              <option value="ذكر" <%= v.gender === 'ذكر' ? 'selected' : '' %>>ذكر</option>
+              <option value="أنثى" <%= v.gender === 'أنثى' ? 'selected' : '' %>>أنثى</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>تاريخ الميلاد</label>
+            <input type="date" name="birth_date" id="birthDate" value="<%= v.birth_date || '' %>" onchange="calcAge()">
+          </div>
+          <div class="form-group">
+            <label>السن <small>(تُحسب تلقائياً)</small></label>
+            <input type="number" name="age" id="ageOut" readonly placeholder="0">
+          </div>
+          <div class="form-group">
+            <label>رقم التليفون <span class="text-danger">*</span></label>
+            <input type="tel" name="phone" required placeholder="01xxxxxxxxx" dir="ltr" value="<%= v.phone || '' %>">
+          </div>
+          <div class="form-group">
+            <label>رقم الواتساب</label>
+            <input type="tel" name="whatsapp" placeholder="01xxxxxxxxx" dir="ltr" value="<%= v.whatsapp || '' %>">
+          </div>
+          <div class="form-group">
+            <label>المستوى المبدئي</label>
+            <select name="initial_level">
+              <option value="">— بدون تحديد —</option>
+              <% levels.forEach(function (l) { %>
+                <option value="<%= l.name %>" <%= v.initial_level === l.name ? 'selected' : '' %>><%= l.name %></option>
+              <% }); %>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>رقم ولي الأمر / المسؤول</label>
+            <input type="tel" name="guardian_phone" placeholder="01xxxxxxxxx" dir="ltr" value="<%= v.guardian_phone || '' %>">
+          </div>
+          <div class="form-group">
+            <label>رقم السباح <small>(إن وجد — اختياري)</small></label>
+            <input type="text" name="swimmer_number" placeholder="مثال: SW-0001" value="<%= v.swimmer_number || '' %>">
+          </div>
+          <div class="form-group full">
+            <label>ملاحظات <small>(اختياري)</small></label>
+            <textarea name="notes" rows="3" placeholder="أي تفاصيل إضافية تحب مشاركتها..."><%= v.notes || '' %></textarea>
+          </div>
+        </div>
+        <div style="margin-top:20px">
+          <button type="submit" class="btn-reserve"><i class="fas fa-calendar-check"></i> تأكيد الحجز الآن</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+  function calcAge() {
+    const d = document.getElementById('birthDate');
+    const out = document.getElementById('ageOut');
+    if (!d.value) { out.value = ''; return; }
+    const b = new Date(d.value);
+    if (isNaN(b)) { out.value = ''; return; }
+    const now = new Date();
+    let age = now.getFullYear() - b.getFullYear();
+    const m = now.getMonth() - b.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
+    out.value = age;
+  }
+  const progSel = document.getElementById('progSelect');
+  const progName = document.getElementById('programNameInput');
+  const setProg = function () {
+    if (progSel.selectedIndex > 0) progName.value = progSel.options[progSel.selectedIndex].text.split(' — ')[0];
+  };
+  progSel.addEventListener('change', setProg);
+  setProg();
+</script>
+<%- include('_foot') %>

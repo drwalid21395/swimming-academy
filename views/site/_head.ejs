@@ -77,7 +77,8 @@
       <a href="<%= (data.base || '/site') %>/news" class="<%= page === 'news' ? 'active' : '' %>"><i class="fas fa-newspaper"></i> الأخبار والمركز الإعلامي</a>
       <a href="<%= (data.base || '/site') %>/announcements" class="<%= page === 'announcements' ? 'active' : '' %>">الإعلانات</a>
       <a href="<%= (data.base || '/site') %>/contact" class="<%= page === 'contact' ? 'active' : '' %>">تواصل معنا</a>
-      <a href="/login" class="btn btn-primary btn-sm" style="margin-inline-start:8px"><i class="fas fa-right-to-bracket"></i> دخول الإدارة</a>
+      <a href="<%= (data.base || '/site') %>/reserve" class="btn btn-primary btn-sm" style="margin-inline-start:8px"><i class="fas fa-calendar-check"></i> احجز مكانك</a>
+      <a href="/login" class="btn btn-primary btn-sm" style="margin-inline-start:6px"><i class="fas fa-right-to-bracket"></i> دخول الإدارة</a>
     </nav>
   </div>
 </div>

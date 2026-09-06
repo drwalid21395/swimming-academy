@@ -1,0 +1,93 @@
+<%- include('partials/layout_top', { title: page.title, active: page.active }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas <%= page.icon || 'fa-calendar-check' %>"></i> <%= page.title %></div>
+    <div class="page-sub"><%= page.subtitle %> <span class="count-badge">إجمالي الطلبات: <%= page.rows.length %></span></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex flex-wrap gap-1" style="align-items:center">
+    <form method="get" action="/reservations" class="flex flex-wrap gap-1" style="align-items:center">
+      <select name="status" class="form-control" style="min-width:150px">
+        <option value="">كل الحالات</option>
+        <% page.statuses.forEach(function (s) { %>
+          <option value="<%= s %>" <%= page.status === s ? 'selected' : '' %>><%= s %></option>
+        <% }); %>
+      </select>
+      <input type="date" name="from" class="form-control" value="<%= page.from || '' %>" title="من تاريخ">
+      <input type="date" name="to" class="form-control" value="<%= page.to || '' %>" title="إلى تاريخ">
+      <button type="submit" class="btn btn-outline"><i class="fas fa-filter"></i> تصفية</button>
+      <% if (page.status || page.from || page.to) { %><a href="/reservations" class="btn btn-ghost">إلغاء</a><% } %>
+    </form>
+    <% if (canExport(user, 'reservations')) { %>
+      <a href="/reports/reservations.xls?status=<%= encodeURIComponent(page.status || '') %>&from=<%= page.from || '' %>&to=<%= page.to || '' %>" class="btn btn-success"><i class="fas fa-file-excel"></i> تحميل Excel</a>
+    <% } %>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>السباح</th>
+          <th>البرنامج</th>
+          <th>السن</th>
+          <th>الهاتف</th>
+          <th>الواتساب</th>
+          <th>المستوى</th>
+          <th>ولي الأمر</th>
+          <th>رقم السباح</th>
+          <th>الملاحظات</th>
+          <th>تاريخ الحجز</th>
+          <th>الحالة</th>
+          <th>إجراءات</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (page.rows.length) { %>
+          <% page.rows.forEach(function (r) { %>
+            <tr>
+              <td>
+                <div class="avatar-cell">
+                  <div class="avatar-sm" style="background:linear-gradient(135deg,var(--primary),var(--primary-light));color:#fff"><%= (r.swimmer_name || 'ح').trim().charAt(0) %></div>
+                  <div>
+                    <div class="cell-title"><%= r.swimmer_name %><% if (r.gender === 'أنثى') { %> <span class="font-12 text-muted">(أنثى)</span><% } %></div>
+                    <% if (r.birth_date) { %><div class="cell-sub"><%= r.birth_date %></div><% } %>
+                  </div>
+                </div>
+              </td>
+              <td><b><%= r.program_name || '—' %></b></td>
+              <td><%= r.age !== null && r.age !== undefined ? r.age + ' سنة' : '—' %></td>
+              <td><%= r.phone ? '<span dir="ltr">' + r.phone + '</span>' : '—' %></td>
+              <td><%= r.whatsapp ? '<span dir="ltr">' + r.whatsapp + '</span>' : '—' %></td>
+              <td><%= r.initial_level || '—' %></td>
+              <td><%= r.guardian_phone ? '<span dir="ltr">' + r.guardian_phone + '</span>' : '—' %></td>
+              <td><%= r.swimmer_number || '—' %></td>
+              <td><div class="font-13 text-soft" style="max-width:180px;white-space:normal"><%= r.notes || '—' %></div></td>
+              <td><div class="font-13"><%= fmtDateTime(r.created_at) %></div></td>
+              <td><%- (function(){ const map = { 'جديدة': ['badge-primary','fa-circle'], 'تم التواصل': ['badge-info','fa-phone'], 'تم الحجز': ['badge-success','fa-check'], 'تم التحويل لسباح': ['badge-purple','fa-person-swimming'], 'ملغي': ['badge-danger','fa-ban'] }; const m = map[r.status] || ['badge-gray','fa-circle']; return '<span class="badge ' + m[0] + '"><i class="fas ' + m[1] + '"></i> ' + r.status + '</span>'; })() %></td>
+              <td>
+                <div class="table-actions" style="flex-direction:column;align-items:flex-start;gap:6px">
+                  <form method="POST" action="/reservations/<%= r.id %>/status" class="flex gap-1" style="align-items:center">
+                    <select name="status" class="form-control" style="min-width:130px;padding:5px 8px;font-size:12px">
+                      <% page.statuses.forEach(function (s) { %><option value="<%= s %>" <%= r.status === s ? 'selected' : '' %>><%= s %></option><% }); %>
+                    </select>
+                    <button type="submit" class="btn btn-ghost btn-sm" title="حفظ الحالة"><i class="fas fa-check"></i></button>
+                  </form>
+                  <% if (canDel(user, 'reservations')) { %>
+                    <form method="POST" action="/reservations/<%= r.id %>/delete" style="display:inline;margin:0">
+                      <button type="submit" class="btn btn-ghost btn-sm text-danger" data-confirm="حذف الحجز؟" data-action="submit"><i class="fas fa-trash"></i> حذف</button>
+                    </form>
+                  <% } %>
+                </div>
+              </td>
+            </tr>
+          <% }); %>
+        <% } else { %>
+          <tr><td colspan="12"><div class="empty-state"><i class="fas fa-calendar-xmark"></i><p>لا توجد حجوزات — تظهر هنا تلقائياً بمجرد حجز زائر من الموقع</p></div></td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<%- include('partials/layout_bottom') %>

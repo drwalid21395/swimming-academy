@@ -23,6 +23,7 @@ const MODULE_LABELS = {
   assessments: 'التقييمات الفنية', tests: 'الاختبارات', teams: 'فرق السباحة', competitions: 'البطولات',
   subscriptions: 'الاشتراكات', payments: 'المدفوعات', revenues: 'الإيرادات', expenses: 'المصروفات', coachPayments: 'مستحقات المدربين',
   incoming: 'الوارد', outgoing: 'الصادر', documents: 'المستندات', notifications: 'الإشعارات', complaints: 'الشكاوى والطلبات',
+  reservations: 'حجوزات الموقع',
   reports: 'التقارير', branches: 'الفروع', pools: 'حمامات السباحة', users: 'المستخدمون والصلاحيات', settings: 'إعدادات النظام',
   auditLog: 'سجل النشاط', site: 'الموقع التعريفي',
   trainerAttendance: 'حضور المدربين', staffAttendance: 'حضور الموظفين', payroll: 'المستحقات والرواتب'
@@ -34,7 +35,7 @@ const MODULE_GROUPS = [
   ['الجوانب الفنية', ['assessments', 'tests', 'teams', 'competitions']],
   ['المالية', ['subscriptions', 'payments', 'revenues', 'expenses', 'coachPayments']],
   ['الحضور والمستحقات', ['trainerAttendance', 'staffAttendance', 'payroll']],
-  ['الإدارة والمراسلات', ['incoming', 'outgoing', 'documents', 'notifications', 'complaints']],
+  ['الإدارة والمراسلات', ['incoming', 'outgoing', 'documents', 'notifications', 'complaints', 'reservations']],
   ['النظام', ['reports', 'branches', 'pools', 'users', 'settings', 'auditLog', 'site']]
 ];
 

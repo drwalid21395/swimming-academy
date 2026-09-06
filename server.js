@@ -216,6 +216,7 @@ app.use('/', require('./routes/schedule'));
 app.use('/', require('./routes/coaching'));
 app.use('/', require('./routes/finance'));
 app.use('/', require('./routes/correspondence'));
+app.use('/', require('./routes/reservations'));
 app.use('/', require('./routes/admin'));
 app.use('/', require('./routes/schools'));
 app.use('/', require('./routes/reports'));

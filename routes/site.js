@@ -1,7 +1,7 @@
 /** الموقع التعريفي العام — لكل أكاديمية موقع خاص بلونها وبياناتها */
 const express = require('express');
 const { db } = require('../lib/db');
-const { fmtDate, money, dayAr, today } = require('../lib/helpers');
+const { fmtDate, money, dayAr, today, calcAge } = require('../lib/helpers');
 const { withAcademy } = require('../lib/tenant-context');
 const router = express.Router();
 
@@ -103,6 +103,11 @@ async function renderPage(req, res, acad, base, page, params) {
     if (page === 'contact') {
       return res.render('site/contact', { data, message: params.message || '', layout: false });
     }
+    if (page === 'reserve') {
+      const programs = await db.prepare("SELECT * FROM programs WHERE deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id").all();
+      const levels = await db.prepare('SELECT * FROM levels ORDER BY order_no, id').all();
+      return res.render('site/reserve', { data, programs, levels, money, message: params.message || '', values: params.values || {}, layout: false });
+    }
     return res.redirect(base);
   });
 }
@@ -113,6 +118,12 @@ router.get('/', async function (req, res) {
   const base = '/site';
   if (!acad) return res.redirect('/login');
   return renderPage(req, res, acad, base, 'home');
+});
+router.get('/reserve', async function (req, res) {
+  const acad = await resolveAcademy('primary');
+  const base = '/site';
+  if (!acad) return res.redirect('/login');
+  return renderPage(req, res, acad, base, 'reserve');
 });
 router.get('/news', async function (req, res) {
   const acad = await resolveAcademy('primary');
@@ -149,12 +160,74 @@ router.post('/contact', async function (req, res) {
   return renderPage(req, res, acad, '/site', 'contact', { message: 'تم إرسال رسالتك بنجاح، سنتواصل معك قريباً.' });
 });
 
+/* ===== حجز مكان بالأكاديمية (نموذج عام لكل أكاديمية) ===== */
+async function submitReserve(req, res, acad, base) {
+  const b = req.body;
+  const values = {
+    program_id: b.program_id || '', swimmer_name: String(b.swimmer_name || '').trim(),
+    birth_date: b.birth_date || '', gender: b.gender || 'ذكر',
+    phone: String(b.phone || '').trim(), whatsapp: String(b.whatsapp || '').trim(),
+    initial_level: String(b.initial_level || '').trim(), guardian_phone: String(b.guardian_phone || '').trim(),
+    swimmer_number: String(b.swimmer_number || '').trim(), notes: String(b.notes || '').trim()
+  };
+  if (!values.swimmer_name) {
+    return renderPage(req, res, acad, base, 'reserve', { message: 'يرجى إدخال اسم السباح لحجز مكانه', values });
+  }
+  await withAcademy(acad.id, async () => {
+    const prog = await db.prepare('SELECT name FROM programs WHERE id = ? AND deleted_at IS NULL').get(Number(b.program_id) || 0);
+    const programName = (prog && prog.name) || (b.program_name ? String(b.program_name).trim() : '');
+    const age = calcAge(values.birth_date);
+    const info = await db.prepare(`INSERT INTO reservations
+      (program_id, program_name, swimmer_name, birth_date, age, gender, phone, whatsapp, initial_level, guardian_phone, swimmer_number, notes)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(Number(b.program_id) || null, programName, values.swimmer_name, values.birth_date || null, age,
+        values.gender, values.phone || null, values.whatsapp || null, values.initial_level || null,
+        values.guardian_phone || null, values.swimmer_number || null, values.notes || null);
+
+    const detail = [
+      'البرنامج: ' + (programName || '—'),
+      'الاسم: ' + values.swimmer_name,
+      values.birth_date ? 'تاريخ الميلاد: ' + values.birth_date : '',
+      age !== null ? 'السن: ' + age : '',
+      'الهاتف: ' + (values.phone || '—'),
+      'واتساب: ' + (values.whatsapp || '—'),
+      'المستوى المبدئي: ' + (values.initial_level || '—'),
+      'رقم ولي الأمر: ' + (values.guardian_phone || '—'),
+      'رقم السباح: ' + (values.swimmer_number || '—'),
+      values.notes ? 'ملاحظات: ' + values.notes : ''
+    ].filter(Boolean).join(' | ');
+
+    const notif = await db.prepare(`INSERT INTO notifications (title, message, type, link, is_broadcast, created_by)
+      VALUES (?,?,?,?,?,?)`)
+      .run('حجز مكان جديد في ' + acad.name, detail, 'حجوزات', '/reservations', 1, 0);
+
+    try {
+      const recipients = await db.prepare("SELECT id FROM users WHERE status='active'").all();
+      const insR = db.prepare('INSERT INTO notification_recipients (notification_id, user_id) VALUES (?,?)');
+      for (const u of recipients) await insR.run(notif.lastInsertRowid, u.id);
+    } catch (e) { /* الإشعار يعرض حتى لو تعذر إسناد مستلمين */ }
+  });
+  return renderPage(req, res, acad, base, 'reserve', { message: 'تم استلام حجز ' + values.swimmer_name + ' بنجاح، سنتواصل معكم قريباً لتأكيد المقعد.' });
+}
+
+router.post('/reserve', async function (req, res) {
+  const acad = await resolveAcademy('primary');
+  const base = '/site';
+  if (!acad) return res.redirect('/login');
+  return submitReserve(req, res, acad, base);
+});
+
 /* ===== موقع أكاديمية محددة بالنمط /site/:code/... ===== */
 router.get('/:code', async function (req, res) {
   const acad = await resolveAcademy(req.params.code);
   if (!acad) return res.redirect('/site');
   const base = '/site/' + acad.code;
   return renderPage(req, res, acad, base, 'home');
+});
+router.get('/:code/reserve', async function (req, res) {
+  const acad = await resolveAcademy(req.params.code);
+  if (!acad) return res.redirect('/site');
+  return renderPage(req, res, acad, '/site/' + acad.code, 'reserve');
 });
 router.get('/:code/news', async function (req, res) {
   const acad = await resolveAcademy(req.params.code);
@@ -196,6 +269,11 @@ router.post('/:code/contact', async function (req, res) {
     }
   });
   return renderPage(req, res, acad, '/site/' + acad.code, 'contact', { message: 'تم إرسال رسالتك بنجاح، سنتواصل معك قريباً.' });
+});
+router.post('/:code/reserve', async function (req, res) {
+  const acad = await resolveAcademy(req.params.code);
+  if (!acad) return res.redirect('/site');
+  return submitReserve(req, res, acad, '/site/' + acad.code);
 });
 
 module.exports = router;

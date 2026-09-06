@@ -156,6 +156,7 @@
         { url: '/outgoing', label: 'الصادر', icon: 'fa-paper-plane', module: 'outgoing' },
         { url: '/documents', label: 'المستندات', icon: 'fa-folder-open', module: 'documents' },
         { url: '/notifications', label: 'الإشعارات', icon: 'fa-bell', module: 'notifications' },
+        { url: '/reservations', label: 'حجوزات الموقع', icon: 'fa-calendar-check', module: 'reservations' },
         { url: '/complaints', label: 'الشكاوى والطلبات', icon: 'fa-headset', module: 'complaints' },
         { sec: 'التقارير والإعدادات' },
         { url: '/reports', label: 'التقارير', icon: 'fa-chart-column', module: 'reports' },
@@ -171,7 +172,7 @@
       ]; %>
       <% let section = ''; %>
       <% const curPath = (typeof currentPath !== 'undefined') ? currentPath : ''; %>
-      <% const activeMap = { trainerAttendance: '/trainer-attendance', staffAttendance: '/staff-attendance', payroll: '/payroll', coachPayments: '/coach-payments', dashboard: '/', swimmers: '/swimmers', guardians: '/guardians', coaches: '/coaches', staff: '/staff', programs: '/programs', levels: '/levels', groups: '/groups', sessions: '/sessions', attendance: '/attendance', assessments: '/assessments', tests: '/tests', teams: '/teams', competitions: '/competitions', subscriptions: '/subscriptions', payments: '/payments', revenues: '/revenues', expenses: '/expenses', incoming: '/incoming', outgoing: '/outgoing', documents: '/documents', notifications: '/notifications', complaints: '/complaints', reports: '/reports', branches: '/branches', pools: '/pools', schools: '/schools', users: '/users', settings: '/settings', auditLog: '/audit-log' }; %>
+      <% const activeMap = { trainerAttendance: '/trainer-attendance', staffAttendance: '/staff-attendance', payroll: '/payroll', coachPayments: '/coach-payments', dashboard: '/', swimmers: '/swimmers', guardians: '/guardians', coaches: '/coaches', staff: '/staff', programs: '/programs', levels: '/levels', groups: '/groups', sessions: '/sessions', attendance: '/attendance', assessments: '/assessments', tests: '/tests', teams: '/teams', competitions: '/competitions', subscriptions: '/subscriptions', payments: '/payments', revenues: '/revenues', expenses: '/expenses', incoming: '/incoming', outgoing: '/outgoing', documents: '/documents', notifications: '/notifications', complaints: '/complaints', reservations: '/reservations', reports: '/reports', branches: '/branches', pools: '/pools', schools: '/schools', users: '/users', settings: '/settings', auditLog: '/audit-log' }; %>
       <% function isNavActive(url) { if (url === '/') return curPath === '/'; return curPath === url || curPath.indexOf(url + '/') === 0; } %>
       <% let bestUrl = ''; nav.forEach(function (it) { if (it.url && isNavActive(it.url) && it.url.length > bestUrl.length) bestUrl = it.url; }); %>
       <% const inNav = bestUrl !== ''; %>
