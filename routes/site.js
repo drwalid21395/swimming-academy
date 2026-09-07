@@ -3,7 +3,7 @@ const express = require('express');
 const { db } = require('../lib/db');
 const { fmtDate, money, dayAr, today, calcAge } = require('../lib/helpers');
 const { withAcademy } = require('../lib/tenant-context');
-const { sendReminder, logMessage } = require('../lib/whatsapp');
+const { sendReminder, logMessage, buildReserveFollowUpMessage } = require('../lib/whatsapp');
 const router = express.Router();
 
 const DEFAULT_COLOR = '#0284c7';
@@ -176,6 +176,7 @@ async function submitReserve(req, res, acad, base) {
   }
   let programName = '';
   let age = null;
+  let adminName = '', techDirector = '', nearestSession = '';
   await withAcademy(acad.id, async () => {
     const prog = await db.prepare('SELECT name FROM programs WHERE id = ? AND deleted_at IS NULL').get(Number(b.program_id) || 0);
     programName = (prog && prog.name) || (b.program_name ? String(b.program_name).trim() : '');
@@ -186,6 +187,23 @@ async function submitReserve(req, res, acad, base) {
       .run(Number(b.program_id) || null, programName, values.swimmer_name, values.birth_date || null, age,
         values.gender, values.phone || null, values.whatsapp || null, values.initial_level || null,
         values.guardian_phone || null, values.swimmer_number || null, values.notes || null);
+
+    /* أسماء المسؤولين وأقرب ميعاد تدريب لرسالة الواتساب */
+    try {
+      const st = await db.prepare("SELECT key, value FROM settings WHERE key IN ('admin_name','tech_director_name')").all();
+      st.forEach(r => { if (r.key === 'admin_name') adminName = r.value; if (r.key === 'tech_director_name') techDirector = r.value; });
+    } catch (e) { }
+    try {
+      const up = await db.prepare(`SELECT s.date, s.start_time, g.name AS group_name
+        FROM sessions s LEFT JOIN groups g ON g.id = s.group_id
+        WHERE s.status = 'scheduled' AND s.deleted_at IS NULL AND s.date >= date('now','localtime')
+        ORDER BY s.date, s.start_time LIMIT 1`).get();
+      if (up) {
+        const dd = new Date(String(up.date) + 'T12:00:00');
+        const wd = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][dd.getDay()];
+        nearestSession = 'يوم ' + dayAr(wd) + ' ' + fmtDate(up.date) + (up.start_time ? '، الساعة ' + up.start_time : '');
+      }
+    } catch (e) { }
 
     const detail = [
       'البرنامج: ' + (programName || '—'),
@@ -211,15 +229,17 @@ async function submitReserve(req, res, acad, base) {
     } catch (e) { /* الإشعار يعرض حتى لو تعذر إسناد مستلمين */ }
   });
 
-  /* رسالة تأكيد واتساب لأولياء الأمور (أفضل جهد: عبر Cloud API أو رابط wa.me) */
+  /* رسالة متابعة واتساب لأولياء الأمور: دعوة لإتمام الاشتراك (الكابتن + المجموعة + دفع القيمة) */
   const waPhone = values.whatsapp || values.phone || '';
   if (waPhone) {
-    const text = [
-      'السلام عليكم ورحمة الله وبركاته',
-      'تم تأكيد استلام حجز ' + values.swimmer_name + ' في ' + acad.name + (programName ? ' ببرنامج ' + programName : '') + '.',
-      'سيتم التواصل معكم قريباً لتأكيد المقعد وتفاصيل الجدول.',
-      'مع خالص الشكر — ' + acad.name
-    ].join('\n');
+    const text = buildReserveFollowUpMessage({
+      swimmerName: values.swimmer_name,
+      programName,
+      academyName: acad.name,
+      adminName,
+      techDirector,
+      nearestSession
+    });
     try {
       const r = await sendReminder({ phone: waPhone, text });
       await logMessage({ phone: waPhone, message: text, mode: r.mode || 'link', status: 'sent', trigger: 'reserve' });

@@ -230,7 +230,9 @@ const SETTING_DEFS = [
   { key: 'tiktok', label: 'تيك توك', type: 'text', section: 'السوشيال ميديا' },
   { key: 'map_url', label: 'رابط الخريطة', type: 'text', section: 'السوشيال ميديا' },
   { key: 'safety_notes', label: 'إرشادات السلامة في الماء', type: 'textarea', section: 'السلامة' },
-  { key: 'whatsapp_country_code', label: 'مفتاح دولة الواتساب (مثال: 20 لمصر)', type: 'text', section: 'إعدادات الواتساب' }
+  { key: 'whatsapp_country_code', label: 'مفتاح دولة الواتساب (مثال: 20 لمصر)', type: 'text', section: 'إعدادات الواتساب' },
+  { key: 'admin_name', label: 'اسم المسؤول الإداري (في رسالة الحجز)', type: 'text', section: 'رسالة حجز الواتساب' },
+  { key: 'tech_director_name', label: 'اسم المدير الفني (في رسالة الحجز)', type: 'text', section: 'رسالة حجز الواتساب' }
 ];
 router.get('/settings', async function (req, res) {
   if (!canView(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
