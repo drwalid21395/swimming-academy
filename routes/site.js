@@ -4,6 +4,7 @@ const { db } = require('../lib/db');
 const { fmtDate, money, dayAr, today, calcAge } = require('../lib/helpers');
 const { withAcademy } = require('../lib/tenant-context');
 const { sendReminder, logMessage, buildReserveFollowUpMessage } = require('../lib/whatsapp');
+const { enabledSportsForAcademy, academySportRow, getSport } = require('../lib/sports');
 const router = express.Router();
 
 const DEFAULT_COLOR = '#0284c7';
@@ -25,8 +26,11 @@ async function siteData(acad, base) {
   try { homeImages = JSON.parse(global.home_images || '[]'); } catch (e) { homeImages = []; }
   const acadSet = {};
   try { Object.assign(acadSet, JSON.parse(acad.settings || '{}')); } catch (e) { }
+  let sports = [];
+  try { sports = (await enabledSportsForAcademy(acad.id)).filter(r => r.is_enabled); } catch (e) { sports = []; }
   return {
     base,
+    sports,
     siteName: acadSet.site_name || acad.name || global.site_name || 'أكاديمية السباحة',
     slogan: acadSet.site_slogan || global.site_slogan || 'التعليم الأفضل لرياضة السباحة',
     logo: acad.logo || global.site_logo || '',
@@ -104,6 +108,19 @@ async function renderPage(req, res, acad, base, page, params) {
     if (page === 'contact') {
       return res.render('site/contact', { data, message: params.message || '', layout: false });
     }
+    if (page === 'sport') {
+      const sport = await getSport(Number(params.sportId) || 0);
+      if (!sport || sport.is_active === 0) return res.redirect((base || '/site') + '/');
+      const acadSport = await academySportRow(acad.id, sport.id);
+      if (!acadSport || !acadSport.is_enabled) return res.redirect((base || '/site') + '/');
+      let website = {};
+      try { website = JSON.parse(acadSport.website || '{}'); } catch (e) { website = {}; }
+      const programs = await db.prepare("SELECT * FROM programs WHERE sport_id = ? AND deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id").all(sport.id);
+      const coaches = await db.prepare("SELECT * FROM coaches WHERE sport_id = ? AND deleted_at IS NULL AND status='active' ORDER BY id").all(sport.id);
+      const announcements = await db.prepare('SELECT * FROM announcements WHERE sport_id = ? AND is_public = 1 ORDER BY id DESC LIMIT 20').all(sport.id);
+      const upcoming = await upcomingSchedule(50);
+      return res.render('site/sport', { data, sport, website, programs, coaches, announcements, upcoming, money, fmtDate, layout: false });
+    }
     if (page === 'reserve') {
       const programs = await db.prepare("SELECT * FROM programs WHERE deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id").all();
       const levels = await db.prepare('SELECT * FROM levels ORDER BY order_no, id').all();
@@ -141,6 +158,10 @@ router.get('/programs/:id', async function (req, res) {
 router.get('/coaches', async function (req, res) {
   const acad = await resolveAcademy('primary');
   return renderPage(req, res, acad, '/site', 'coaches');
+});
+router.get('/sport/:sportId', async function (req, res) {
+  const acad = await resolveAcademy('primary');
+  return renderPage(req, res, acad, '/site', 'sport', { sportId: req.params.sportId });
 });
 router.get('/announcements', async function (req, res) {
   const acad = await resolveAcademy('primary');
@@ -297,6 +318,11 @@ router.get('/:code/coaches', async function (req, res) {
   const acad = await resolveAcademy(req.params.code);
   if (!acad) return res.redirect('/site');
   return renderPage(req, res, acad, '/site/' + acad.code, 'coaches');
+});
+router.get('/:code/sport/:sportId', async function (req, res) {
+  const acad = await resolveAcademy(req.params.code);
+  if (!acad) return res.redirect('/site');
+  return renderPage(req, res, acad, '/site/' + acad.code, 'sport', { sportId: req.params.sportId });
 });
 router.get('/:code/announcements', async function (req, res) {
   const acad = await resolveAcademy(req.params.code);

@@ -1,0 +1,88 @@
+<%- include('../partials/layout_top', { title: 'الألعاب الرياضية', active: 'platform', pageCss: ['/css/platform.css'] }) %>
+<div class="platform">
+  <div class="pf-hero">
+    <div>
+      <div class="pf-hero-eyebrow"><i class="fas fa-medal"></i> الألعاب الرياضية</div>
+      <div class="pf-hero-title">إدارة كتالوج الألعاب</div>
+      <div class="pf-hero-sub"><%= sports.length %> لعبة في الكتالوج — تُفعَّل لكل أكاديمية من شاشة التحكم المركزية</div>
+    </div>
+    <div class="pf-hero-actions">
+      <a href="#add-sport" class="btn-hero"><i class="fas fa-plus"></i> إضافة لعبة</a>
+    </div>
+  </div>
+
+  <% if (f) { %>
+    <div class="pf-card">
+      <div class="pf-card-head"><h3><i class="fas fa-pen"></i> تعديل لعبة: <%= f.name %></h3></div>
+      <div class="pf-card-body">
+        <form method="POST" action="/platform/sports/<%= f.id %>/edit" class="pf-form-grid">
+          <% var fields = [{ k: 'name', l: 'اسم اللعبة' }, { k: 'icon', l: 'أيقونة FontAwesome (fa-medal، fa-futbol، fa-hand-fist ...)' }, { k: 'sort_order', l: 'الترتيب (عدد)' }]; %>
+          <% fields.forEach(function (fld) { %>
+            <div class="pf-form-group"><label><%= fld.l %></label>
+              <input type="text" name="<%= fld.k %>" class="pf-input" value="<%= f[fld.k] || '' %>" <%= fld.k === 'name' ? 'required' : '' %>>
+            </div>
+          <% }); %>
+          <div class="pf-form-group full"><label>الوصف التعريفي</label>
+            <textarea name="description" class="pf-input" rows="2"><%= f.description || '' %></textarea>
+          </div>
+          <div class="pf-form-group full">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="is_active" value="1" <%= f.is_active ? 'checked' : '' %>> اللعبة نشطة (تظهر في كتالوج المنصة)</label>
+          </div>
+          <div class="pf-form-group full" style="display:flex;gap:8px">
+            <button type="submit" class="pf-btn pf-btn-primary"><i class="fas fa-save"></i> حفظ التعديلات</button>
+            <a href="/platform/sports" class="pf-btn">إلغاء</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  <% } %>
+
+  <div class="pf-card" id="add-sport">
+    <div class="pf-card-head"><h3><i class="fas fa-plus"></i> إضافة لعبة جديدة</h3></div>
+    <div class="pf-card-body">
+      <form method="POST" action="/platform/sports/new" class="pf-form-grid">
+        <div class="pf-form-group"><label>اسم اللعبة</label><input type="text" name="name" class="pf-input" placeholder="مثال: كرة السلة" required></div>
+        <div class="pf-form-group"><label>أيقونة FontAwesome</label><input type="text" name="icon" class="pf-input" value="fa-medal" placeholder="fa-medal"></div>
+        <div class="pf-form-group"><label>الترتيب (عدد)</label><input type="number" name="sort_order" class="pf-input" value="99"></div>
+        <div class="pf-form-group full"><label>الوصف التعريفي</label><textarea name="description" class="pf-input" rows="2" placeholder="وصف مختصر يظهر في كتالوج المنصة..."></textarea></div>
+        <div class="pf-form-group full">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="is_active" value="1" checked> تفعيل اللعبة فوراً لكل الأكاديميات</label>
+        </div>
+        <div class="pf-form-group full"><button type="submit" class="pf-btn pf-btn-primary"><i class="fas fa-plus"></i> إضافة اللعبة</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="pf-card">
+    <div class="pf-card-head">
+      <h3><i class="fas fa-list-ul"></i> كتالوج الألعاب</h3>
+      <span class="pf-badge pf-badge-blue"><%= sports.length %> لعبة</span>
+    </div>
+    <div class="pf-card-body flat">
+      <div class="pf-table">
+        <table>
+          <thead><tr><th>اللعبة</th><th>الوصف</th><th>الحالة</th><th>أكاديميات مفعّلة</th><th></th></tr></thead>
+          <tbody>
+            <% sports.forEach(function (s) { %>
+              <tr>
+                <td><div class="pf-entity"><span class="pf-entity-av" style="background:linear-gradient(135deg,#0ea5e9,#0369a1)"><i class="fas <%= s.icon %>"></i></span><div><div class="pf-entity-t"><%= s.name %></div><div class="pf-entity-s">ترتيب <%= s.sort_order %></div></div></div></td>
+                <td style="color:#64748b;font-size:13px" dir="rtl"><%= s.description || '—' %></td>
+                <td><span class="pf-badge <%= s.is_active ? 'pf-badge-green' : 'pf-badge-red' %>"><%= s.is_active ? 'نشطة' : 'موقوفة' %></span></td>
+                <td><b><%= s.enabled_academies %></b></td>
+                <td><div class="pf-row-actions">
+                  <a href="/platform/sports/<%= s.id %>" class="pf-btn"><i class="fas fa-eye"></i> التحكم</a>
+                  <a href="/platform/sports?edit=<%= s.id %>" class="pf-btn"><i class="fas fa-pen"></i></a>
+                  <form method="POST" action="/platform/sports/<%= s.id %>/delete" data-confirm="حذف لعبة «<%= s.name %>» نهائياً؟ سيُلغى تفعيلها في كل الأكاديميات." style="display:inline">
+                    <button type="submit" class="pf-btn pf-btn-danger"><i class="fas fa-trash"></i></button>
+                  </form>
+                </div></td>
+              </tr>
+            <% }); %>
+            <% if (!sports.length) { %><tr><td colspan="5"><div class="pf-empty"><i class="fas fa-medal"></i><p>لا توجد ألعاب بعد — أضف أول لعبة من الأعلى</p></div></td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<%- include('../partials/layout_bottom') %>

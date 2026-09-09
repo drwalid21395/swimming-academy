@@ -1,0 +1,80 @@
+<%- include('partials/layout_top', { title: 'ظ…ط­طھظˆظ‰ ' + sport.name, active: 'sports' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas <%= sport.icon %>"></i> ظ…ط­طھظˆظ‰ ظ…ظˆظ‚ط¹ ظ„ط¹ط¨ط© <%= sport.name %></div>
+    <div class="page-sub">ظٹظڈط¹ط±ط¶ ظ‡ط°ط§ ط§ظ„ظ…ط­طھظˆظ‰ ظپظٹ طµظپط­ط© ط§ظ„ظ„ط¹ط¨ط© ط¹ظ„ظ‰ ظ…ظˆظ‚ط¹ظƒ ط§ظ„طھط¹ط±ظٹظپظٹ</div>
+  </div>
+  <a href="/site/sport/<%= sport.id %>" target="_blank" class="btn btn-outline"><i class="fas fa-eye"></i> ظ…ط¹ط§ظٹظ†ط© ط§ظ„طµظپط­ط© ط§ظ„ط¹ط§ظ…ط©</a>
+</div>
+
+<form method="POST" action="/sports/<%= sport.id %>/website" enctype="multipart/form-data">
+  <div class="card" style="max-width:820px">
+    <div class="card-body">
+      <div class="form-section-title"><i class="fas fa-circle-info"></i> ط§ظ„ظ†ط¨ط°ط© ط§ظ„طھط¹ط±ظٹظپظٹط©</div>
+      <div class="form-group">
+        <label>ظ†ط¨ط°ط© ط¹ظ† ط§ظ„ظ„ط¹ط¨ط© ظپظٹ ط£ظƒط§ط¯ظٹظ…ظٹطھظƒ</label>
+        <textarea name="about" class="form-control" rows="4" placeholder="ط§ظƒطھط¨ ظ†ط¨ط°ط© ط§ظ„طھط¹ط±ظٹظپ ط¨ظ„ط¹ط¨ط© <%= sport.name %> ط¯ط§ط®ظ„ ط£ظƒط§ط¯ظٹظ…ظٹطھظƒ..."><%= website.about || '' %></textarea>
+        <div class="form-hint">طھط¸ظ‡ط± ط£ط¹ظ„ظ‰ طµظپط­ط© ط§ظ„ظ„ط¹ط¨ط© ظˆطھط³طھط¨ط¯ظ„ ط§ظ„ظˆطµظپ ط§ظ„ط¹ط§ظ…</div>
+      </div>
+
+      <div class="form-section-title"><i class="fas fa-image"></i> ط§ظ„طµظˆط±ط© ط§ظ„ط±ط¦ظٹط³ظٹط©</div>
+      <% if (website.banner) { %>
+        <div id="banner-box" style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+          <img src="<%= website.banner %>" alt="banner" style="width:120px;height:80px;object-fit:cover;border-radius:10px;border:1px solid var(--card-border)">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--danger)">
+            <input type="checkbox" name="remove_banner" value="1" onchange="document.getElementById('banner-box').style.display=this.checked?'none':''"> ط¥ط²ط§ظ„ط© ط§ظ„طµظˆط±ط© ط§ظ„ط­ط§ظ„ظٹط©
+          </label>
+        </div>
+      <% } %>
+      <div class="form-group">
+        <input type="file" name="banner" class="form-control" accept="image/*">
+        <div class="form-hint">طµظˆط±ط© طھظڈط¹ط±ط¶ ظپظٹ ظ…ظ‚ط¯ظ…ط© طµظپط­ط© ط§ظ„ظ„ط¹ط¨ط© (JPG/PNG) â€” ط§طھط±ظƒظ‡ط§ ظپط§ط±ط؛ط© ظ„ظ„ط¥ط¨ظ‚ط§ط، ط¹ظ„ظ‰ ط§ظ„ط­ط§ظ„ظٹط©</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="max-width:820px">
+    <div class="card-body">
+      <div class="form-section-title"><i class="fas fa-list-check"></i> ط§ظ„ط¨ط±ط§ظ…ط¬ ط§ظ„ظ…ط±طھط¨ط·ط© ط¨ظ„ط¹ط¨ط© <%= sport.name %></div>
+      <div class="flex gap-1" style="flex-wrap:wrap">
+        <% programs.forEach(function (p) { %>
+          <label class="check-chip"><input type="checkbox" name="programs" value="<%= p.id %>" <%= programIds.includes(p.id) ? 'checked' : '' %>><span class="chip-label"><%= p.name %></span></label>
+        <% }); %>
+        <% if (!programs.length) { %><div class="text-muted" style="font-size:13px">ظ„ط§ طھظˆط¬ط¯ ط¨ط±ط§ظ…ط¬ â€” ط£ط¶ظپ ط¨ط±ط§ظ…ط¬ ظ…ظ† ظ‚ط³ظ… ط§ظ„ط¨ط±ط§ظ…ط¬ ظˆط§ظ„ط¯ظˆط±ط§طھ ظ„طھط¸ظ‡ط± ظ‡ظ†ط§</div><% } %>
+      </div>
+      <div class="form-hint" style="margin-top:6px">ط§ظ„ط¨ط±ط§ظ…ط¬ ط§ظ„ظ…ط®طھط§ط±ط© ظپظ‚ط· طھط¸ظ‡ط± ظپظٹ طµظپط­ط© ظ‡ط°ظ‡ ط§ظ„ظ„ط¹ط¨ط©</div>
+    </div>
+  </div>
+
+  <div class="card" style="max-width:820px">
+    <div class="card-body">
+      <div class="form-section-title"><i class="fas fa-user-tie"></i> ط§ظ„ظƒط¨ط§طھظ† ظˆط§ظ„ظ…ط¯ط±ط¨ظˆظ†</div>
+      <div class="flex gap-1" style="flex-wrap:wrap">
+        <% coaches.forEach(function (c) { %>
+          <label class="check-chip"><input type="checkbox" name="coaches" value="<%= c.id %>" <%= coachIds.includes(c.id) ? 'checked' : '' %>><span class="chip-label"><%= c.full_name %></span></label>
+        <% }); %>
+        <% if (!coaches.length) { %><div class="text-muted" style="font-size:13px">ظ„ط§ ظٹظˆط¬ط¯ ظƒط¨ط§طھظ† â€” ط£ط¶ظپ ظ…ظ† ظ‚ط³ظ… ط§ظ„ظƒط¨ط§طھظ† ظˆط§ظ„ظ…ط¯ط±ط¨ظˆظ†</div><% } %>
+      </div>
+      <div class="form-hint" style="margin-top:6px">ط§ظ„ظƒط¨ط§طھظ† ط§ظ„ظ…ط®طھط§ط±ظˆظ† ظپظ‚ط· ظٹط¸ظ‡ط±ظˆظ† ظپظٹ طµظپط­ط© ظ‡ط°ظ‡ ط§ظ„ظ„ط¹ط¨ط©</div>
+    </div>
+  </div>
+
+  <div class="card" style="max-width:820px">
+    <div class="card-body">
+      <div class="form-section-title"><i class="fas fa-bullhorn"></i> ط§ظ„ط¥ط¹ظ„ط§ظ†ط§طھ ظˆط§ظ„ط£ط®ط¨ط§ط±</div>
+      <div class="flex gap-1" style="flex-wrap:wrap">
+        <% announcements.forEach(function (a) { %>
+          <label class="check-chip"><input type="checkbox" name="announcements" value="<%= a.id %>" <%= announcementIds.includes(a.id) ? 'checked' : '' %>><span class="chip-label"><%= a.title %></span></label>
+        <% }); %>
+        <% if (!announcements.length) { %><div class="text-muted" style="font-size:13px">ظ„ط§ طھظˆط¬ط¯ ط¥ط¹ظ„ط§ظ†ط§طھ â€” ط£ط¶ظپ ظ…ظ† ط§ظ„ط£ط®ط¨ط§ط± ظˆط§ظ„ط£ط­ط¯ط§ط«</div><% } %>
+      </div>
+      <div class="form-hint" style="margin-top:6px">ط§ظ„ط¥ط¹ظ„ط§ظ†ط§طھ ط§ظ„ظ…ط®طھط§ط±ط© ظپظ‚ط· طھط¸ظ‡ط± ظپظٹ طµظپط­ط© ظ‡ط°ظ‡ ط§ظ„ظ„ط¹ط¨ط©</div>
+    </div>
+  </div>
+
+  <div class="form-actions" style="max-width:820px">
+    <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> ط­ظپط¸ ظ…ط­طھظˆظ‰ ط§ظ„ظ„ط¹ط¨ط©</button>
+    <a href="/sports" class="btn btn-lg">ط±ط¬ظˆط¹ ظ„ظ‚ط§ط¦ظ…ط© ط§ظ„ط£ظ„ط¹ط§ط¨</a>
+  </div>
+</form>
+<%- include('partials/layout_bottom') %>

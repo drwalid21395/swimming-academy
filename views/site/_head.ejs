@@ -17,6 +17,13 @@
     .site-nav { display: flex; gap: 4px; flex-wrap: wrap; }
     .site-nav a { padding: 9px 16px; border-radius: 10px; color: var(--text-soft); font-weight: 600; }
     .site-nav a:hover, .site-nav a.active { background: var(--primary-soft); color: var(--primary); }
+    .site-sports-bar { border-top: 1px solid var(--card-border); background: rgba(248,250,252,.6); }
+    .site-sports-bar .inner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 32px; max-width: 1280px; margin: auto; }
+    .site-sports-bar .bar-label { font-size: 13px; font-weight: 800; color: var(--text); display: inline-flex; align-items: center; gap: 6px; }
+    .sport-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--text-soft); border: 1px solid var(--card-border); text-decoration: none; transition: all .15s; }
+    .sport-tab:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+    .sport-tab.active { background: var(--primary); color: #fff !important; border-color: var(--primary); }
+    @media (max-width:768px){ .site-sports-bar .inner { padding: 10px 16px; } }
     .site-hero { padding: 72px 32px 60px; text-align: center; background: linear-gradient(135deg,#0284c7 0%, #0ea5e9 55%, #06b6d4 100%); color: #fff; border-radius: 0 0 40px 40px; position: relative; overflow: hidden; }
     .site-hero h1 { font-size: 40px; margin-bottom: 14px; }
     .site-hero p { font-size: 18px; opacity: .92; max-width: 700px; margin: 0 auto 26px; }
@@ -81,4 +88,14 @@
       <a href="/login" class="btn btn-primary btn-sm" style="margin-inline-start:6px"><i class="fas fa-right-to-bracket"></i> دخول الإدارة</a>
     </nav>
   </div>
+  <% if (typeof data !== 'undefined' && data.sports && data.sports.length) { %>
+    <div class="site-sports-bar">
+      <div class="inner">
+        <span class="bar-label"><i class="fas fa-medal"></i> أنشطتنا:</span>
+        <% data.sports.forEach(function (s) { %>
+          <a href="<%= (data.base || '/site') %>/sport/<%= s.id %>" class="sport-tab <%= page === 'sport' && typeof sport !== 'undefined' && sport && Number(sport.id) === Number(s.id) ? 'active' : '' %>"><i class="fas <%= s.icon %>"></i> <%= s.name %></a>
+        <% }); %>
+      </div>
+    </div>
+  <% } %>
 </div>

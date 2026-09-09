@@ -1,0 +1,70 @@
+<%- include('../partials/layout_top', { title: sport.name, active: 'platform', pageCss: ['/css/platform.css'] }) %>
+<div class="platform">
+  <div class="pf-hero">
+    <div>
+      <div class="pf-hero-eyebrow"><i class="fas <%= sport.icon %>"></i> شاشة التحكم المركزية</div>
+      <div class="pf-hero-title"><%= sport.name %></div>
+      <div class="pf-hero-sub"><%= sport.description || 'لا يوجد وصف' %> · ترتيب <%= sport.sort_order %></div>
+    </div>
+    <div class="pf-hero-actions">
+      <a href="/platform/sports" class="btn-hero no-bg"><i class="fas fa-arrow-right"></i> كتالوج الألعاب</a>
+      <a href="/platform/sports?edit=<%= sport.id %>" class="btn-hero"><i class="fas fa-pen"></i> تعديل اللعبة</a>
+    </div>
+  </div>
+
+  <div class="pf-card">
+    <div class="pf-card-head">
+      <h3><i class="fas fa-building"></i> تفعيل اللعبة للأكاديميات</h3>
+      <span class="pf-badge pf-badge-blue"><%= academies.filter(a => a.is_enabled).length %> مفعّلة</span>
+    </div>
+    <div class="pf-card-body flat">
+      <div class="pf-table">
+        <table>
+          <thead><tr><th>الأكاديمية</th><th>الحالة</th><th>التحكم</th><th>صلاحيات المستخدمين</th></tr></thead>
+          <tbody>
+            <% academies.forEach(function (a) { %>
+              <tr>
+                <td>
+                  <div class="pf-entity">
+                    <span class="pf-entity-av" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9)"><i class="fas fa-building"></i></span>
+                    <div><div class="pf-entity-t"><%= a.name %> <% if (+a.premium === 1) { %><span class="pf-badge pf-badge-brand">الأساسية</span><% } %></div><div class="pf-entity-s">@<%= a.code %></div></div>
+                  </div>
+                </td>
+                <td>
+                  <span class="pf-badge <%= a.is_enabled ? 'pf-badge-green' : 'pf-badge-gray' %>"><%= a.is_enabled ? 'مفعّلة' : 'موقوفة' %></span>
+                </td>
+                <td>
+                  <div class="pf-toggle">
+                    <button onclick="toggleSport(<%= a.id %>, <%= a.is_enabled ? 0 : 1 %>)" class="pf-btn <%= a.is_enabled ? 'pf-btn-danger' : 'pf-btn-primary' %>">
+                      <i class="fas <%= a.is_enabled ? 'fa-circle-minus' : 'fa-circle-check' %>"></i> <%= a.is_enabled ? 'إيقاف' : 'تفعيل' %>
+                    </button>
+                    <form method="POST" id="toggle-<%= a.id %>" action="/platform/sports/<%= sport.id %>/toggle">
+                      <input type="hidden" name="academy_id" value="<%= a.id %>">
+                      <input type="hidden" name="enabled" id="enabled-<%= a.id %>" value="1">
+                    </form>
+                  </div>
+                </td>
+                <td>
+                  <a href="/platform/academies/<%= a.id %>" class="pf-btn"><i class="fas fa-users-gear"></i> المستخدمون والصلاحيات</a>
+                </td>
+              </tr>
+            <% }); %>
+            <% if (!academies.length) { %><tr><td colspan="4"><div class="pf-empty"><i class="fas fa-building"></i><p>لا توجد أكاديميات على المنصة</p></div></td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+  .pf-toggle{display:inline-flex;align-items:center}
+  .pf-toggle form{margin:0}
+  .btn-hero.no-bg{background:transparent;border:1px solid rgba(255,255,255,.4)}
+</style>
+<script>
+  function toggleSport(academyId, enabled) {
+    document.getElementById('enabled-' + academyId).value = enabled;
+    document.getElementById('toggle-' + academyId).submit();
+  }
+</script>
+<%- include('../partials/layout_bottom') %>

@@ -131,6 +131,8 @@
         { url: '/programs', label: 'البرامج والدورات', icon: 'fa-list-check', module: 'programs' },
         { url: '/levels', label: 'المستويات', icon: 'fa-layer-group', module: 'levels' },
         { url: '/groups', label: 'المجموعات التدريبية', icon: 'fa-people-group', module: 'groups' },
+        { sec: 'الأنشطة والموقع' },
+        { url: '/sports', label: 'الألعاب الرياضية', icon: 'fa-medal', module: 'sports' },
         { sec: 'الجداول والحضور' },
         { url: '/sessions', label: 'الحصص والجداول', icon: 'fa-calendar-days', module: 'sessions' },
         { url: '/attendance', label: 'الحضور والغياب', icon: 'fa-clipboard-user', module: 'attendance' },
@@ -172,7 +174,7 @@
       ]; %>
       <% let section = ''; %>
       <% const curPath = (typeof currentPath !== 'undefined') ? currentPath : ''; %>
-      <% const activeMap = { trainerAttendance: '/trainer-attendance', staffAttendance: '/staff-attendance', payroll: '/payroll', coachPayments: '/coach-payments', dashboard: '/', swimmers: '/swimmers', guardians: '/guardians', coaches: '/coaches', staff: '/staff', programs: '/programs', levels: '/levels', groups: '/groups', sessions: '/sessions', attendance: '/attendance', assessments: '/assessments', tests: '/tests', teams: '/teams', competitions: '/competitions', subscriptions: '/subscriptions', payments: '/payments', revenues: '/revenues', expenses: '/expenses', incoming: '/incoming', outgoing: '/outgoing', documents: '/documents', notifications: '/notifications', complaints: '/complaints', reservations: '/reservations', reports: '/reports', branches: '/branches', pools: '/pools', schools: '/schools', users: '/users', settings: '/settings', auditLog: '/audit-log' }; %>
+      <% const activeMap = { trainerAttendance: '/trainer-attendance', staffAttendance: '/staff-attendance', payroll: '/payroll', coachPayments: '/coach-payments', dashboard: '/', swimmers: '/swimmers', guardians: '/guardians', coaches: '/coaches', staff: '/staff', programs: '/programs', levels: '/levels', groups: '/groups', sessions: '/sessions', attendance: '/attendance', assessments: '/assessments', tests: '/tests', teams: '/teams', competitions: '/competitions', subscriptions: '/subscriptions', payments: '/payments', revenues: '/revenues', expenses: '/expenses', incoming: '/incoming', outgoing: '/outgoing', documents: '/documents', notifications: '/notifications', complaints: '/complaints', reservations: '/reservations', sports: '/sports', reports: '/reports', branches: '/branches', pools: '/pools', schools: '/schools', users: '/users', settings: '/settings', auditLog: '/audit-log' }; %>
       <% function isNavActive(url) { if (url === '/') return curPath === '/'; return curPath === url || curPath.indexOf(url + '/') === 0; } %>
       <% let bestUrl = ''; nav.forEach(function (it) { if (it.url && isNavActive(it.url) && it.url.length > bestUrl.length) bestUrl = it.url; }); %>
       <% const inNav = bestUrl !== ''; %>
@@ -194,6 +196,7 @@
         <a href="/platform/plans" class="nav-item <%= (typeof currentPath !== 'undefined' && currentPath.indexOf('/platform/plans') === 0) ? 'active' : '' %>"><i class="fas fa-box-open"></i><span>خطط الاشتراك</span></a>
         <a href="/platform/payments" class="nav-item <%= (typeof currentPath !== 'undefined' && currentPath.indexOf('/platform/payments') === 0) ? 'active' : '' %>"><i class="fas fa-money-check-dollar"></i><span>طلبات الدفع</span></a>
         <a href="/platform/settings" class="nav-item <%= (typeof currentPath !== 'undefined' && currentPath.indexOf('/platform/settings') === 0) ? 'active' : '' %>"><i class="fas fa-globe"></i><span>إعدادات المنصة</span></a>
+        <a href="/platform/sports" class="nav-item <%= (typeof currentPath !== 'undefined' && currentPath.indexOf('/platform/sports') === 0) ? 'active' : '' %>"><i class="fas fa-medal"></i><span>الألعاب الرياضية</span></a>
         <a href="/platform/audit-logs" class="nav-item <%= (typeof currentPath !== 'undefined' && currentPath.indexOf('/platform/audit-logs') === 0) ? 'active' : '' %>"><i class="fas fa-clock-rotate-left"></i><span>سجل نشاط المنصة</span></a>
       <% } %>
     </nav>

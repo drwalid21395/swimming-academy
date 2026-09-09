@@ -5,6 +5,7 @@ const { audit, fmtDate, fmtDateTime, canView } = require('../lib/helpers');
 const { setFlash, getCookie } = require('../lib/auth-cookie');
 const { hashPassword, verifyPassword } = require('../lib/helpers');
 const { uploadAndStore, removeUploaded } = require('../lib/upload');
+const { listActiveSports, getSport, sportWithAcademies, setSportEnabled } = require('../lib/sports');
   const { getAcademy, getActiveSubscription, subscriptionStatus, featureEnabled, planLimits, atPlanLimit, FEATURES, FEATURE_GROUPS, ACTIONS, ACTION_LABELS, EXTRA_FEATURES } =
 require('../lib/tenant');
 const router = express.Router();
@@ -429,6 +430,84 @@ router.post('/platform/settings', async function (req, res) {
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'settings', 0, 'تحديث إعدادات المنصة', req);
   setFlash(res, { type: 'success', message: 'تم حفظ إعدادات المنصة' });
   res.redirect('/platform/settings');
+});
+
+/* ================================================================ */
+/*  الألعاب الرياضية: الكتالوج + التحكم المركزي للأكاديميات        */
+/* ================================================================ */
+router.get('/platform/sports', async function (req, res) {
+  if (requireSuper(req, res)) return;
+  const sports = await db.all(`SELECT s.*,
+      (SELECT COUNT(*) FROM academy_sports as2 WHERE as2.sport_id = s.id AND as2.is_enabled = 1) AS enabled_academies
+    FROM sports s ORDER BY s.sort_order, s.id`);
+  let f = null;
+  if (req.query.edit) {
+    f = await getSport(Number(req.query.edit));
+    if (!f) return res.redirect('/platform/sports');
+  }
+  res.render('platform/sports', { title: 'الألعاب الرياضية', active: 'platform', sports, f });
+});
+
+router.post('/platform/sports/new', async function (req, res) {
+  if (requireSuper(req, res)) return;
+  const b = req.body;
+  const name = String(b.name || '').trim();
+  if (!name) { setFlash(res, { type: 'error', message: 'أدخل اسم اللعبة' }); return res.redirect('/platform/sports'); }
+  const info = await db.prepare('INSERT INTO sports (name, icon, description, is_active, sort_order) VALUES (?,?,?,?,?)')
+    .run(name, String(b.icon || 'fa-medal').trim(), String(b.description || '').trim(), b.is_active ? 1 : 0, Number(b.sort_order) || 99);
+  /* تفعيل اللعبة الجديدة تلقائياً لكل الأكاديميات النشطة */
+  const academies = await db.all('SELECT id FROM academies');
+  if (academies.length) {
+    const ins = db.prepare('INSERT OR IGNORE INTO academy_sports (academy_id, sport_id, is_enabled) VALUES (?,?,1)');
+    for (const a of academies) await ins.run(a.id, info.lastInsertRowid);
+  }
+  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'sports', info.lastInsertRowid, 'إضافة لعبة: ' + name, req);
+  setFlash(res, { type: 'success', message: 'تمت إضافة اللعبة وتفعيلها للأكاديميات (يمكنك إيقافها لاحقاً)' });
+  res.redirect('/platform/sports');
+});
+
+router.post('/platform/sports/:id/edit', async function (req, res) {
+  if (requireSuper(req, res)) return;
+  const id = Number(req.params.id);
+  const b = req.body;
+  const name = String(b.name || '').trim();
+  if (!name) { setFlash(res, { type: 'error', message: 'أدخل اسم اللعبة' }); return res.redirect('/platform/sports'); }
+  await db.prepare('UPDATE sports SET name=?, icon=?, description=?, is_active=?, sort_order=? WHERE id=?')
+    .run(name, String(b.icon || 'fa-medal').trim(), String(b.description || '').trim(), b.is_active ? 1 : 0, Number(b.sort_order) || 99, id);
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'sports', id, 'تعديل لعبة: ' + name, req);
+  setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
+  res.redirect('/platform/sports');
+});
+
+router.post('/platform/sports/:id/delete', async function (req, res) {
+  if (requireSuper(req, res)) return;
+  const id = Number(req.params.id);
+  const name = (await getSport(id) || {}).name || id;
+  await db.prepare('DELETE FROM academy_sports WHERE sport_id = ?').run(id);
+  await db.prepare('DELETE FROM sports WHERE id = ?').run(id);
+  audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'sports', id, 'حذف لعبة: ' + name, req);
+  setFlash(res, { type: 'success', message: 'تم حذف اللعبة' });
+  res.redirect('/platform/sports');
+});
+
+/* شاشة التحكم المركزية: تفعيل/تعطيل اللعبة لكل أكاديمية + الوصول لصلاحيات المستخدمين */
+router.get('/platform/sports/:id', async function (req, res) {
+  if (requireSuper(req, res)) return;
+  const data = await sportWithAcademies(Number(req.params.id));
+  if (!data) return res.redirect('/platform/sports');
+  res.render('platform/sport_detail', { title: data.sport.name, active: 'platform', sport: data.sport, academies: data.academies });
+});
+
+router.post('/platform/sports/:id/toggle', async function (req, res) {
+  if (requireSuper(req, res)) return;
+  const sportId = Number(req.params.id);
+  const academyId = Number(req.body.academy_id);
+  const enabled = req.body.enabled === '1';
+  if (!isFinite(academyId) || academyId <= 0) { setFlash(res, { type: 'error', message: 'أكاديمية غير صالحة' }); return res.redirect('/platform/sports/' + sportId); }
+  await setSportEnabled(academyId, sportId, enabled);
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'sports', sportId, (enabled ? 'تفعيل' : 'تعطيل') + ' لعبة لأكاديمية #' + academyId, req);
+  setFlash(res, { type: 'success', message: (enabled ? 'تم تفعيل' : 'تم إيقاف') + ' اللعبة لهذه الأكاديمية' });
+  res.redirect('/platform/sports/' + sportId);
 });
 
 /* سجل النشاط */

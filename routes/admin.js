@@ -7,6 +7,7 @@ const { audit, money, fmtDate, fmtDateTime, today, canView, canAdd, canEdit, can
 const { setFlash } = require('../lib/auth-cookie');
 const { upload, uploadAndStore, removeUploaded } = require('../lib/upload');
 const { getAcademy, getActiveSubscription, subscriptionStatus, featureEnabled, maybeNotifyAcademySubscription } = require('../lib/tenant');
+const { listActiveSports, getSport, academySportRow, enabledSportsForAcademy } = require('../lib/sports');
 const router = express.Router();
 
 async function getArr(key, fallback) {
@@ -24,6 +25,7 @@ const MODULE_LABELS = {
   subscriptions: 'الاشتراكات', payments: 'المدفوعات', revenues: 'الإيرادات', expenses: 'المصروفات', coachPayments: 'مستحقات المدربين',
   incoming: 'الوارد', outgoing: 'الصادر', documents: 'المستندات', notifications: 'الإشعارات', complaints: 'الشكاوى والطلبات',
   reservations: 'حجوزات الموقع',
+  sports: 'الألعاب الرياضية',
   reports: 'التقارير', branches: 'الفروع', pools: 'حمامات السباحة', users: 'المستخدمون والصلاحيات', settings: 'إعدادات النظام',
   auditLog: 'سجل النشاط', site: 'الموقع التعريفي',
   trainerAttendance: 'حضور المدربين', staffAttendance: 'حضور الموظفين', payroll: 'المستحقات والرواتب'
@@ -36,7 +38,8 @@ const MODULE_GROUPS = [
   ['المالية', ['subscriptions', 'payments', 'revenues', 'expenses', 'coachPayments']],
   ['الحضور والمستحقات', ['trainerAttendance', 'staffAttendance', 'payroll']],
   ['الإدارة والمراسلات', ['incoming', 'outgoing', 'documents', 'notifications', 'complaints', 'reservations']],
-  ['النظام', ['reports', 'branches', 'pools', 'users', 'settings', 'auditLog', 'site']]
+  ['النظام', ['reports', 'branches', 'pools', 'users', 'settings', 'auditLog', 'site']],
+  ['الأنشطة والموقع', ['sports']]
 ];
 
 /* ============================================================== */
@@ -456,6 +459,92 @@ router.post('/settings/news/:id/delete', async function (req, res) {
   audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'announcements', id, 'حذف خبر', req);
   setFlash(res, { type: 'success', message: 'تم حذف الخبر' });
   res.redirect('/settings/news');
+});
+
+/* ============================================================== */
+/*                      الألعاب الرياضية                          */
+/* ============================================================== */
+router.get('/sports', async function (req, res) {
+  if (!canView(req.currentUser, 'sports')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const acadId = req.currentUser.impersonatingAcademyId || req.currentUser.academy_id;
+  const catalog = await listActiveSports();
+  const enabled = await enabledSportsForAcademy(acadId);
+  const rows = catalog.map(function (s) {
+    const en = enabled.find(function (r) { return r.id === s.id; });
+    return Object.assign({}, s, {
+      is_enabled: en ? !!en.is_enabled : false,
+      has_site: !!(en && en.website && (en.website.about || en.website.banner)),
+      contentCount: 0
+    });
+  });
+  res.render('sports', { title: 'الألعاب الرياضية', active: 'sports', sports: rows, canEdit: canEdit(req.currentUser, 'sports'), acadId });
+});
+
+/* محتوى موقع لعبة محددة (نبذة + صور + ربط البرامج/الكباتن/الإعلانات) */
+router.get('/sports/:id/website', async function (req, res) {
+  if (!canEdit(req.currentUser, 'sports')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const acadId = req.currentUser.impersonatingAcademyId || req.currentUser.academy_id;
+  const sport = await getSport(Number(req.params.id));
+  if (!sport) return res.redirect('/sports');
+  const link = await academySportRow(acadId, sport.id);
+  if (!link || !link.is_enabled) {
+    setFlash(res, { type: 'error', message: 'هذه اللعبة غير مفعّلة لأكاديميتك' });
+    return res.redirect('/sports');
+  }
+  let website = {};
+  try { website = JSON.parse(link.website || '{}'); } catch (e) { website = {}; }
+  const programs = await db.prepare("SELECT * FROM programs WHERE deleted_at IS NULL ORDER BY id").all();
+  const coaches = await db.prepare("SELECT * FROM coaches WHERE deleted_at IS NULL ORDER BY id").all();
+  const announcements = await db.prepare('SELECT * FROM announcements ORDER BY id DESC').all();
+  res.render('sport_website', {
+    title: 'موقع لعبة ' + sport.name, active: 'sports', sport, website, programs, coaches, announcements,
+    programIds: programs.filter(p => p.sport_id === sport.id).map(p => p.id),
+    coachIds: coaches.filter(c => c.sport_id === sport.id).map(c => c.id),
+    announcementIds: announcements.filter(a => a.sport_id === sport.id).map(a => a.id)
+  });
+});
+
+router.post('/sports/:id/website', uploadAndStore('banner'), async function (req, res) {
+  if (!canEdit(req.currentUser, 'sports')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const acadId = req.currentUser.impersonatingAcademyId || req.currentUser.academy_id;
+  const sportId = Number(req.params.id);
+  const link = await academySportRow(acadId, sportId);
+  if (!link || !link.is_enabled) {
+    setFlash(res, { type: 'error', message: 'اللعبة غير مفعّلة' });
+    return res.redirect('/sports');
+  }
+  const b = req.body;
+  let website = {};
+  try { website = JSON.parse(link.website || '{}'); } catch (e) { website = {}; }
+
+  /* الصورة الرئيسية (البنر) */
+  if (req.file) {
+    if (website.banner) removeUploaded(website.banner);
+    website.banner = '/uploads/' + req.file.filename;
+  } else if (b.remove_banner === '1' && website.banner) {
+    removeUploaded(website.banner);
+    delete website.banner;
+  }
+
+  /* النبذة التعريفية للعبة */
+  website.about = String(b.about || '').trim();
+
+  /* إعادة تعيين sport_id في قوائم اللعبة ثم تحديد المختار (معزول بالأكاديمية) */
+  await db.prepare('UPDATE programs SET sport_id = NULL WHERE sport_id = ?').run(sportId);
+  await db.prepare('UPDATE coaches SET sport_id = NULL WHERE sport_id = ?').run(sportId);
+  await db.prepare('UPDATE announcements SET sport_id = NULL WHERE sport_id = ?').run(sportId);
+  const pick = function (v) { return Array.isArray(v) ? v.map(Number) : []; };
+  const updP = db.prepare('UPDATE programs SET sport_id = ? WHERE id = ?');
+  const updC = db.prepare('UPDATE coaches SET sport_id = ? WHERE id = ?');
+  const updA = db.prepare('UPDATE announcements SET sport_id = ? WHERE id = ?');
+  for (const id of pick(b.programs)) await updP.run(sportId, id);
+  for (const id of pick(b.coaches)) await updC.run(sportId, id);
+  for (const id of pick(b.announcements)) await updA.run(sportId, id);
+
+  await db.prepare('UPDATE academy_sports SET website = ? WHERE id = ?').run(JSON.stringify(website), link.id);
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'sports', sportId, 'تحديث محتوى موقع لعبة: ' + ((await getSport(sportId) || {}).name || sportId), req);
+  setFlash(res, { type: 'success', message: 'تم حفظ محتوى اللعبة' });
+  res.redirect('/sports/' + sportId + '/website');
 });
 
 /* ============================================================== */
