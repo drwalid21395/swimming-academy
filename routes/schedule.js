@@ -3,6 +3,7 @@ const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, fmtDateTime, dayAr, today, pct, parseJSON, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
+const { activeSport, sportClause, progClause, groupClause, sessionClause } = require('../lib/sport-context');
 const router = express.Router();
 
 const SES_STATUS = [
@@ -57,7 +58,7 @@ router.get('/sessions', async function (req, res) {
     LEFT JOIN groups g ON g.id = se.group_id
     LEFT JOIN coaches c ON c.id = se.coach_id
     LEFT JOIN pools p ON p.id = se.pool_id
-    WHERE 1=1 AND se.deleted_at IS NULL`;
+    WHERE 1=1 AND se.deleted_at IS NULL` + progClause(activeSport(req), 'g');
   const params = [];
   if (group) { sql += ' AND se.group_id = ?'; params.push(group); }
   if (coach) { sql += ' AND se.coach_id = ?'; params.push(coach); }
@@ -80,8 +81,8 @@ router.get('/sessions', async function (req, res) {
     ],
     rows,
     filters: [
-      { name: 'group_id', label: 'المجموعة', options: (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL ORDER BY name').all()).map(g => ({ value: g.id, label: g.name })) },
-      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
+      { name: 'group_id', label: 'المجموعة', options: (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL' + groupClause(activeSport(req)) + ' ORDER BY name').all()).map(g => ({ value: g.id, label: g.name })) },
+      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'coaches') + ' ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
       { name: 'status', label: 'الحالة', options: SES_STATUS }
     ],
     canAdd: canAdd(req.currentUser, 'sessions'),
@@ -97,9 +98,10 @@ router.get('/sessions', async function (req, res) {
   res.render('list', { page });
 });
 
-const sessionFields = async function (values) {
-  const groups = (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL').all()).map(g => ({ value: g.id, label: g.name }));
-  const coaches = (await db.prepare('SELECT * FROM coaches WHERE deleted_at IS NULL').all()).map(c => ({ value: c.id, label: c.full_name }));
+const sessionFields = async function (values, req) {
+  const sid = activeSport(req);
+  const groups = (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL' + groupClause(sid)).all()).map(g => ({ value: g.id, label: g.name }));
+  const coaches = (await db.prepare('SELECT * FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches')).all()).map(c => ({ value: c.id, label: c.full_name }));
   const pools = (await db.prepare('SELECT * FROM pools').all()).map(p => ({ value: p.id, label: p.name }));
   return [
     { key: 'group_id', label: 'المجموعة التدريبية', type: 'select', options: groups, required: true, section: 'بيانات الحصة', sectionIcon: 'fa-calendar-days' },
@@ -118,7 +120,7 @@ const sessionFields = async function (values) {
 
 router.get('/sessions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  res.render('form', { form: { title: 'حصة جديدة', subtitle: 'جدولة حصة تدريبية', icon: 'fa-plus', active: 'sessions', action: '/sessions/new', fields: await sessionFields({ date: today(), start_time: '16:00' }), values: {}, submitLabel: 'إنشاء الحصة', cancelUrl: '/sessions', csrf: '' } });
+  res.render('form', { form: { title: 'حصة جديدة', subtitle: 'جدولة حصة تدريبية', icon: 'fa-plus', active: 'sessions', action: '/sessions/new', fields: await sessionFields({ date: today(), start_time: '16:00' }, req), values: {}, submitLabel: 'إنشاء الحصة', cancelUrl: '/sessions', csrf: '' } });
 });
 router.post('/sessions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -153,7 +155,7 @@ router.get('/sessions/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const row = await db.prepare('SELECT * FROM sessions WHERE id = ?').get(Number(req.params.id));
   if (!row) return res.redirect('/sessions');
-  res.render('form', { form: { title: 'تعديل الحصة', subtitle: fmtDate(row.date) + ' — ' + (row.title || ''), icon: 'fa-pen', active: 'sessions', action: '/sessions/' + row.id + '/edit', fields: await sessionFields(row), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/sessions/' + row.id, csrf: '' } });
+  res.render('form', { form: { title: 'تعديل الحصة', subtitle: fmtDate(row.date) + ' — ' + (row.title || ''), icon: 'fa-pen', active: 'sessions', action: '/sessions/' + row.id + '/edit', fields: await sessionFields(row, req), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/sessions/' + row.id, csrf: '' } });
 });
 router.post('/sessions/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -187,7 +189,7 @@ router.get('/attendance', async function (req, res) {
   }
   const date = req.query.date || today();
   const groupRows = await db.prepare(`SELECT g.*, c.full_name AS coach_name, p.name AS pool_name FROM groups g
-    LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools p ON p.id = g.pool_id WHERE g.deleted_at IS NULL ORDER BY g.name`).all();
+    LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools p ON p.id = g.pool_id WHERE g.deleted_at IS NULL` + groupClause(activeSport(req)) + ` ORDER BY g.name`).all();
   const groups = [];
   for (const g of groupRows) {
     await syncGroup(g.id);
@@ -197,11 +199,12 @@ router.get('/attendance', async function (req, res) {
     if (session) (await db.prepare('SELECT swimmer_id, status FROM attendance WHERE session_id = ?').all(session.id)).forEach(function (a) { attMap[a.swimmer_id] = a.status; });
     groups.push({ ...g, members, session, attMap });
   }
+  const gScope = sessionClause(activeSport(req), 's');
   const daily = {
-    present: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='present'`).get(date)).c,
-    absent: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='absent'`).get(date)).c,
-    excused: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='excused'`).get(date)).c,
-    late: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='late'`).get(date)).c
+    present: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='present'` + gScope).get(date)).c,
+    absent: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='absent'` + gScope).get(date)).c,
+    excused: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='excused'` + gScope).get(date)).c,
+    late: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='late'` + gScope).get(date)).c
   };
   res.render('attendance', { title: 'الحضور والغياب', active: 'attendance', groups, daily, date, today: today(), canSave: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance'),
     yday: addDays(today(), -1), dyday: addDays(today(), -2), tomorrow: addDays(today(), 1), isPast: date < today() });

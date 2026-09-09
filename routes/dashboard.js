@@ -4,13 +4,15 @@ const { db } = require('../lib/db');
 const { money, fmtDate, fmtDateTime, dayAr, calcAge, pct, daysAhead, daysAgo, today } = require('../lib/helpers');
 const { maybeSendExpiryReminders } = require('../lib/whatsapp');
 const { maybeNotifyAcademySubscription } = require('../lib/tenant');
+const { activeSport, sportClause, progClause, swimmerClause, groupClause, sessionClause } = require('../lib/sport-context');
 const router = express.Router();
 
-async function swimmerSummary() {
-  const total = (await db.prepare('SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL').get()).c;
-  const active = (await db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status = 'نشط'").get()).c;
-  const stopped = (await db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status IN ('متوقف مؤقتاً','مجمد','منسحب')").get()).c;
-  const expired = (await db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status IN ('منتهي','خريج')").get()).c;
+async function swimmerSummary(sid) {
+  const wc = swimmerClause(sid);
+  const total = (await db.prepare('SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL' + wc).get()).c;
+  const active = (await db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status = 'نشط'" + wc).get()).c;
+  const stopped = (await db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status IN ('متوقف مؤقتاً','مجمد','منسحب')" + wc).get()).c;
+  const expired = (await db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status IN ('منتهي','خريج')" + wc).get()).c;
   return { total, active, stopped, expired };
 }
 
@@ -24,39 +26,44 @@ router.get('/', async function (req, res) {
   /* إشعار نظام تلقائي عند اقتراب/انتهاء مدة اشتراك الأكاديمية نفسها */
   try { await maybeNotifyAcademySubscription(user.impersonatingAcademyId || user.academy_id); } catch (e) { console.error('خطأ في إشعار اشتراك الأكاديمية:', e.message); }
 
-  const S = await swimmerSummary();
+  const sid = activeSport(req);
+  const S = await swimmerSummary(sid);
   const now = today();
 
+  const subsScope = progClause(sid, 'subscriptions');
   const subs = {
-    active: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'نشط'").get()).c,
-    expired: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status IN ('منتهي','مكتمل','ملغي')").get()).c,
-    expiringSoon: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'نشط' AND end_date IS NOT NULL AND date(end_date) BETWEEN date(?) AND date(?, '+7 day')").get(now, now)).c,
-    frozen: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'مجمد'").get()).c
+    active: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'نشط'" + subsScope).get()).c,
+    expired: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status IN ('منتهي','مكتمل','ملغي')" + subsScope).get()).c,
+    expiringSoon: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'نشط' AND end_date IS NOT NULL AND date(end_date) BETWEEN date(?) AND date(?, '+7 day')" + subsScope).get(now, now)).c,
+    frozen: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'مجمد'" + subsScope).get()).c
   };
 
+  const sScope = sessionClause(sid, 'se');
   const sessions = {
-    executed: (await db.prepare("SELECT COUNT(*) c FROM sessions WHERE status = 'completed' AND deleted_at IS NULL").get()).c,
-    scheduledToday: (await db.prepare("SELECT COUNT(*) c FROM sessions WHERE status = 'scheduled' AND date = ? AND deleted_at IS NULL").get(now)).c,
-    upcoming: (await db.prepare("SELECT COUNT(*) c FROM sessions WHERE status = 'scheduled' AND date >= ? AND deleted_at IS NULL").get(now)).c,
-    cancelled: (await db.prepare("SELECT COUNT(*) c FROM sessions WHERE status = 'cancelled' AND deleted_at IS NULL").get()).c
+    executed: (await db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'completed' AND deleted_at IS NULL" + sScope).get()).c,
+    scheduledToday: (await db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'scheduled' AND date = ? AND deleted_at IS NULL" + sScope).get(now)).c,
+    upcoming: (await db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'scheduled' AND date >= ? AND deleted_at IS NULL" + sScope).get(now)).c,
+    cancelled: (await db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'cancelled' AND deleted_at IS NULL" + sScope).get()).c
   };
 
+  const attScope = sessionClause(sid, 's');
   const attendanceToday = {
-    present: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'present'`).get(now)).c,
-    absent: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'absent'`).get(now)).c,
-    excused: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'excused'`).get(now)).c
+    present: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'present'` + attScope).get(now)).c,
+    absent: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'absent'` + attScope).get(now)).c,
+    excused: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'excused'` + attScope).get(now)).c
   };
 
-  const coachesCount = (await db.prepare("SELECT COUNT(*) c FROM coaches WHERE status = 'active' AND deleted_at IS NULL").get()).c;
+  const coachesCount = (await db.prepare("SELECT COUNT(*) c FROM coaches WHERE status = 'active' AND deleted_at IS NULL" + sportClause(sid, 'coaches')).get()).c;
   const teamsCount = (await db.prepare('SELECT COUNT(*) c FROM teams').get()).c;
-  const groupsCount = (await db.prepare('SELECT COUNT(*) c FROM groups WHERE deleted_at IS NULL').get()).c;
+  const groupsCount = (await db.prepare('SELECT COUNT(*) c FROM groups WHERE deleted_at IS NULL' + groupClause(sid)).get()).c;
   const branchesCount = (await db.prepare('SELECT COUNT(*) c FROM branches').get()).c;
 
+  const subsDueScope = progClause(sid, 'subscriptions');
   const finance = {
     revenues: (await db.prepare('SELECT COALESCE(SUM(amount),0) s FROM revenues').get()).s,
     expenses: (await db.prepare('SELECT COALESCE(SUM(amount),0) s FROM expenses').get()).s,
-    due: (await db.prepare("SELECT COALESCE(SUM(remaining),0) s FROM subscriptions WHERE status = 'نشط'").get()).s,
-    unpaidCount: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0 AND status = 'نشط'").get()).c
+    due: (await db.prepare("SELECT COALESCE(SUM(remaining),0) s FROM subscriptions WHERE status = 'نشط'" + subsDueScope).get()).s,
+    unpaidCount: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0 AND status = 'نشط'" + subsDueScope).get()).c
   };
 
   /* إيرادات ومصروفات آخر 12 أسبوع */
@@ -76,24 +83,25 @@ router.get('/', async function (req, res) {
   for (let d = 13; d >= 0; d--) {
     const day = daysAgo(d);
     attLabels.push(shortDate(day));
-    attPresent.push((await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='present'`).get(day)).c);
-    attAbsent.push((await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status IN ('absent','excused')`).get(day)).c);
+    attPresent.push((await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='present'` + sessionClause(sid, 's')).get(day)).c);
+    attAbsent.push((await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status IN ('absent','excused')` + sessionClause(sid, 's')).get(day)).c);
   }
 
   /* السباحون حسب البرنامج */
-  const byProgram = await db.prepare(`SELECT p.name, COUNT(s.id) c FROM programs p LEFT JOIN swimmers s ON s.program_id = p.id AND s.deleted_at IS NULL WHERE p.deleted_at IS NULL GROUP BY p.id ORDER BY c DESC LIMIT 8`).all();
+  const byProgram = await db.prepare(`SELECT p.name, COUNT(s.id) c FROM programs p LEFT JOIN swimmers s ON s.program_id = p.id AND s.deleted_at IS NULL WHERE p.deleted_at IS NULL` + sportClause(sid, 'p') + ` GROUP BY p.id ORDER BY c DESC LIMIT 8`).all();
 
   /* تنبيهات */
   const alerts = [];
-  const expiring = await db.prepare(`SELECT s.full_name, sub.end_date, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE s.deleted_at IS NULL AND sub.status = 'نشط' AND sub.end_date IS NOT NULL AND date(sub.end_date) BETWEEN date(?) AND date(?, '+7 day')`).all(now, now);
+  const expiringScope = progClause(sid, 'sub');
+  const expiring = await db.prepare(`SELECT s.full_name, sub.end_date, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE s.deleted_at IS NULL AND sub.status = 'نشط' AND sub.end_date IS NOT NULL AND date(sub.end_date) BETWEEN date(?) AND date(?, '+7 day')` + expiringScope).all(now, now);
   expiring.forEach(function (x) {
     alerts.push({ type: 'warn', icon: 'fa-clock', title: 'اشتراك على وشك الانتهاء: ' + x.full_name, sub: 'ينتهي في ' + fmtDate(x.end_date), link: '/subscriptions/' + x.id });
   });
-  const overdue = await db.prepare(`SELECT s.full_name, sub.remaining, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE s.deleted_at IS NULL AND sub.status = 'نشط' AND sub.remaining > 0`).all();
+  const overdue = await db.prepare(`SELECT s.full_name, sub.remaining, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE s.deleted_at IS NULL AND sub.status = 'نشط' AND sub.remaining > 0` + expiringScope).all();
   overdue.forEach(function (x) {
     alerts.push({ type: 'danger', icon: 'fa-money-bill-wave', title: 'مبلغ مستحق: ' + x.full_name, sub: 'باقي ' + money(x.remaining), link: '/subscriptions/' + x.id });
   });
-  const missingDocs = await db.prepare(`SELECT s.full_name, s.id FROM swimmers s WHERE s.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.owner_type='swimmer' AND d.owner_id=s.id AND d.doc_type='إقرار صحي') AND s.status = 'نشط' LIMIT 4`).all();
+  const missingDocs = await db.prepare(`SELECT s.full_name, s.id FROM swimmers s WHERE s.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.owner_type='swimmer' AND d.owner_id=s.id AND d.doc_type='إقرار صحي') AND s.status = 'نشط'` + swimmerClause(sid) + ` LIMIT 4`).all();
   missingDocs.forEach(function (x) {
     alerts.push({ type: 'info', icon: 'fa-folder-minus', title: 'مستند ناقص: ' + x.full_name, sub: 'الإقرار الصحي غير موجود', link: '/documents' });
   });
@@ -105,12 +113,11 @@ router.get('/', async function (req, res) {
   /* حصص اليوم */
   const todaySessions = await db.prepare(`SELECT s.*, g.name AS group_name, c.full_name AS coach_name, p.name AS pool_name FROM sessions s
     JOIN groups g ON g.id = s.group_id LEFT JOIN coaches c ON c.id = s.coach_id LEFT JOIN pools p ON p.id = s.pool_id
-    WHERE s.deleted_at IS NULL AND s.date = ? ORDER BY s.start_time`).all(now);
+    WHERE s.deleted_at IS NULL AND s.date = ?` + sessionClause(sid, 's') + ` ORDER BY s.start_time`).all(now);
 
   /* أحدث التقييمات */
   const latestAssess = await db.prepare(`SELECT a.*, s.full_name AS swimmer_name, c.full_name AS coach_name, l.name AS level_name FROM assessments a
-    JOIN swimmers s ON s.id = a.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = a.coach_id LEFT JOIN levels l ON l.id = a.level_id
-    ORDER BY a.date DESC LIMIT 6`).all();
+    JOIN swimmers s ON s.id = a.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = a.coach_id LEFT JOIN levels l ON l.id = a.level_id WHERE 1=1` + progClause(sid, 'a') + ` ORDER BY a.date DESC LIMIT 6`).all();
 
   res.render('dashboard', {
     title: 'لوحة التحكم',

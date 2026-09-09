@@ -3,6 +3,7 @@ const express = require('express');
 const { db } = require('../lib/db');
 const { audit, fmtDateTime, today, canView, canDel, canEdit, canExport } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
+const { activeSport, progClause } = require('../lib/sport-context');
 const router = express.Router();
 
 const RESERVE_STATUS = ['جديدة', 'تم التواصل', 'تم الحجز', 'تم التحويل لسباح', 'ملغي'];
@@ -25,7 +26,7 @@ router.get('/reservations', async function (req, res) {
   const from = String(req.query.from || '').trim();
   const to = String(req.query.to || '').trim();
 
-  let where = 'WHERE 1=1';
+  let where = 'WHERE 1=1' + progClause(activeSport(req), 'r');
   const args = [];
   if (status) { where += ' AND r.status = ?'; args.push(status); }
   if (from) { where += ' AND date(r.created_at) >= ?'; args.push(from); }

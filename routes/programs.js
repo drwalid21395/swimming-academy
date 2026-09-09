@@ -3,6 +3,7 @@ const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, dayAr, parseJSON, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
+const { activeSport, sportClause, progClause, groupClause } = require('../lib/sport-context');
 const crud = require('../lib/crud');
 const router = express.Router();
 
@@ -271,16 +272,18 @@ router.post('/programs/:id/delete', async function (req, res) {
 /*                           المجموعات                            */
 /* ============================================================== */
 router.get('/groups', async function (req, res) {
+  const sid = activeSport(req);
   const prog = req.query.program;
+  const pScope = sportClause(sid, 'p');
   let rows;
   if (prog) rows = await db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name, pool.name AS pool_name, b.name AS branch_name,
     (SELECT COUNT(*) FROM swimmers s WHERE s.group_id = g.id AND s.deleted_at IS NULL) AS members FROM groups g
     LEFT JOIN programs p ON p.id = g.program_id LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools pool ON pool.id = g.pool_id
-    LEFT JOIN branches b ON b.id = g.branch_id WHERE g.program_id = ? AND g.deleted_at IS NULL ORDER BY g.id`).all(prog);
+    LEFT JOIN branches b ON b.id = g.branch_id WHERE g.program_id = ? AND g.deleted_at IS NULL` + pScope + ` ORDER BY g.id`).all(prog);
   else rows = await db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name, pool.name AS pool_name, b.name AS branch_name,
     (SELECT COUNT(*) FROM swimmers s WHERE s.group_id = g.id AND s.deleted_at IS NULL) AS members FROM groups g
     LEFT JOIN programs p ON p.id = g.program_id LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools pool ON pool.id = g.pool_id
-    LEFT JOIN branches b ON b.id = g.branch_id WHERE g.deleted_at IS NULL ORDER BY g.id`).all();
+    LEFT JOIN branches b ON b.id = g.branch_id WHERE g.deleted_at IS NULL` + pScope + ` ORDER BY g.id`).all();
   const page = {
     title: 'المجموعات التدريبية', subtitle: 'تنظيم السباحين في مجموعات حسب البرنامج', icon: 'fa-people-group', module: 'groups', active: 'groups',
     columns: [
@@ -293,8 +296,8 @@ router.get('/groups', async function (req, res) {
     ],
     rows,
     filters: [
-      { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) },
-      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
+      { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(sid, 'programs') + ' ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) },
+      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches') + ' ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
       { name: 'status', label: 'الحالة', options: [{ value: 'نشطة', label: 'نشطة' }, { value: 'متوقفة', label: 'متوقفة' }] }
     ],
     canAdd: true, addUrl: '/groups/new', addLabel: 'مجموعة جديدة',

@@ -3,6 +3,7 @@ const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
+const { activeSport, sportClause, progClause, swimmerOfClause } = require('../lib/sport-context');
 const router = express.Router();
 
 async function swimmerOptions() {
@@ -92,10 +93,10 @@ async function parseScores(b) {
 router.get('/assessments', async function (req, res) {
   if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const rows = await db.prepare(`SELECT 'تقييم' AS kind, a.id AS id, a.date AS date, a.overall_percent AS overall_percent, a.ready_to_advance AS ready_to_advance, a.level_id AS level_id, a.coach_id AS coach_id, a.notes AS notes, a.swimmer_id AS swimmer_id, s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name, l.name AS level_name, NULL AS t_type, NULL AS t_race, NULL AS time_seconds, NULL AS test_status, NULL AS distance_m, NULL AS result_note FROM assessments a
-    LEFT JOIN swimmers s ON s.id = a.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = a.coach_id LEFT JOIN levels l ON l.id = a.level_id
+    LEFT JOIN swimmers s ON s.id = a.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = a.coach_id LEFT JOIN levels l ON l.id = a.level_id WHERE 1=1` + progClause(activeSport(req), 'a') + `
     UNION ALL
     SELECT 'اختبار' AS kind, t.id AS id, t.date AS date, NULL AS overall_percent, t.passed AS ready_to_advance, NULL AS level_id, t.coach_id AS coach_id, t.result_note AS notes, t.swimmer_id AS swimmer_id, s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name, l.name AS level_name, t.type AS t_type, t.race_type AS t_race, t.time_seconds AS time_seconds, t.status AS test_status, t.distance_m AS distance_m, t.result_note AS result_note FROM tests t
-    LEFT JOIN swimmers s ON s.id = t.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN levels l ON l.id = t.level_id
+    LEFT JOIN swimmers s ON s.id = t.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN levels l ON l.id = t.level_id WHERE 1=1` + swimmerOfClause(activeSport(req), 't') + `
     ORDER BY date DESC`).all();
   const page = {
     title: 'التقييمات الفنية', subtitle: 'تقييم مهارات السباحين ونتائج الاختبارات', icon: 'fa-clipboard-check', module: 'assessments', active: 'assessments',
@@ -348,7 +349,7 @@ async function saveTestResult(o) {
 router.get('/tests', async function (req, res) {
   if (!canView(req.currentUser, 'tests')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const rows = await db.prepare(`SELECT t.*, l.name AS level_name, s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name FROM tests t
-    LEFT JOIN swimmers s ON s.id = t.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN levels l ON l.id = t.level_id ORDER BY t.date DESC`).all();
+    LEFT JOIN swimmers s ON s.id = t.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN levels l ON l.id = t.level_id WHERE 1=1` + swimmerOfClause(activeSport(req), 't') + ` ORDER BY t.date DESC`).all();
   const page = {
     title: 'الاختبارات', subtitle: 'اختبارات المستويات والأزمنة', icon: 'fa-vial-circle-check', module: 'tests', active: 'tests',
     columns: [

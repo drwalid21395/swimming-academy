@@ -5,6 +5,7 @@ const { audit, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON, toda
 const { setFlash } = require('../lib/auth-cookie');
 const crud = require('../lib/crud');
 const { uploadAndStore, removeUploaded } = require('../lib/upload');
+const { activeSport, sportClause, progClause, swimmerClause, groupClause, sessionClause } = require('../lib/sport-context');
 const pdfmake = require('../lib/pdf');
 const router = express.Router();
 
@@ -248,7 +249,7 @@ router.get('/swimmers', async function (req, res) {
     LEFT JOIN levels l ON l.id = s.level_id
     LEFT JOIN groups gr ON gr.id = s.group_id
     LEFT JOIN coaches c ON c.id = s.coach_id
-    LEFT JOIN programs p ON p.id = s.program_id WHERE s.deleted_at IS NULL`;
+    LEFT JOIN programs p ON p.id = s.program_id WHERE s.deleted_at IS NULL` + sportClause(activeSport(req), 'p');
   const params = [];
   if (status) { sql += ' AND s.status = ?'; params.push(status); }
   if (program) { sql += ' AND s.program_id = ?'; params.push(program); }
@@ -278,9 +279,9 @@ router.get('/swimmers', async function (req, res) {
     rows,
     filters: [
       { name: 'status', label: 'الحالة', options: SW_STATUS.map(v => ({ value: v, label: v })) },
-      { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) },
+      { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'programs') + ' ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) },
       { name: 'level_id', label: 'المستوى', options: (await db.prepare('SELECT * FROM levels ORDER BY order_no').all()).map(l => ({ value: l.id, label: l.name })) },
-      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) }
+      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'coaches') + ' ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) }
     ],
     canAdd: true,
     addUrl: '/swimmers/new',

@@ -2,16 +2,19 @@
 const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, today, daysAgo, pct, canView, canExport, dayAr } = require('../lib/helpers');
+const { activeSport, progClause, swimmerClause, sessionClause, groupClause } = require('../lib/sport-context');
 const router = express.Router();
 
 router.get('/reports', async function (req, res) {
   if (!canView(req.currentUser, 'reports')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const sid = activeSport(req);
+  const wc = swimmerClause(sid);
   const counts = {
-    swimmers: (await db.prepare('SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL').get()).c,
-    active: (await db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status='نشط'").get()).c,
-    subsActive: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status='نشط'").get()).c,
-    subsDue: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0").get()).c,
-    sessions: (await db.prepare('SELECT COUNT(*) c FROM sessions WHERE deleted_at IS NULL').get()).c,
+    swimmers: (await db.prepare('SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL' + wc).get()).c,
+    active: (await db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status='نشط'" + wc).get()).c,
+    subsActive: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status='نشط'" + progClause(sid, 'subscriptions')).get()).c,
+    subsDue: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0" + progClause(sid, 'subscriptions')).get()).c,
+    sessions: (await db.prepare('SELECT COUNT(*) c FROM sessions WHERE deleted_at IS NULL' + sessionClause(sid)).get()).c,
     upcomingComps: (await db.prepare("SELECT COUNT(*) c FROM competitions WHERE status IN ('قادمة','جارية')").get()).c
   };
   res.render('reports', { title: 'التقارير', active: 'reports', counts, today: today(), daysAgo });
@@ -46,7 +49,7 @@ router.get('/reports/attendance', async function (req, res) {
     (SELECT COUNT(*) FROM attendance a JOIN sessions ss ON ss.id=a.session_id WHERE a.swimmer_id = s.id AND ss.date BETWEEN ? AND ? AND a.status='present') AS present,
     (SELECT COUNT(*) FROM attendance a JOIN sessions ss ON ss.id=a.session_id WHERE a.swimmer_id = s.id AND ss.date BETWEEN ? AND ? AND a.status='absent') AS absent,
     (SELECT COUNT(*) FROM attendance a JOIN sessions ss ON ss.id=a.session_id WHERE a.swimmer_id = s.id AND ss.date BETWEEN ? AND ? AND a.status='excused') AS excused
-    FROM swimmers s WHERE s.deleted_at IS NULL AND s.status = 'نشط' ORDER BY s.full_name`).all(from, to, from, to, from, to, from, to);
+    FROM swimmers s WHERE s.deleted_at IS NULL AND s.status = 'نشط'` + swimmerClause(activeSport(req)) + ` ORDER BY s.full_name`).all(from, to, from, to, from, to, from, to);
   res.render('report_attendance', { title: 'تقرير الحضور والغياب', active: 'reports', from, to, rows, pct, fmtDate });
 });
 
@@ -58,7 +61,7 @@ router.get('/reports/attendance/daily', async function (req, res) {
   if (!canExport(req.currentUser, 'reports')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const date = req.query.date || today();
   const groupRows = await db.prepare(`SELECT g.*, c.full_name AS coach_name FROM groups g
-    LEFT JOIN coaches c ON c.id = g.coach_id WHERE g.deleted_at IS NULL ORDER BY g.name`).all();
+    LEFT JOIN coaches c ON c.id = g.coach_id WHERE g.deleted_at IS NULL` + groupClause(activeSport(req)) + ` ORDER BY g.name`).all();
   const groups = [];
   for (const g of groupRows) {
     const session = await db.prepare(`SELECT * FROM sessions WHERE group_id = ? AND date = ? AND deleted_at IS NULL ORDER BY start_time LIMIT 1`).get(g.id, date);
@@ -71,11 +74,12 @@ router.get('/reports/attendance/daily', async function (req, res) {
     }
     groups.push({ ...g, session, members });
   }
+  const gScope = sessionClause(activeSport(req), 's');
   const daily = {
-    present: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='present'`).get(date)).c,
-    absent: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='absent'`).get(date)).c,
-    excused: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='excused'`).get(date)).c,
-    late: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='late'`).get(date)).c
+    present: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='present'` + gScope).get(date)).c,
+    absent: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='absent'` + gScope).get(date)).c,
+    excused: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='excused'` + gScope).get(date)).c,
+    late: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='late'` + gScope).get(date)).c
   };
   res.render('report_attendance_daily', {
     title: 'تقرير الحضور اليومي', active: 'reports', date, groups, daily, today: today(), fmtDate, dayAr
@@ -88,8 +92,7 @@ router.get('/reports/attendance/daily', async function (req, res) {
 router.get('/reports/subscriptions', async function (req, res) {
   if (!canView(req.currentUser, 'reports')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const rows = await db.prepare(`SELECT sub.*, s.full_name AS swimmer_name, s.membership_no, p.name AS program_name, g.name AS group_name FROM subscriptions sub
-    LEFT JOIN swimmers s ON s.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id
-    ORDER BY sub.status, sub.created_at DESC`).all();
+    LEFT JOIN swimmers s ON s.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id WHERE 1=1` + progClause(activeSport(req), 'sub') + ` ORDER BY sub.status, sub.created_at DESC`).all();
   const activeCount = rows.filter(r => r.status === 'نشط').length;
   const dueCount = rows.filter(r => r.remaining > 0).length;
   const dueTotal = rows.reduce((t, r) => t + Number(r.remaining || 0), 0);
@@ -106,7 +109,7 @@ router.get('/reports/progress', async function (req, res) {
     (SELECT COUNT(*) FROM assessments a WHERE a.swimmer_id = s.id) AS assessments_count,
     (SELECT overall_percent FROM assessments a WHERE a.swimmer_id = s.id ORDER BY a.date DESC LIMIT 1) AS last_percent,
     (SELECT COUNT(*) FROM tests t WHERE t.swimmer_id = s.id AND t.passed = 1) AS passed_tests
-    FROM swimmers s LEFT JOIN levels l ON l.id = s.level_id WHERE s.deleted_at IS NULL ORDER BY s.full_name`).all();
+    FROM swimmers s LEFT JOIN levels l ON l.id = s.level_id WHERE s.deleted_at IS NULL` + swimmerClause(activeSport(req)) + ` ORDER BY s.full_name`).all();
   res.render('report_progress', { title: 'تقرير تقدم السباحين', active: 'reports', rows, pct, fmtDate });
 });
 
