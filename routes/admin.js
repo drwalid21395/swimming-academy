@@ -397,7 +397,8 @@ router.post('/settings/images/:id/delete', async function (req, res) {
 router.get('/settings/news', async function (req, res) {
   if (!canView(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const acadId = req.currentUser.impersonatingAcademyId || req.currentUser.academy_id;
-  const news = await db.prepare('SELECT * FROM announcements WHERE academy_id = ? ORDER BY id DESC').all(acadId);
+  const activeSport = req.activeSportId || 0;
+  const news = await db.prepare('SELECT * FROM announcements WHERE academy_id = ? AND (? = 0 OR sport_id = ?) ORDER BY id DESC').all(acadId, activeSport, activeSport);
   res.render('settings_news', { title: 'الأخبار والأحداث', active: 'settings', news, canEdit: canEdit(req.currentUser, 'settings'), fmtDate });
 });
 

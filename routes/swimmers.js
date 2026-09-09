@@ -78,6 +78,11 @@ crud(router, '/coaches', {
       { name: 'gender', label: 'النوع', options: [{ value: 'ذكر', label: 'ذكر' }, { value: 'أنثى', label: 'أنثى' }] }
     ],
     softDelete: true,
+    beforeRender: async function (rows, req) {
+      const sid = (req && req.activeSportId) || 0;
+      if (!sid) return rows;
+      return rows.filter(function (r) { return Number(r.sport_id) === sid; });
+    },
     fields: [
       { key: 'full_name', label: 'الاسم الكامل', type: 'text', required: true, section: 'البيانات الأساسية', sectionIcon: 'fa-user' },
     { key: 'avatar', label: 'صورة الكابتن', type: 'file', accept: 'image/*', hint: 'صورة تُعرض على الموقع الرئيسي وصفحة الكباتن (JPG/PNG)', preview: true, initial: 'ك' },

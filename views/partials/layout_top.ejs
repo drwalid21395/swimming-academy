@@ -189,6 +189,13 @@
           </a>
         <% } %>
       <% }); %>
+      <% if (typeof adminSports !== 'undefined' && adminSports && adminSports.length && canView(user, 'sports')) { %>
+        <div class="nav-section">اللعبة النشطة</div>
+        <a href="?act=0" class="nav-item sport-switch <%= Number(activeSportId || 0) === 0 ? 'active' : '' %>"><i class="fas fa-house"></i><span>الكل / الرئيسية</span></a>
+        <% adminSports.forEach(function (sp) { %>
+          <a href="?act=<%= sp.id %>" class="nav-item sport-switch <%= Number(activeSportId || 0) === Number(sp.id) ? 'active' : '' %>"><i class="fas <%= sp.icon %>"></i><span><%= sp.name %></span></a>
+        <% }); %>
+      <% } %>
       <% if (typeof isSuper !== 'undefined' && isSuper) { %>
         <div class="nav-section">النظام الأساسي (Super Admin)</div>
         <a href="/platform" class="nav-item <%= (typeof currentPath !== 'undefined' && (currentPath === '/platform' || currentPath === '/platform/')) ? 'active' : '' %>"><i class="fas fa-globe"></i><span>لوحة المنصة</span></a>

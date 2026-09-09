@@ -189,11 +189,12 @@ function collectProgramSchedule(b) {
 }
 
 router.get('/programs', async function (req, res) {
+  const activeSport = req.activeSportId || 0;
   const rows = await db.prepare(`SELECT p.*, c.full_name AS coach_name, b.name AS branch_name, pool.name AS pool_name,
     (SELECT COUNT(*) FROM swimmers s WHERE s.program_id = p.id) AS enrolled
     FROM programs p LEFT JOIN coaches c ON c.id = p.coach_id LEFT JOIN branches b ON b.id = p.branch_id LEFT JOIN pools pool ON pool.id = p.pool_id
-    WHERE p.deleted_at IS NULL
-    ORDER BY p.id`).all();
+    WHERE p.deleted_at IS NULL AND (? = 0 OR p.sport_id = ?)
+    ORDER BY p.id`).all(activeSport, activeSport);
   const page = {
     title: 'البرامج والدورات', subtitle: 'إدارة البرامج التدريبية والدورات المتخصصة', icon: 'fa-list-check', module: 'programs', active: 'programs',
     columns: [

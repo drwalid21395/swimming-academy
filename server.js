@@ -7,6 +7,8 @@ const { getAuth, takeFlash, getCookie } = require('./lib/auth-cookie');
 const { getAcademy, getActiveSubscription, subscriptionStatus, academyRestricted, academyPlanPerms, ACTIONS } = require('./lib/tenant');
 const { withAcademy } = require('./lib/tenant-context');
 const { securityHeaders, stripServerHeader, csrfProtect } = require('./lib/security');
+const { readSport, setSport } = require('./lib/sport-context');
+const { enabledSportsForAcademy } = require('./lib/sports');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -179,6 +181,40 @@ app.use(async function (req, res, next) {
       res.locals.unreadCount = ur.c;
     }
     req.currentUser = user;
+    next();
+  } catch (err) { next(err); }
+});
+
+/* سياق اللعبة النشطة (التبويب الجانبي): يقرأ/يثبت الكوكي ويعرض ألعاب الأكاديمية للإدارة */
+app.use(async function (req, res, next) {
+  try {
+    /* اختيار لعبة :  للموقع العام و للإدارة — يثبت الكوكي ثم يزيل المعامل */
+    const q = new URLSearchParams((req.originalUrl.split('?')[1] || ''));
+    if (q && (q.has('sport') || q.has('act'))) {
+      let id = 0;
+      const raw = String(q.has('sport') ? q.get('sport') : q.get('act')).trim();
+      if (/^\d+$/.test(raw)) id = Math.min(Number(raw), 999999);
+      setSport(res, id);
+      q.delete('sport'); q.delete('act');
+      const kept = [];
+      q.forEach((v, k) => kept.push(k + '=' + encodeURIComponent(v)));
+      return res.redirect(req.path + (kept.length ? '?' + kept.join('&') : ''));
+    }
+    req.activeSportId = readSport(req);
+    res.locals.activeSportId = req.activeSportId;
+    /* ألعاب الأكاديمية لقسم التبديل الجانبي في الإدارة */
+    res.locals.adminSports = [];
+    if (req.currentUser) {
+      const acadId = req.currentUser.impersonatingAcademyId || req.currentUser.academy_id;
+      try {
+        const sports = (await enabledSportsForAcademy(acadId)).filter(r => r.is_enabled);
+        res.locals.adminSports = sports;
+        if (req.activeSportId && !sports.some(s => Number(s.id) === req.activeSportId)) {
+          req.activeSportId = 0;
+          res.locals.activeSportId = 0;
+        }
+      } catch (e) { res.locals.adminSports = []; }
+    }
     next();
   } catch (err) { next(err); }
 });

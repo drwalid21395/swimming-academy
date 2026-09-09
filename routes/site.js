@@ -5,6 +5,7 @@ const { fmtDate, money, dayAr, today, calcAge } = require('../lib/helpers');
 const { withAcademy } = require('../lib/tenant-context');
 const { sendReminder, logMessage, buildReserveFollowUpMessage } = require('../lib/whatsapp');
 const { enabledSportsForAcademy, academySportRow, getSport } = require('../lib/sports');
+const { setSport } = require('../lib/sport-context');
 const router = express.Router();
 
 const DEFAULT_COLOR = '#0284c7';
@@ -70,12 +71,35 @@ async function newsFeed(limit) {
   return db.prepare('SELECT * FROM announcements WHERE is_public = 1 ORDER BY id DESC LIMIT ' + (Number(limit) || 50)).all();
 }
 
+/* السياق الحالي من «التبويب الجانبي»: يعيد اللعبة فقط إن كانت مفعّلة للأكاديمية */
+async function activeSportContext(acad, req) {
+  const sid = req.activeSportId || 0;
+  if (!sid) return null;
+  const sport = await getSport(sid);
+  if (!sport || sport.is_active === 0) return null;
+  const acadSport = await academySportRow(acad.id, sid);
+  if (!acadSport || !acadSport.is_enabled) return null;
+  return sport;
+}
+
 /* رندر صفحة كاملة داخل سياق الأكاديمية */
 async function renderPage(req, res, acad, base, page, params) {
   params = params || {};
+  const sportCtx = await activeSportContext(acad, req);
   await withAcademy(acad.id, async () => {
     const data = await siteData(acad, base);
+    data.activeSportId = (params.sportId && Number(params.sportId)) || (sportCtx ? sportCtx.id : (req.activeSportId || 0));
     if (page === 'home') {
+      if (sportCtx) {
+        const acadSport = await academySportRow(acad.id, sportCtx.id);
+        let website = {};
+        try { website = JSON.parse(acadSport.website || '{}'); } catch (e) { website = {}; }
+        const programs = await db.prepare("SELECT * FROM programs WHERE sport_id = ? AND deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id LIMIT 6").all(sportCtx.id);
+        const coaches = await db.prepare("SELECT * FROM coaches WHERE sport_id = ? AND deleted_at IS NULL AND status='active' ORDER BY id LIMIT 4").all(sportCtx.id);
+        const announcements = await db.prepare('SELECT * FROM announcements WHERE sport_id = ? AND is_public = 1 ORDER BY id DESC LIMIT 3').all(sportCtx.id);
+        const upcoming = await upcomingSchedule(6);
+        return res.render('site/sport', { data, sport: sportCtx, website, programs, coaches, announcements, upcoming, money, fmtDate, layout: false });
+      }
       const programs = await db.prepare("SELECT * FROM programs WHERE deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id LIMIT 6").all();
       const announcements = await newsFeed(3);
       const coaches = await db.prepare("SELECT * FROM coaches WHERE deleted_at IS NULL AND status='active' ORDER BY id LIMIT 4").all();
@@ -84,25 +108,34 @@ async function renderPage(req, res, acad, base, page, params) {
       return res.render('site/index', { data, programs, announcements, coaches, pools, upcoming, money, fmtDate, layout: false });
     }
     if (page === 'news') {
-      const news = await newsFeed(100);
+      const news = sportCtx
+        ? await db.prepare('SELECT * FROM announcements WHERE sport_id = ? AND is_public = 1 ORDER BY id DESC LIMIT 100').all(sportCtx.id)
+        : await newsFeed(100);
       const upcoming = await upcomingSchedule(50);
       return res.render('site/news', { data, news, upcoming, homeImages: data.homeImages, fmtDate, layout: false });
     }
     if (page === 'programs') {
-      const programs = await db.prepare("SELECT * FROM programs WHERE deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id").all();
+      const programs = sportCtx
+        ? await db.prepare("SELECT * FROM programs WHERE sport_id = ? AND deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id").all(sportCtx.id)
+        : await db.prepare("SELECT * FROM programs WHERE deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id").all();
       return res.render('site/programs', { data, programs, money, layout: false });
     }
     if (page === 'program') {
       const p = await db.prepare('SELECT * FROM programs WHERE id = ?').get(Number(params.id));
       if (!p) return res.redirect((base || '/site') + '/programs');
+      if (sportCtx && Number(p.sport_id) !== sportCtx.id) return res.redirect((base || '/site') + '/programs');
       return res.render('site/program', { data, p, money, layout: false });
     }
     if (page === 'coaches') {
-      const coaches = await db.prepare("SELECT * FROM coaches WHERE deleted_at IS NULL AND status='active' ORDER BY id").all();
+      const coaches = sportCtx
+        ? await db.prepare("SELECT * FROM coaches WHERE sport_id = ? AND deleted_at IS NULL AND status='active' ORDER BY id").all(sportCtx.id)
+        : await db.prepare("SELECT * FROM coaches WHERE deleted_at IS NULL AND status='active' ORDER BY id").all();
       return res.render('site/coaches', { data, coaches, fmtDate, layout: false });
     }
     if (page === 'announcements') {
-      const announcements = await db.prepare('SELECT * FROM announcements WHERE is_public = 1 ORDER BY id DESC').all();
+      const announcements = sportCtx
+        ? await db.prepare('SELECT * FROM announcements WHERE sport_id = ? AND is_public = 1 ORDER BY id DESC').all(sportCtx.id)
+        : await db.prepare('SELECT * FROM announcements WHERE is_public = 1 ORDER BY id DESC').all();
       return res.render('site/announcements', { data, announcements, fmtDate, layout: false });
     }
     if (page === 'contact') {
@@ -113,6 +146,7 @@ async function renderPage(req, res, acad, base, page, params) {
       if (!sport || sport.is_active === 0) return res.redirect((base || '/site') + '/');
       const acadSport = await academySportRow(acad.id, sport.id);
       if (!acadSport || !acadSport.is_enabled) return res.redirect((base || '/site') + '/');
+      setSport(res, sport.id);
       let website = {};
       try { website = JSON.parse(acadSport.website || '{}'); } catch (e) { website = {}; }
       const programs = await db.prepare("SELECT * FROM programs WHERE sport_id = ? AND deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id").all(sport.id);
@@ -122,7 +156,9 @@ async function renderPage(req, res, acad, base, page, params) {
       return res.render('site/sport', { data, sport, website, programs, coaches, announcements, upcoming, money, fmtDate, layout: false });
     }
     if (page === 'reserve') {
-      const programs = await db.prepare("SELECT * FROM programs WHERE deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id").all();
+      const programs = sportCtx
+        ? await db.prepare("SELECT * FROM programs WHERE sport_id = ? AND deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id").all(sportCtx.id)
+        : await db.prepare("SELECT * FROM programs WHERE deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id").all();
       const levels = await db.prepare('SELECT * FROM levels ORDER BY order_no, id').all();
       return res.render('site/reserve', { data, programs, levels, money, message: params.message || '', values: params.values || {}, confirmed: params.confirmed || null, layout: false });
     }
