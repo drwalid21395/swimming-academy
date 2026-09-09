@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, fmtDateTime, today, canView, canAdd, canEdit, canDel, hashPassword, MODULES } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
-const { upload, uploadAndStore, removeUploaded } = require('../lib/upload');
+const { upload, uploadAndStore, uploadSinglePlusArray, removeUploaded } = require('../lib/upload');
 const { getAcademy, getActiveSubscription, subscriptionStatus, featureEnabled, maybeNotifyAcademySubscription } = require('../lib/tenant');
 const { listActiveSports, getSport, academySportRow, enabledSportsForAcademy } = require('../lib/sports');
 const router = express.Router();
@@ -496,15 +496,16 @@ router.get('/sports/:id/website', async function (req, res) {
   const programs = await db.prepare("SELECT * FROM programs WHERE deleted_at IS NULL ORDER BY id").all();
   const coaches = await db.prepare("SELECT * FROM coaches WHERE deleted_at IS NULL ORDER BY id").all();
   const announcements = await db.prepare('SELECT * FROM announcements ORDER BY id DESC').all();
+  const sportList = (await enabledSportsForAcademy(acadId)).filter(r => r.is_enabled);
   res.render('sport_website', {
-    title: 'موقع لعبة ' + sport.name, active: 'sports', sport, website, programs, coaches, announcements,
+    title: 'موقع لعبة ' + sport.name, active: 'sports', sport, website, programs, coaches, announcements, sportList,
     programIds: programs.filter(p => p.sport_id === sport.id).map(p => p.id),
     coachIds: coaches.filter(c => c.sport_id === sport.id).map(c => c.id),
     announcementIds: announcements.filter(a => a.sport_id === sport.id).map(a => a.id)
   });
 });
 
-router.post('/sports/:id/website', uploadAndStore('banner'), async function (req, res) {
+router.post('/sports/:id/website', uploadSinglePlusArray('banner', 'sport_images'), async function (req, res) {
   if (!canEdit(req.currentUser, 'sports')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const acadId = req.currentUser.impersonatingAcademyId || req.currentUser.academy_id;
   const sportId = Number(req.params.id);
@@ -526,8 +527,21 @@ router.post('/sports/:id/website', uploadAndStore('banner'), async function (req
     delete website.banner;
   }
 
-  /* النبذة التعريفية للعبة */
-  website.about = String(b.about || '').trim();
+  /* معرض صور اللعبة: حذف المحدد + إضافة ما رُفع */
+  const removeImg = Array.isArray(b.remove_image) ? b.remove_image : (b.remove_image ? [b.remove_image] : []);
+  if (removeImg.length && website.images) {
+    for (const u of removeImg) removeUploaded(String(u));
+    website.images = website.images.filter(function (u) { return !removeImg.includes(u); });
+  }
+  if (req.__images && req.__images.length) {
+    website.images = (website.images || []).concat(req.__images);
+  }
+
+  /* بيانات الموقع المصغّر الخاص باللعبة — تُحدَّث فقط إذا أُرسل الحقل في الطلب
+     (حتى لا تُمحى العناوين بطلب جزئي مثل حذف صورة فقط) */
+  if (typeof b.title === 'string') website.title = String(b.title).trim();
+  if (typeof b.slogan === 'string') website.slogan = String(b.slogan).trim();
+  if (typeof b.about === 'string') website.about = String(b.about).trim();
 
   /* إعادة تعيين sport_id في قوائم اللعبة ثم تحديد المختار (معزول بالأكاديمية) */
   await db.prepare('UPDATE programs SET sport_id = NULL WHERE sport_id = ?').run(sportId);

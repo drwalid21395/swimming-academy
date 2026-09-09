@@ -1,80 +1,131 @@
-<%- include('partials/layout_top', { title: 'ظ…ط­طھظˆظ‰ ' + sport.name, active: 'sports' }) %>
+<%- include('partials/layout_top', { title: 'محتوى ' + sport.name, active: 'sports' }) %>
 <div class="page-head">
   <div>
-    <div class="page-title"><i class="fas <%= sport.icon %>"></i> ظ…ط­طھظˆظ‰ ظ…ظˆظ‚ط¹ ظ„ط¹ط¨ط© <%= sport.name %></div>
-    <div class="page-sub">ظٹظڈط¹ط±ط¶ ظ‡ط°ط§ ط§ظ„ظ…ط­طھظˆظ‰ ظپظٹ طµظپط­ط© ط§ظ„ظ„ط¹ط¨ط© ط¹ظ„ظ‰ ظ…ظˆظ‚ط¹ظƒ ط§ظ„طھط¹ط±ظٹظپظٹ</div>
+    <div class="page-title"><i class="fas <%= sport.icon %>"></i> محتوى موقع لعبة <%= sport.name %></div>
+    <div class="page-sub">لكل لعبة موقع مستقل ببياناتها الخاصة — اختر اللعبة من القائمة للتحكم بها دون المساس بباقي الألعاب</div>
   </div>
-  <a href="/site/sport/<%= sport.id %>" target="_blank" class="btn btn-outline"><i class="fas fa-eye"></i> ظ…ط¹ط§ظٹظ†ط© ط§ظ„طµظپط­ط© ط§ظ„ط¹ط§ظ…ط©</a>
+  <a href="/site/sport/<%= sport.id %>" target="_blank" class="btn btn-outline"><i class="fas fa-eye"></i> معاينة الصفحة العامة</a>
 </div>
+
+<% if (sportList && sportList.length > 1) { %>
+  <div class="card" style="max-width:820px;margin-bottom:14px">
+    <div class="card-body">
+      <div class="form-section-title"><i class="fas fa-arrows-rotate"></i> تبديل اللعبة</div>
+      <div class="form-group" style="margin-bottom:0">
+        <select class="form-control" onchange="if(this.value)window.location='/sports/'+this.value+'/website'">
+          <% sportList.forEach(function (s) { %>
+            <option value="<%= s.id %>" <%= Number(s.id) === Number(sport.id) ? 'selected' : '' %>><%= s.name %></option>
+          <% }); %>
+        </select>
+        <div class="form-hint">عند اختيار لعبة تُفتح بياناتها المستقلة فوراً، وتُحفظ كل لعبة على حدة</div>
+      </div>
+    </div>
+  </div>
+<% } %>
 
 <form method="POST" action="/sports/<%= sport.id %>/website" enctype="multipart/form-data">
   <div class="card" style="max-width:820px">
     <div class="card-body">
-      <div class="form-section-title"><i class="fas fa-circle-info"></i> ط§ظ„ظ†ط¨ط°ط© ط§ظ„طھط¹ط±ظٹظپظٹط©</div>
+      <div class="form-section-title"><i class="fas fa-id-card"></i> هوية الموقع المصغّر</div>
       <div class="form-group">
-        <label>ظ†ط¨ط°ط© ط¹ظ† ط§ظ„ظ„ط¹ط¨ط© ظپظٹ ط£ظƒط§ط¯ظٹظ…ظٹطھظƒ</label>
-        <textarea name="about" class="form-control" rows="4" placeholder="ط§ظƒطھط¨ ظ†ط¨ط°ط© ط§ظ„طھط¹ط±ظٹظپ ط¨ظ„ط¹ط¨ط© <%= sport.name %> ط¯ط§ط®ظ„ ط£ظƒط§ط¯ظٹظ…ظٹطھظƒ..."><%= website.about || '' %></textarea>
-        <div class="form-hint">طھط¸ظ‡ط± ط£ط¹ظ„ظ‰ طµظپط­ط© ط§ظ„ظ„ط¹ط¨ط© ظˆطھط³طھط¨ط¯ظ„ ط§ظ„ظˆطµظپ ط§ظ„ط¹ط§ظ…</div>
+        <label>عنوان صفحة اللعبة (اختياري)</label>
+        <input type="text" name="title" class="form-control" value="<%= website.title || '' %>" placeholder="مثال: مدرسة السباحة">
+        <div class="form-hint">يظهر في مقدمة صفحة اللعبة — اتركه فارغاً لاستخدام اسم اللعبة نفسه</div>
       </div>
+      <div class="form-group">
+        <label>الشعار أو الجملة الدعائية (اختياري)</label>
+        <input type="text" name="slogan" class="form-control" value="<%= website.slogan || '' %>" placeholder="مثال: تعلم السباحة باحترافية داخل الأكاديمية">
+        <div class="form-hint">جملة قصيرة تظهر تحت عنوان صفحة اللعبة</div>
+      </div>
+      <div class="form-group">
+        <label>النبذة التعريفية عن اللعبة في أكاديميتك</label>
+        <textarea name="about" class="form-control" rows="4" placeholder="اكتب نبذة التعريف بلعبة <%= sport.name %> داخل أكاديميتك..."><%= website.about || '' %></textarea>
+        <div class="form-hint">تظهر أعلى صفحة اللعبة وتستبدل الوصف العام</div>
+      </div>
+    </div>
+  </div>
 
-      <div class="form-section-title"><i class="fas fa-image"></i> ط§ظ„طµظˆط±ط© ط§ظ„ط±ط¦ظٹط³ظٹط©</div>
+  <div class="card" style="max-width:820px">
+    <div class="card-body">
+      <div class="form-section-title"><i class="fas fa-image"></i> الصورة الرئيسية (البنر)</div>
       <% if (website.banner) { %>
         <div id="banner-box" style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-          <img src="<%= website.banner %>" alt="banner" style="width:120px;height:80px;object-fit:cover;border-radius:10px;border:1px solid var(--card-border)">
+          <img src="<%= website.banner %>" alt="banner" style="width:140px;height:90px;object-fit:cover;border-radius:10px;border:1px solid var(--card-border)">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--danger)">
-            <input type="checkbox" name="remove_banner" value="1" onchange="document.getElementById('banner-box').style.display=this.checked?'none':''"> ط¥ط²ط§ظ„ط© ط§ظ„طµظˆط±ط© ط§ظ„ط­ط§ظ„ظٹط©
+            <input type="checkbox" name="remove_banner" value="1" onchange="document.getElementById('banner-box').style.display=this.checked?'none':''"> إزالة الصورة الحالية
           </label>
         </div>
       <% } %>
       <div class="form-group">
         <input type="file" name="banner" class="form-control" accept="image/*">
-        <div class="form-hint">طµظˆط±ط© طھظڈط¹ط±ط¶ ظپظٹ ظ…ظ‚ط¯ظ…ط© طµظپط­ط© ط§ظ„ظ„ط¹ط¨ط© (JPG/PNG) â€” ط§طھط±ظƒظ‡ط§ ظپط§ط±ط؛ط© ظ„ظ„ط¥ط¨ظ‚ط§ط، ط¹ظ„ظ‰ ط§ظ„ط­ط§ظ„ظٹط©</div>
+        <div class="form-hint">صورة تُعرض في مقدمة صفحة اللعبة (JPG/PNG) — اتركها فارغة للإبقاء على الحالية</div>
       </div>
     </div>
   </div>
 
   <div class="card" style="max-width:820px">
     <div class="card-body">
-      <div class="form-section-title"><i class="fas fa-list-check"></i> ط§ظ„ط¨ط±ط§ظ…ط¬ ط§ظ„ظ…ط±طھط¨ط·ط© ط¨ظ„ط¹ط¨ط© <%= sport.name %></div>
+      <div class="form-section-title"><i class="fas fa-images"></i> معرض صور اللعبة</div>
+      <% var imgs = (website.images || []).filter(function (u) { return u; }); %>
+      <% if (imgs.length) { %>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+          <% imgs.forEach(function (u) { %>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;border:1px solid var(--card-border);border-radius:10px;padding:6px">
+              <img src="<%= u %>" alt="sport gallery" style="width:130px;height:90px;object-fit:cover;border-radius:8px;display:block">
+              <label style="cursor:pointer;font-size:12px;color:var(--danger)"><input type="checkbox" name="remove_image" value="<%= u %>"> إزالة</label>
+            </div>
+          <% }); %>
+        </div>
+      <% } %>
+      <div class="form-group" style="margin-bottom:0">
+        <input type="file" name="sport_images" class="form-control" accept="image/*" multiple>
+        <div class="form-hint">اختر صورة واحدة أو عدة صور (JPG/PNG) تُعرض في معرض فوق صفحة اللعبة — كل صورة تُحفظ لموقع هذه اللعبة فقط</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="max-width:820px">
+    <div class="card-body">
+      <div class="form-section-title"><i class="fas fa-list-check"></i> البرامج المربوطة بلعبة <%= sport.name %></div>
       <div class="flex gap-1" style="flex-wrap:wrap">
         <% programs.forEach(function (p) { %>
           <label class="check-chip"><input type="checkbox" name="programs" value="<%= p.id %>" <%= programIds.includes(p.id) ? 'checked' : '' %>><span class="chip-label"><%= p.name %></span></label>
         <% }); %>
-        <% if (!programs.length) { %><div class="text-muted" style="font-size:13px">ظ„ط§ طھظˆط¬ط¯ ط¨ط±ط§ظ…ط¬ â€” ط£ط¶ظپ ط¨ط±ط§ظ…ط¬ ظ…ظ† ظ‚ط³ظ… ط§ظ„ط¨ط±ط§ظ…ط¬ ظˆط§ظ„ط¯ظˆط±ط§طھ ظ„طھط¸ظ‡ط± ظ‡ظ†ط§</div><% } %>
+        <% if (!programs.length) { %><div class="text-muted" style="font-size:13px">لا توجد برامج — أضف برامج من قسم البرامج والدورات لتظهر هنا</div><% } %>
       </div>
-      <div class="form-hint" style="margin-top:6px">ط§ظ„ط¨ط±ط§ظ…ط¬ ط§ظ„ظ…ط®طھط§ط±ط© ظپظ‚ط· طھط¸ظ‡ط± ظپظٹ طµظپط­ط© ظ‡ط°ظ‡ ط§ظ„ظ„ط¹ط¨ط©</div>
+      <div class="form-hint" style="margin-top:6px">البرامج المختارة فقط تظهر في صفحة هذه اللعبة</div>
     </div>
   </div>
 
   <div class="card" style="max-width:820px">
     <div class="card-body">
-      <div class="form-section-title"><i class="fas fa-user-tie"></i> ط§ظ„ظƒط¨ط§طھظ† ظˆط§ظ„ظ…ط¯ط±ط¨ظˆظ†</div>
+      <div class="form-section-title"><i class="fas fa-user-tie"></i> الكباتن والمدربون</div>
       <div class="flex gap-1" style="flex-wrap:wrap">
         <% coaches.forEach(function (c) { %>
           <label class="check-chip"><input type="checkbox" name="coaches" value="<%= c.id %>" <%= coachIds.includes(c.id) ? 'checked' : '' %>><span class="chip-label"><%= c.full_name %></span></label>
         <% }); %>
-        <% if (!coaches.length) { %><div class="text-muted" style="font-size:13px">ظ„ط§ ظٹظˆط¬ط¯ ظƒط¨ط§طھظ† â€” ط£ط¶ظپ ظ…ظ† ظ‚ط³ظ… ط§ظ„ظƒط¨ط§طھظ† ظˆط§ظ„ظ…ط¯ط±ط¨ظˆظ†</div><% } %>
+        <% if (!coaches.length) { %><div class="text-muted" style="font-size:13px">لا يوجد كباتن — أضف من قسم الكباتن والمدربين</div><% } %>
       </div>
-      <div class="form-hint" style="margin-top:6px">ط§ظ„ظƒط¨ط§طھظ† ط§ظ„ظ…ط®طھط§ط±ظˆظ† ظپظ‚ط· ظٹط¸ظ‡ط±ظˆظ† ظپظٹ طµظپط­ط© ظ‡ط°ظ‡ ط§ظ„ظ„ط¹ط¨ط©</div>
+      <div class="form-hint" style="margin-top:6px">الكباتن المختارون فقط يظهرون في صفحة هذه اللعبة</div>
     </div>
   </div>
 
   <div class="card" style="max-width:820px">
     <div class="card-body">
-      <div class="form-section-title"><i class="fas fa-bullhorn"></i> ط§ظ„ط¥ط¹ظ„ط§ظ†ط§طھ ظˆط§ظ„ط£ط®ط¨ط§ط±</div>
+      <div class="form-section-title"><i class="fas fa-bullhorn"></i> الإعلانات والأخبار</div>
       <div class="flex gap-1" style="flex-wrap:wrap">
         <% announcements.forEach(function (a) { %>
           <label class="check-chip"><input type="checkbox" name="announcements" value="<%= a.id %>" <%= announcementIds.includes(a.id) ? 'checked' : '' %>><span class="chip-label"><%= a.title %></span></label>
         <% }); %>
-        <% if (!announcements.length) { %><div class="text-muted" style="font-size:13px">ظ„ط§ طھظˆط¬ط¯ ط¥ط¹ظ„ط§ظ†ط§طھ â€” ط£ط¶ظپ ظ…ظ† ط§ظ„ط£ط®ط¨ط§ط± ظˆط§ظ„ط£ط­ط¯ط§ط«</div><% } %>
+        <% if (!announcements.length) { %><div class="text-muted" style="font-size:13px">لا توجد إعلانات — أضف من الأخبار والأحداث</div><% } %>
       </div>
-      <div class="form-hint" style="margin-top:6px">ط§ظ„ط¥ط¹ظ„ط§ظ†ط§طھ ط§ظ„ظ…ط®طھط§ط±ط© ظپظ‚ط· طھط¸ظ‡ط± ظپظٹ طµظپط­ط© ظ‡ط°ظ‡ ط§ظ„ظ„ط¹ط¨ط©</div>
+      <div class="form-hint" style="margin-top:6px">الإعلانات المختارة فقط تظهر في صفحة هذه اللعبة</div>
     </div>
   </div>
 
   <div class="form-actions" style="max-width:820px">
-    <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> ط­ظپط¸ ظ…ط­طھظˆظ‰ ط§ظ„ظ„ط¹ط¨ط©</button>
-    <a href="/sports" class="btn btn-lg">ط±ط¬ظˆط¹ ظ„ظ‚ط§ط¦ظ…ط© ط§ظ„ط£ظ„ط¹ط§ط¨</a>
+    <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> حفظ محتوى اللعبة</button>
+    <a href="/sports" class="btn btn-lg">رجوع لقائمة الألعاب</a>
   </div>
 </form>
 <%- include('partials/layout_bottom') %>

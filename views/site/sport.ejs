@@ -1,15 +1,27 @@
-<%- include('_head', { title: sport.name, page: 'sport' }) %>
+<%- include('_head', { title: (website.title || sport.name), page: 'sport' }) %>
 <div class="site-hero">
   <div class="hero-bg"><i class="fas <%= sport.icon %>"></i></div>
-  <h1><i class="fas <%= sport.icon %>"></i> <%= sport.name %></h1>
-  <p><%= website.about || sport.description || 'تدريب احترافي ضمن الأكاديمية' %></p>
+  <h1><i class="fas <%= sport.icon %>"></i> <%= website.title || sport.name %></h1>
+  <p><%= website.slogan || website.about || sport.description || 'تدريب احترافي ضمن الأكاديمية' %></p>
   <a href="<%= (data.base || '/site') %>/reserve" class="btn btn-lg" style="background:var(--primary);color:#fff;border:2px solid rgba(255,255,255,.65)"><i class="fas fa-calendar-check"></i> احجز مكانك الآن</a>
 </div>
 
 <div class="site-container">
-  <% if (website.banner) { %>
-    <div style="border-radius:20px;overflow:hidden;border:1px solid var(--card-border);box-shadow:var(--shadow);margin-bottom:32px;max-width:980px;margin-inline:auto">
-      <img src="<%= website.banner %>" alt="<%= sport.name %>" style="width:100%;max-height:420px;object-fit:cover;display:block">
+  <% var imgs = (website.images || []).filter(function (u) { return u; }); %>
+  <% if (website.banner || imgs.length) { %>
+    <div style="margin-bottom:32px;max-width:980px;margin-inline:auto">
+      <% if (website.banner) { %>
+        <div style="border-radius:20px;overflow:hidden;border:1px solid var(--card-border);box-shadow:var(--shadow)">
+          <img src="<%= website.banner %>" alt="<%= sport.name %>" style="width:100%;max-height:420px;object-fit:cover;display:block">
+        </div>
+      <% } %>
+      <% if (imgs.length) { %>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:14px">
+          <% imgs.forEach(function (u) { %>
+            <img src="<%= u %>" alt="<%= sport.name %>" style="width:190px;height:130px;object-fit:cover;border-radius:14px;border:1px solid var(--card-border);box-shadow:var(--shadow)">
+          <% }); %>
+        </div>
+      <% } %>
     </div>
   <% } %>
 
@@ -67,7 +79,7 @@
 
   <div style="text-align:center;margin-top:36px">
     <a href="<%= (data.base || '/site') %>/programs" class="btn btn-outline">عرض كل البرامج <i class="fas fa-arrow-left"></i></a>
-    <a href="<%= (data.base || '/site') %>/reserve" class="btn btn-primary"><i class="fas fa-calendar-check"></i> احجز مكانك في <%= sport.name %></a>
+    <a href="<%= (data.base || '/site') %>/reserve" class="btn btn-primary"><i class="fas fa-calendar-check"></i> احجز مكانك في <%= website.title || sport.name %></a>
   </div>
 </div>
 <%- include('_foot') %>
