@@ -7,15 +7,19 @@ const { setFlash } = require('../lib/auth-cookie');
 const { activeSport, sportClause, progClause, groupClause, swimmerClause } = require('../lib/sport-context');
 const router = express.Router();
 
-async function swimmerOptions() {
-  return (await db.prepare('SELECT id, full_name, membership_no FROM swimmers WHERE deleted_at IS NULL ORDER BY full_name').all())
+function sportOptionsFor(req, res) {
+  const list = ((res && res.locals && res.locals.adminSports) || []).filter(Boolean);
+  return list.map(sp => ({ value: Number(sp.id), label: sp.name }));
+}
+async function swimmerOptions(sid) {
+  return (await db.prepare('SELECT id, full_name, membership_no FROM swimmers WHERE deleted_at IS NULL' + progClause(sid, 'swimmers') + ' ORDER BY full_name').all())
     .map(s => ({ value: s.id, label: s.full_name + ' (' + s.membership_no + ')' }));
 }
-async function programOptions() {
-  return (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL ORDER BY name').all()).map(p => ({ value: p.id, label: p.name }));
+async function programOptions(sid) {
+  return (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(sid, 'programs') + ' ORDER BY name').all()).map(p => ({ value: p.id, label: p.name }));
 }
-async function groupOptions() {
-  return (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL ORDER BY name').all()).map(g => ({ value: g.id, label: g.name }));
+async function groupOptions(sid) {
+  return (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL' + groupClause(sid) + ' ORDER BY name').all()).map(g => ({ value: g.id, label: g.name }));
 }
 
 /* حساب الإجمالي بعد الخصم والضريبة */
@@ -63,11 +67,12 @@ router.get('/subscriptions', async function (req, res) {
   res.render('list', { page });
 });
 
-const subFields = async function (values) {
+const subFields = async function (values, req) {
+  const sid = activeSport(req);
   return [
-    { key: 'swimmer_id', label: 'السباح', type: 'select', options: await swimmerOptions(), required: true, section: 'بيانات الاشتراك', sectionIcon: 'fa-file-contract' },
-    { key: 'program_id', label: 'البرنامج', type: 'select', options: await programOptions() },
-    { key: 'group_id', label: 'المجموعة', type: 'select', options: await groupOptions() },
+    { key: 'swimmer_id', label: 'السباح', type: 'select', options: await swimmerOptions(sid), required: true, section: 'بيانات الاشتراك', sectionIcon: 'fa-file-contract' },
+    { key: 'program_id', label: 'البرنامج', type: 'select', options: await programOptions(sid) },
+    { key: 'group_id', label: 'المجموعة', type: 'select', options: await groupOptions(sid) },
     { key: 'start_date', label: 'تاريخ البداية', type: 'date' },
     { key: 'end_date', label: 'تاريخ النهاية', type: 'date' },
     { key: 'sessions_total', label: 'إجمالي الحصص', type: 'number', number: true },
@@ -97,7 +102,7 @@ router.get('/subscriptions/new', async function (req, res) {
       if (sw.group_id) prefill.group_id = sw.group_id;
     }
   }
-  res.render('form', { form: { title: 'اشتراك جديد', subtitle: 'تسجيل اشتراك سباح', icon: 'fa-plus', active: 'subscriptions', action: '/subscriptions/new', fields: await subFields({ total: 0, paid_amount: 0, ...prefill }), values: prefill, submitLabel: 'حفظ الاشتراك', cancelUrl: '/subscriptions', csrf: '' } });
+  res.render('form', { form: { title: 'اشتراك جديد', subtitle: 'تسجيل اشتراك سباح', icon: 'fa-plus', active: 'subscriptions', action: '/subscriptions/new', fields: await subFields({ total: 0, paid_amount: 0, ...prefill }, req), values: prefill, submitLabel: 'حفظ الاشتراك', cancelUrl: '/subscriptions', csrf: '' } });
 });
 router.post('/subscriptions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -116,8 +121,9 @@ router.post('/subscriptions/new', async function (req, res) {
       .run(info.lastInsertRowid, b.swimmer_id, paid, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), req.currentUser.id, 'دفعة الاشتراك');
   }
   /* تسجيل الاشتراك في الإيرادات دائماً (إنشاء أو تجديد) — بالمبلغ المدفوع فعلياً */
-  await db.prepare(`INSERT INTO revenues (category, date, description, amount, payment_method, payer, status, created_by) VALUES ('اشتراكات', ?, ?, ?, ?, ?, ?, ?)`)
-    .run(b.paid_date || today(), 'اشتراك: ' + swimmerName + (b.receipt_no ? ' - إيصال ' + b.receipt_no : ''), paid, b.payment_method || 'نقدي', swimmerName, paid > 0 ? 'معتمد' : 'مسجل', req.currentUser.id);
+  const swSport = await db.prepare('SELECT p.sport_id sp FROM swimmers w JOIN programs p ON p.id = w.program_id WHERE w.id = ?').get(b.swimmer_id);
+  await db.prepare(`INSERT INTO revenues (category, date, description, amount, payment_method, payer, status, sport_id, created_by) VALUES ('اشتراكات', ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(b.paid_date || today(), 'اشتراك: ' + swimmerName + (b.receipt_no ? ' - إيصال ' + b.receipt_no : ''), paid, b.payment_method || 'نقدي', swimmerName, paid > 0 ? 'معتمد' : 'مسجل', (swSport && swSport.sp) || 0, req.currentUser.id);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'subscriptions', info.lastInsertRowid, 'اشتراك جديد', req);
   /* إتمام الاشتراك: نعرض لولي الأمر إيصالاً بتفاصيل الاشتراك عبر واتساب، مع تأكيد قبل الإرسال.
      نقرأ رقم ولي الأمر، وإن وُجد نُظهر شاشة تأكيد للمعاينة قبل أي إرسال. */
@@ -237,7 +243,7 @@ router.get('/subscriptions/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const row = await db.prepare('SELECT * FROM subscriptions WHERE id=?').get(Number(req.params.id));
   if (!row) return res.redirect('/subscriptions');
-  res.render('form', { form: { title: 'تعديل الاشتراك', subtitle: 'تحديث بيانات الاشتراك', icon: 'fa-pen', active: 'subscriptions', action: '/subscriptions/' + row.id + '/edit', fields: await subFields(row), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/subscriptions/' + row.id, csrf: '' } });
+  res.render('form', { form: { title: 'تعديل الاشتراك', subtitle: 'تحديث بيانات الاشتراك', icon: 'fa-pen', active: 'subscriptions', action: '/subscriptions/' + row.id + '/edit', fields: await subFields(row, req), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/subscriptions/' + row.id, csrf: '' } });
 });
 router.post('/subscriptions/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -266,7 +272,7 @@ router.post('/subscriptions/:id/delete', async function (req, res) {
 /* ============================================================== */
 router.get('/payments', async function (req, res) {
   if (!canView(req.currentUser, 'payments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT p.*, s.full_name AS swimmer_name, s.membership_no FROM payments p LEFT JOIN swimmers s ON s.id = p.swimmer_id ORDER BY p.paid_date DESC, p.id DESC`).all();
+  const rows = await db.prepare(`SELECT p.*, s.full_name AS swimmer_name, s.membership_no FROM payments p LEFT JOIN swimmers s ON s.id = p.swimmer_id WHERE 1=1` + swimmerOfClause(activeSport(req), 'p') + ` ORDER BY p.paid_date DESC, p.id DESC`).all();
   const page = {
     title: 'المدفوعات', subtitle: 'دفعات الاشتراكات والرسوم', icon: 'fa-money-bill-wave', module: 'payments', active: 'payments',
     columns: [
@@ -290,8 +296,8 @@ router.get('/payments/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'payments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   res.render('form', { form: { title: 'دفعة جديدة', subtitle: 'تسجيل دفعة مالية', icon: 'fa-plus', active: 'payments', action: '/payments/new',
     fields: [
-      { key: 'swimmer_id', label: 'السباح', type: 'select', options: await swimmerOptions(), required: true },
-      { key: 'subscription_id', label: 'الاشتراك (اختياري)', type: 'select', options: (await db.prepare("SELECT * FROM subscriptions WHERE status='نشط' ORDER BY id DESC").all()).map(x => ({ value: x.id, label: '#' + x.id + ' — ' + x.swimmer_id })) },
+      { key: 'swimmer_id', label: 'السباح', type: 'select', options: await swimmerOptions(activeSport(req)), required: true },
+      { key: 'subscription_id', label: 'الاشتراك (اختياري)', type: 'select', options: (await db.prepare("SELECT * FROM subscriptions WHERE status='نشط'" + progClause(activeSport(req), 'subscriptions') + " ORDER BY id DESC").all()).map(x => ({ value: x.id, label: '#' + x.id + ' — ' + x.swimmer_id })) },
       { key: 'amount', label: 'المبلغ (ج.م)', type: 'number', number: true, required: true },
       { key: 'method', label: 'طريقة الدفع', type: 'select', options: ['نقدي', 'تحويل بنكي', 'بطاقة', 'محفظة إلكترونية', 'شيك'].map(v => ({ value: v, label: v })) },
       { key: 'receipt_no', label: 'رقم الإيصال', type: 'text' },
@@ -312,8 +318,9 @@ router.post('/payments/new', async function (req, res) {
     await db.prepare("UPDATE subscriptions SET status = CASE WHEN remaining <= 0 THEN 'مكتمل' ELSE status END WHERE id = ?").run(b.subscription_id);
     await db.prepare('INSERT INTO subscription_history (subscription_id, swimmer_id, action, details, user_name) VALUES (?,?,?,?,?)').run(b.subscription_id, b.swimmer_id, 'دفع', 'دفعة ' + money(amount), req.currentUser.full_name);
   }
-  await db.prepare("INSERT INTO revenues (category, date, description, amount, payment_method, payer, status, created_by) VALUES ('اشتراكات', ?, ?, ?, ?, ?, 'معتمد', ?)")
-    .run(b.paid_date || today(), 'دفعة ' + money(amount) + ' — ' + payerName + (b.receipt_no ? ' - إيصال ' + b.receipt_no : ''), amount, b.method || 'نقدي', payerName, req.currentUser.id);
+  const plSport = await db.prepare('SELECT p.sport_id sp FROM swimmers w JOIN programs p ON p.id = w.program_id WHERE w.id = ?').get(b.swimmer_id);
+  await db.prepare("INSERT INTO revenues (category, date, description, amount, payment_method, payer, status, sport_id, created_by) VALUES ('اشتراكات', ?, ?, ?, ?, ?, 'معتمد', ?, ?)")
+    .run(b.paid_date || today(), 'دفعة ' + money(amount) + ' — ' + payerName + (b.receipt_no ? ' - إيصال ' + b.receipt_no : ''), amount, b.method || 'نقدي', payerName, (plSport && plSport.sp) || 0, req.currentUser.id);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'payments', info.lastInsertRowid, 'دفعة ' + money(amount), req);
   setFlash(res, { type: 'success', message: 'تم تسجيل الدفعة' });
   res.redirect('/payments');
@@ -328,9 +335,10 @@ router.post('/payments/:id/delete', async function (req, res) {
 /*                          الإيرادات                             */
 /* ============================================================== */
 const REV_CATEGORIES = ['اشتراكات', 'رسوم اختبارات', 'بطولات', 'معسكرات', 'مبيعات', 'شهادات', 'أخرى'];
-const revFields = async function (values) {
+const revFields = async function (values, sports) {
   return [
-    { key: 'category', label: 'الفئة', type: 'select', options: REV_CATEGORIES.map(v => ({ value: v, label: v })), section: 'بيانات الإيراد', sectionIcon: 'fa-arrow-up-right-dots' },
+    { key: 'sport_id', label: 'اللعبة', type: 'select', options: sports, section: 'بيانات الإيراد', sectionIcon: 'fa-arrow-up-right-dots' },
+    { key: 'category', label: 'الفئة', type: 'select', options: REV_CATEGORIES.map(v => ({ value: v, label: v })) },
     { key: 'date', label: 'التاريخ', type: 'date' },
     { key: 'description', label: 'الوصف', type: 'text', required: true },
     { key: 'amount', label: 'المبلغ (ج.م)', type: 'number', number: true, required: true },
@@ -345,7 +353,7 @@ const revFields = async function (values) {
 
 router.get('/revenues', async function (req, res) {
   if (!canView(req.currentUser, 'revenues')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT r.*, b.name AS branch_name FROM revenues r LEFT JOIN branches b ON b.id = r.branch_id ORDER BY r.date DESC, r.id DESC`).all();
+  const rows = await db.prepare(`SELECT r.*, b.name AS branch_name FROM revenues r LEFT JOIN branches b ON b.id = r.branch_id WHERE 1=1` + sportClause(activeSport(req), 'r') + ` ORDER BY r.date DESC, r.id DESC`).all();
   const total = rows.reduce((t, r) => t + Number(r.amount || 0), 0);
   const page = {
     title: 'الإيرادات', subtitle: 'كل الإيرادات الواردة للأكاديمية', icon: 'fa-arrow-up-right-dots', module: 'revenues', active: 'revenues',
@@ -371,13 +379,14 @@ router.get('/revenues', async function (req, res) {
 });
 router.get('/revenues/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'revenues')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  res.render('form', { form: { title: 'إيراد جديد', subtitle: 'تسجيل إيراد مالي', icon: 'fa-plus', active: 'revenues', action: '/revenues/new', fields: await revFields({}), values: {}, submitLabel: 'تسجيل الإيراد', cancelUrl: '/revenues', csrf: '' } });
+  const sports = sportOptionsFor(req, res);
+  res.render('form', { form: { title: 'إيراد جديد', subtitle: 'تسجيل إيراد مالي', icon: 'fa-plus', active: 'revenues', action: '/revenues/new', fields: await revFields({}, sports), values: { date: today(), sport_id: activeSport(req) || (sports[0] && sports[0].value) || 0 }, submitLabel: 'تسجيل الإيراد', cancelUrl: '/revenues', csrf: '' } });
 });
 router.post('/revenues/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'revenues')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
-  const info = await db.prepare('INSERT INTO revenues (category, date, description, amount, payment_method, payer, branch_id, transaction_no, status, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-    .run(b.category || 'أخرى', b.date || today(), b.description, Number(b.amount || 0), b.payment_method || 'نقدي', b.payer || '', b.branch_id || null, b.transaction_no || '', b.status || 'معتمد', b.notes || '', req.currentUser.id);
+  const info = await db.prepare('INSERT INTO revenues (category, date, description, amount, payment_method, payer, branch_id, transaction_no, status, notes, sport_id, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(b.category || 'أخرى', b.date || today(), b.description, Number(b.amount || 0), b.payment_method || 'نقدي', b.payer || '', b.branch_id || null, b.transaction_no || '', b.status || 'معتمد', b.notes || '', Number(b.sport_id) || activeSport(req) || 0, req.currentUser.id);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'revenues', info.lastInsertRowid, 'إيراد: ' + b.description, req);
   setFlash(res, { type: 'success', message: 'تم تسجيل الإيراد' });
   res.redirect('/revenues');
@@ -386,14 +395,15 @@ router.get('/revenues/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'revenues')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const row = await db.prepare('SELECT * FROM revenues WHERE id=?').get(Number(req.params.id));
   if (!row) return res.redirect('/revenues');
-  res.render('form', { form: { title: 'تعديل الإيراد', subtitle: 'تحديث بيانات الإيراد', icon: 'fa-pen', active: 'revenues', action: '/revenues/' + row.id + '/edit', fields: await revFields(row), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/revenues', csrf: '' } });
+  const sports = sportOptionsFor(req, res);
+  res.render('form', { form: { title: 'تعديل الإيراد', subtitle: 'تحديث بيانات الإيراد', icon: 'fa-pen', active: 'revenues', action: '/revenues/' + row.id + '/edit', fields: await revFields(row, sports), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/revenues', csrf: '' } });
 });
 router.post('/revenues/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'revenues')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
   const b = req.body;
-  await db.prepare('UPDATE revenues SET category=?, date=?, description=?, amount=?, payment_method=?, payer=?, branch_id=?, transaction_no=?, status=?, notes=? WHERE id=?')
-    .run(b.category || 'أخرى', b.date || today(), b.description, Number(b.amount || 0), b.payment_method || 'نقدي', b.payer || '', b.branch_id || null, b.transaction_no || '', b.status || 'معتمد', b.notes || '', id);
+  await db.prepare('UPDATE revenues SET category=?, date=?, description=?, amount=?, payment_method=?, payer=?, branch_id=?, transaction_no=?, status=?, notes=?, sport_id=? WHERE id=?')
+    .run(b.category || 'أخرى', b.date || today(), b.description, Number(b.amount || 0), b.payment_method || 'نقدي', b.payer || '', b.branch_id || null, b.transaction_no || '', b.status || 'معتمد', b.notes || '', Number(b.sport_id) || activeSport(req) || 0, id);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'revenues', id, 'تعديل إيراد', req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/revenues');
@@ -408,9 +418,10 @@ router.post('/revenues/:id/delete', async function (req, res) {
 /*                          المصروفات                             */
 /* ============================================================== */
 const EXP_CATEGORIES = ['رواتب مدربين', 'إيجار', 'أدوات', 'صيانة', 'تسويق', 'انتقالات', 'بطولات', 'إدارية', 'أخرى'];
-const expFields = async function (values) {
+const expFields = async function (values, sports) {
   return [
-    { key: 'category', label: 'الفئة', type: 'select', options: EXP_CATEGORIES.map(v => ({ value: v, label: v })), section: 'بيانات المصروف', sectionIcon: 'fa-arrow-down-right-dots' },
+    { key: 'sport_id', label: 'اللعبة', type: 'select', options: sports, section: 'بيانات المصروف', sectionIcon: 'fa-arrow-down-right-dots' },
+    { key: 'category', label: 'الفئة', type: 'select', options: EXP_CATEGORIES.map(v => ({ value: v, label: v })) },
     { key: 'date', label: 'التاريخ', type: 'date' },
     { key: 'description', label: 'الوصف', type: 'text', required: true },
     { key: 'amount', label: 'المبلغ (ج.م)', type: 'number', number: true, required: true },
@@ -425,7 +436,7 @@ const expFields = async function (values) {
 
 router.get('/expenses', async function (req, res) {
   if (!canView(req.currentUser, 'expenses')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT e.*, b.name AS branch_name FROM expenses e LEFT JOIN branches b ON b.id = e.branch_id ORDER BY e.date DESC, e.id DESC`).all();
+  const rows = await db.prepare(`SELECT e.*, b.name AS branch_name FROM expenses e LEFT JOIN branches b ON b.id = e.branch_id WHERE 1=1` + sportClause(activeSport(req), 'e') + ` ORDER BY e.date DESC, e.id DESC`).all();
   const total = rows.reduce((t, r) => t + Number(r.amount || 0), 0);
   const page = {
     title: 'المصروفات', subtitle: 'كل المصروفات الخارجية', icon: 'fa-arrow-down-right-dots', module: 'expenses', active: 'expenses',
@@ -451,13 +462,14 @@ router.get('/expenses', async function (req, res) {
 });
 router.get('/expenses/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'expenses')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  res.render('form', { form: { title: 'مصروف جديد', subtitle: 'تسجيل مصروف مالي', icon: 'fa-plus', active: 'expenses', action: '/expenses/new', fields: await expFields({}), values: {}, submitLabel: 'تسجيل المصروف', cancelUrl: '/expenses', csrf: '' } });
+  const sports = sportOptionsFor(req, res);
+  res.render('form', { form: { title: 'مصروف جديد', subtitle: 'تسجيل مصروف مالي', icon: 'fa-plus', active: 'expenses', action: '/expenses/new', fields: await expFields({}, sports), values: { date: today(), sport_id: activeSport(req) || (sports[0] && sports[0].value) || 0 }, submitLabel: 'تسجيل المصروف', cancelUrl: '/expenses', csrf: '' } });
 });
 router.post('/expenses/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'expenses')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
-  const info = await db.prepare('INSERT INTO expenses (category, date, description, amount, payment_method, beneficiary, branch_id, transaction_no, status, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-    .run(b.category || 'أخرى', b.date || today(), b.description, Number(b.amount || 0), b.payment_method || 'نقدي', b.beneficiary || '', b.branch_id || null, b.transaction_no || '', b.status || 'معتمد', b.notes || '', req.currentUser.id);
+  const info = await db.prepare('INSERT INTO expenses (category, date, description, amount, payment_method, beneficiary, branch_id, transaction_no, status, notes, sport_id, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(b.category || 'أخرى', b.date || today(), b.description, Number(b.amount || 0), b.payment_method || 'نقدي', b.beneficiary || '', b.branch_id || null, b.transaction_no || '', b.status || 'معتمد', b.notes || '', Number(b.sport_id) || activeSport(req) || 0, req.currentUser.id);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'expenses', info.lastInsertRowid, 'مصروف: ' + b.description, req);
   setFlash(res, { type: 'success', message: 'تم تسجيل المصروف' });
   res.redirect('/expenses');
@@ -466,14 +478,15 @@ router.get('/expenses/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'expenses')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const row = await db.prepare('SELECT * FROM expenses WHERE id=?').get(Number(req.params.id));
   if (!row) return res.redirect('/expenses');
-  res.render('form', { form: { title: 'تعديل المصروف', subtitle: 'تحديث بيانات المصروف', icon: 'fa-pen', active: 'expenses', action: '/expenses/' + row.id + '/edit', fields: await expFields(row), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/expenses', csrf: '' } });
+  const sports = sportOptionsFor(req, res);
+  res.render('form', { form: { title: 'تعديل المصروف', subtitle: 'تحديث بيانات المصروف', icon: 'fa-pen', active: 'expenses', action: '/expenses/' + row.id + '/edit', fields: await expFields(row, sports), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/expenses', csrf: '' } });
 });
 router.post('/expenses/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'expenses')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
   const b = req.body;
-  await db.prepare('UPDATE expenses SET category=?, date=?, description=?, amount=?, payment_method=?, beneficiary=?, branch_id=?, transaction_no=?, status=?, notes=? WHERE id=?')
-    .run(b.category || 'أخرى', b.date || today(), b.description, Number(b.amount || 0), b.payment_method || 'نقدي', b.beneficiary || '', b.branch_id || null, b.transaction_no || '', b.status || 'معتمد', b.notes || '', id);
+  await db.prepare('UPDATE expenses SET category=?, date=?, description=?, amount=?, payment_method=?, beneficiary=?, branch_id=?, transaction_no=?, status=?, notes=?, sport_id=? WHERE id=?')
+    .run(b.category || 'أخرى', b.date || today(), b.description, Number(b.amount || 0), b.payment_method || 'نقدي', b.beneficiary || '', b.branch_id || null, b.transaction_no || '', b.status || 'معتمد', b.notes || '', Number(b.sport_id) || activeSport(req) || 0, id);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'expenses', id, 'تعديل مصروف', req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/expenses');
@@ -489,7 +502,8 @@ router.post('/expenses/:id/delete', async function (req, res) {
 /* ============================================================== */
 router.get('/coach-payments', async function (req, res) {
   if (!canView(req.currentUser, 'coachPayments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT cp.*, c.full_name AS coach_name FROM coach_payments cp LEFT JOIN coaches c ON c.id = cp.coach_id ORDER BY cp.period DESC`).all();
+  const sid = activeSport(req);
+  const rows = await db.prepare(`SELECT cp.*, c.full_name AS coach_name FROM coach_payments cp LEFT JOIN coaches c ON c.id = cp.coach_id WHERE 1=1` + sportClause(sid, 'c') + ` ORDER BY cp.period DESC`).all();
   const page = {
     title: 'مستحقات المدربين', subtitle: 'إدارة رواتب ومستحقات المدربين', icon: 'fa-coins', module: 'coachPayments', active: 'coachPayments',
     columns: [
@@ -506,7 +520,7 @@ router.get('/coach-payments', async function (req, res) {
     rows,
     filters: [
       { name: 'status', label: 'الحالة', options: ['مستحق', 'مدفوع جزئياً', 'مسدد'].map(v => ({ value: v, label: v })) },
-      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) }
+      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches') + ' ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) }
     ],
     canAdd: canAdd(req.currentUser, 'coachPayments'), addUrl: canAdd(req.currentUser, 'coachPayments') ? '/coach-payments/new' : null, addLabel: 'استحقاق جديد',
     actions: () => row => [
@@ -516,9 +530,9 @@ router.get('/coach-payments', async function (req, res) {
   };
   res.render('list', { page });
 });
-const cpFields = async function (values) {
+const cpFields = async function (values, req) {
   return [
-    { key: 'coach_id', label: 'الكابتن', type: 'select', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })), required: true, section: 'بيانات الاستحقاق', sectionIcon: 'fa-coins' },
+    { key: 'coach_id', label: 'الكابتن', type: 'select', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'coaches') + ' ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })), required: true, section: 'بيانات الاستحقاق', sectionIcon: 'fa-coins' },
     { key: 'period', label: 'الفترة', type: 'text', placeholder: '2026-01', required: true },
     { key: 'amount_due', label: 'المبلغ المستحق', type: 'number', number: true, section: 'الحساب', sectionIcon: 'fa-calculator' },
     { key: 'bonus', label: 'المكافأة', type: 'number', number: true },
@@ -540,7 +554,7 @@ function cpCompute(b) {
 }
 router.get('/coach-payments/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'coachPayments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  res.render('form', { form: { title: 'استحقاق جديد', subtitle: 'تسجيل مستحقات مدرب', icon: 'fa-plus', active: 'coachPayments', action: '/coach-payments/new', fields: await cpFields({}), values: {}, submitLabel: 'حفظ الاستحقاق', cancelUrl: '/coach-payments', csrf: '' } });
+  res.render('form', { form: { title: 'استحقاق جديد', subtitle: 'تسجيل مستحقات مدرب', icon: 'fa-plus', active: 'coachPayments', action: '/coach-payments/new', fields: await cpFields({}, req), values: {}, submitLabel: 'حفظ الاستحقاق', cancelUrl: '/coach-payments', csrf: '' } });
 });
 router.post('/coach-payments/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'coachPayments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -549,8 +563,9 @@ router.post('/coach-payments/new', async function (req, res) {
   const info = await db.prepare('INSERT INTO coach_payments (coach_id, period, amount_due, bonus, deduction, total, paid_amount, remaining, status, paid_date, note) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
     .run(b.coach_id, b.period, Number(b.amount_due || 0), Number(b.bonus || 0), Number(b.deduction || 0), c.total, c.paid, c.remaining, c.remaining <= 0 ? 'مسدد' : (c.paid > 0 ? 'مدفوع جزئياً' : 'مستحق'), b.paid_date || null, b.note || '');
   if (c.paid > 0) {
-    await db.prepare("INSERT INTO expenses (category, date, description, amount, payment_method, beneficiary, status, created_by) VALUES ('رواتب مدربين', ?, ?, ?, 'نقدي', ?, 'معتمد', ?)")
-      .run(b.paid_date || today(), 'مستحقات: ' + b.period, c.paid, req.currentUser.id);
+    const coachInfo = await db.prepare('SELECT full_name, sport_id FROM coaches WHERE id = ?').get(b.coach_id);
+    await db.prepare("INSERT INTO expenses (category, date, description, amount, payment_method, beneficiary, status, sport_id, created_by) VALUES ('رواتب مدربين', ?, ?, ?, 'نقدي', ?, 'معتمد', ?, ?)")
+      .run(b.paid_date || today(), 'مستحقات: ' + b.period, c.paid, (coachInfo && coachInfo.full_name) || 'مدرب', (coachInfo && coachInfo.sport_id) || 0, req.currentUser.id);
   }
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'coach_payments', info.lastInsertRowid, 'استحقاق مدرب', req);
   setFlash(res, { type: 'success', message: 'تم تسجيل الاستحقاق' });
@@ -560,7 +575,7 @@ router.get('/coach-payments/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'coachPayments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const row = await db.prepare('SELECT * FROM coach_payments WHERE id=?').get(Number(req.params.id));
   if (!row) return res.redirect('/coach-payments');
-  res.render('form', { form: { title: 'تعديل الاستحقاق', subtitle: 'تحديث مستحقات المدرب', icon: 'fa-pen', active: 'coachPayments', action: '/coach-payments/' + row.id + '/edit', fields: await cpFields(row), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/coach-payments', csrf: '' } });
+  res.render('form', { form: { title: 'تعديل الاستحقاق', subtitle: 'تحديث مستحقات المدرب', icon: 'fa-pen', active: 'coachPayments', action: '/coach-payments/' + row.id + '/edit', fields: await cpFields(row, req), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/coach-payments', csrf: '' } });
 });
 router.post('/coach-payments/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'coachPayments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });

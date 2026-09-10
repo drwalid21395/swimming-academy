@@ -137,7 +137,7 @@ router.post('/sessions/new', async function (req, res) {
 router.get('/sessions/:id', async function (req, res) {
   if (!canView(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const s = await db.prepare(`SELECT se.*, g.name AS group_name, c.full_name AS coach_name, p.name AS pool_name FROM sessions se
-    LEFT JOIN groups g ON g.id = se.group_id LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id WHERE se.id = ?`).get(Number(req.params.id));
+    LEFT JOIN groups g ON g.id = se.group_id LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id WHERE se.id = ?` + sessionClause(activeSport(req), 'se')).get(Number(req.params.id));
   if (!s) return res.redirect('/sessions');
   await syncGroup(s.group_id);
   const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, a.status AS att_status, a.reason, a.coach_note FROM swimmer_group sg
@@ -214,7 +214,7 @@ router.get('/attendance/session/:id', async function (req, res) {
   if (!canView(req.currentUser, 'attendance')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
   const s = await db.prepare(`SELECT se.*, g.name AS group_name, c.full_name AS coach_name, p.name AS pool_name FROM sessions se
-    LEFT JOIN groups g ON g.id = se.group_id LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id WHERE se.id = ?`).get(id);
+    LEFT JOIN groups g ON g.id = se.group_id LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id WHERE se.id = ?` + sessionClause(activeSport(req), 'se')).get(id);
   if (!s) return res.redirect('/attendance');
   await syncGroup(s.group_id);
   const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, s.birth_date, a.status AS att_status, a.reason, a.coach_note, a.id AS att_id FROM swimmer_group sg
@@ -302,14 +302,14 @@ router.get('/sessions/:id/cancel', async function (req, res) {
     LEFT JOIN groups g ON g.id = se.group_id
     LEFT JOIN coaches c ON c.id = se.coach_id
     LEFT JOIN pools p ON p.id = se.pool_id
-    WHERE se.id = ?`).get(id);
+    WHERE se.id = ?` + sessionClause(activeSport(req), 'se')).get(id);
   if (!s) return res.redirect('/sessions');
   const members = s.group_id
     ? await db.prepare(`SELECT s.id, s.full_name, s.membership_no FROM swimmer_group sg
         JOIN swimmers s ON s.id = sg.swimmer_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(s.group_id)
     : [];
-  const groups = await db.prepare('SELECT id, name FROM groups WHERE deleted_at IS NULL ORDER BY name').all();
-  const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all();
+  const groups = await db.prepare('SELECT id, name FROM groups WHERE deleted_at IS NULL' + groupClause(activeSport(req)) + ' ORDER BY name').all();
+  const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'coaches') + ' ORDER BY full_name').all();
   const pools = await db.prepare('SELECT id, name FROM pools ORDER BY name').all();
   /* يوم افتراضي للحصة التعويضية: نفس يوم الأسبوع بعد أسبوع، بنفس موعد الحصة */
   const defaultDays = [{

@@ -18,6 +18,14 @@ crud(router, '/guardians', {
   table: 'guardians', module: 'guardians', entity: 'guardians',
   title: 'أولياء الأمور', singular: 'ولي أمر', plural: 'أولياء الأمور', icon: 'fa-people-roof',
   orderBy: 'full_name',
+  beforeRender: async function (rows, req) {
+    const sid = (req && req.activeSportId) || 0;
+    if (!sid) return rows;
+    const linked = await db.prepare(`SELECT DISTINCT s.guardian_id FROM swimmers s JOIN programs p ON p.id = s.program_id
+      WHERE s.guardian_id IS NOT NULL AND s.deleted_at IS NULL AND p.deleted_at IS NULL AND p.sport_id = ?`).all(sid);
+    const set = new Set(linked.map(r => r.guardian_id));
+    return rows.filter(r => set.has(r.id));
+  },
   columns: [
     { key: 'full_name', label: 'الاسم' },
     { key: 'relation', label: 'صلة القرابة' },
@@ -186,11 +194,12 @@ crud(router, '/coaches', {
 const SW_STATUS = ['نشط', 'متوقف مؤقتاً', 'مجمد', 'منسحب', 'خريج'];
 const SW_GENDER = ['ذكر', 'أنثى'];
 
-const swimmerFields = async function (values) {
-  const levels = (await db.prepare('SELECT * FROM levels ORDER BY order_no').all()).map(l => ({ value: l.id, label: l.name }));
-  const groups = (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL').all()).map(g => ({ value: g.id, label: g.name, coach: g.coach_id }));
-  const coaches = (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL').all()).map(c => ({ value: c.id, label: c.full_name }));
-  const programs = (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL').all()).map(p => ({ value: p.id, label: p.name }));
+const swimmerFields = async function (values, req) {
+  const sid = activeSport(req);
+  const levels = (await db.prepare('SELECT * FROM levels WHERE 1=1' + sportClause(sid, 'levels') + ' ORDER BY order_no').all()).map(l => ({ value: l.id, label: l.name }));
+  const groups = (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL' + groupClause(sid) + ' ORDER BY name').all()).map(g => ({ value: g.id, label: g.name, coach: g.coach_id }));
+  const coaches = (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches') + ' ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name }));
+  const programs = (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(sid, 'programs') + ' ORDER BY name').all()).map(p => ({ value: p.id, label: p.name }));
   const guardians = await db.prepare('SELECT id, full_name FROM guardians WHERE deleted_at IS NULL ORDER BY full_name').all();
   const blood = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(v => ({ value: v, label: v }));
   let guardianName = '';
@@ -236,7 +245,7 @@ const swimmerFields = async function (values) {
 
 /* القائمة */
 router.get('/swimmers', async function (req, res) {
-  const { status, program, level, q } = req.query;
+  const { status, program, level, coach_id, q } = req.query;
   let sql = `SELECT s.*, g.full_name AS guardian_name, l.name AS level_name, gr.name AS group_name, c.full_name AS coach_name, p.name AS program_name,
     COALESCE((SELECT sub.sessions_used FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1),0) AS used,
     COALESCE((SELECT sub.sessions_total FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1),0) AS stotal,
@@ -254,6 +263,7 @@ router.get('/swimmers', async function (req, res) {
   if (status) { sql += ' AND s.status = ?'; params.push(status); }
   if (program) { sql += ' AND s.program_id = ?'; params.push(program); }
   if (level) { sql += ' AND s.level_id = ?'; params.push(level); }
+  if (coach_id) { sql += ' AND s.coach_id = ?'; params.push(coach_id); }
   if (q) { sql += ' AND (s.full_name LIKE ? OR s.membership_no LIKE ? OR s.phone LIKE ?)'; const like = '%' + q + '%'; params.push(like, like, like); }
   sql += ' ORDER BY s.id DESC';
   const rows = await db.prepare(sql).all(...params);
@@ -280,7 +290,7 @@ router.get('/swimmers', async function (req, res) {
     filters: [
       { name: 'status', label: 'الحالة', options: SW_STATUS.map(v => ({ value: v, label: v })) },
       { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'programs') + ' ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) },
-      { name: 'level_id', label: 'المستوى', options: (await db.prepare('SELECT * FROM levels ORDER BY order_no').all()).map(l => ({ value: l.id, label: l.name })) },
+      { name: 'level_id', label: 'المستوى', options: (await db.prepare('SELECT * FROM levels WHERE 1=1' + sportClause(activeSport(req), 'levels') + ' ORDER BY order_no').all()).map(l => ({ value: l.id, label: l.name })) },
       { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'coaches') + ' ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) }
     ],
     canAdd: true,
@@ -302,7 +312,7 @@ router.get('/swimmers', async function (req, res) {
 
 /* نموذج إضافة/تعديل */
 router.get('/swimmers/new', async function (req, res) {
-  res.render('form', { form: { title: 'تسجيل سباح جديد', subtitle: 'إنشاء ملف متكامل لسباح جديد', icon: 'fa-user-plus', active: 'swimmers', action: '/swimmers/new', encType: 'multipart/form-data', fields: await swimmerFields({}), values: {}, submitLabel: 'تسجيل السباح', cancelUrl: '/swimmers', csrf: '' } });
+  res.render('form', { form: { title: 'تسجيل سباح جديد', subtitle: 'إنشاء ملف متكامل لسباح جديد', icon: 'fa-user-plus', active: 'swimmers', action: '/swimmers/new', encType: 'multipart/form-data', fields: await swimmerFields({}, req), values: {}, submitLabel: 'تسجيل السباح', cancelUrl: '/swimmers', csrf: '' } });
 });
 
 const SW_FK_COLS = ['guardian_id', 'level_id', 'group_id', 'coach_id', 'program_id'];
@@ -355,7 +365,7 @@ router.get('/swimmers/:id/edit', async function (req, res) {
   const tc = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all();
   const curG = row.group_id ? await db.prepare('SELECT name FROM groups WHERE id = ?').get(row.group_id) : null;
   const curC = row.coach_id ? await db.prepare('SELECT full_name FROM coaches WHERE id = ?').get(row.coach_id) : null;
-  res.render('form', { form: { title: 'تعديل ملف السباح', subtitle: row.full_name, icon: 'fa-user-pen', active: 'swimmers', action: '/swimmers/' + row.id + '/edit', encType: 'multipart/form-data', fields: await swimmerFields(row), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/swimmers/' + row.id, csrf: '', transfer: { action: '/swimmers/' + row.id + '/transfer', groups: tg, coaches: tc, current_group: row.group_id, current_group_name: curG ? curG.name : 'بدون مجموعة', current_coach_name: curC ? curC.full_name : '—' } } });
+  res.render('form', { form: { title: 'تعديل ملف السباح', subtitle: row.full_name, icon: 'fa-user-pen', active: 'swimmers', action: '/swimmers/' + row.id + '/edit', encType: 'multipart/form-data', fields: await swimmerFields(row, req), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/swimmers/' + row.id, csrf: '', transfer: { action: '/swimmers/' + row.id + '/transfer', groups: tg, coaches: tc, current_group: row.group_id, current_group_name: curG ? curG.name : 'بدون مجموعة', current_coach_name: curC ? curC.full_name : '—' } } });
 });
 router.post('/swimmers/:id/edit', uploadAndStore('avatar'), async function (req, res) {
   const id = Number(req.params.id);

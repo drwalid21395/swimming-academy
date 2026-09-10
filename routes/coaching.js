@@ -3,21 +3,21 @@ const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
-const { activeSport, sportClause, progClause, swimmerOfClause } = require('../lib/sport-context');
+const { activeSport, sportClause, progClause, groupClause, swimmerOfClause } = require('../lib/sport-context');
 const router = express.Router();
 
-async function swimmerOptions() {
-  return (await db.prepare('SELECT id, full_name, membership_no, level_id FROM swimmers WHERE deleted_at IS NULL ORDER BY full_name').all())
+async function swimmerOptions(sid) {
+  return (await db.prepare('SELECT id, full_name, membership_no, level_id FROM swimmers WHERE deleted_at IS NULL' + progClause(sid, 'swimmers') + ' ORDER BY full_name').all())
     .map(s => ({ value: s.id, label: s.full_name + ' (' + s.membership_no + ')', level: s.level_id || '' }));
 }
-async function coachOptions() {
-  return (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name }));
+async function coachOptions(sid) {
+  return (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches') + ' ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name }));
 }
-async function programOptions() {
-  return (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL ORDER BY name').all()).map(p => ({ value: p.id, label: p.name }));
+async function programOptions(sid) {
+  return (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(sid, 'programs') + ' ORDER BY name').all()).map(p => ({ value: p.id, label: p.name }));
 }
-async function levelOptions() {
-  return (await db.prepare('SELECT * FROM levels ORDER BY order_no').all()).map(l => ({ value: l.id, label: l.name }));
+async function levelOptions(sid) {
+  return (await db.prepare('SELECT * FROM levels WHERE 1=1' + sportClause(sid, 'levels') + ' ORDER BY order_no').all()).map(l => ({ value: l.id, label: l.name }));
 }
 
 async function criteriaFor(levelId) {
@@ -32,8 +32,8 @@ async function generalCriteria() {
 }
 
 /* كل المستويات مع مهاراتها (لنموذج التقييم الشامل) */
-async function levelGroups(currentLevelId) {
-  const levels = await levelOptions();
+async function levelGroups(sid, currentLevelId) {
+  const levels = await levelOptions(sid);
   const groups = [];
   for (const l of levels) {
     groups.push({
@@ -114,8 +114,8 @@ router.get('/assessments', async function (req, res) {
     ],
     rows,
     filters: [
-      { name: 'level_id', label: 'المستوى', options: await levelOptions() },
-      { name: 'coach_id', label: 'الكابتن', options: await coachOptions() },
+      { name: 'level_id', label: 'المستوى', options: await levelOptions(activeSport(req)) },
+      { name: 'coach_id', label: 'الكابتن', options: await coachOptions(activeSport(req)) },
       { name: 'ready_to_advance', label: 'الترقية', options: [{ value: '1', label: 'جاهز للترقية' }, { value: '0', label: 'قيد التدريب' }] }
     ],
     canAdd: canAdd(req.currentUser, 'assessments'), addUrl: canAdd(req.currentUser, 'assessments') ? '/assessments/new' : null, addLabel: 'تقييم جديد',
@@ -149,8 +149,8 @@ router.get('/assessments/new', async function (req, res) {
   }
   res.render('assessment_form', {
     title: 'تقييم فني جديد', active: 'assessments', isEdit: false,
-    action: '/assessments/new', values, levelGroups: await levelGroups(currentLevelId), generalCriteria: await generalCriteria(),
-    swimmers: await swimmerOptions(), coaches: await coachOptions(), programs: await programOptions()
+    action: '/assessments/new', values, levelGroups: await levelGroups(activeSport(req), currentLevelId), generalCriteria: await generalCriteria(),
+    swimmers: await swimmerOptions(activeSport(req)), coaches: await coachOptions(activeSport(req)), programs: await programOptions(activeSport(req))
   });
 });
 router.post('/assessments/new', async function (req, res) {
@@ -252,8 +252,8 @@ router.get('/assessments/:id/edit', async function (req, res) {
   }
   res.render('assessment_form', {
     title: 'تعديل التقييم', active: 'assessments', isEdit: true,
-    action: '/assessments/' + row.id + '/edit', values, levelGroups: await levelGroups(row.level_id != null ? row.level_id : null), generalCriteria: await generalCriteria(),
-    swimmers: await swimmerOptions(), coaches: await coachOptions(), programs: await programOptions()
+    action: '/assessments/' + row.id + '/edit', values, levelGroups: await levelGroups(activeSport(req), row.level_id != null ? row.level_id : null), generalCriteria: await generalCriteria(),
+    swimmers: await swimmerOptions(activeSport(req)), coaches: await coachOptions(activeSport(req)), programs: await programOptions(activeSport(req))
   });
 });
 router.post('/assessments/:id/edit', async function (req, res) {
@@ -297,12 +297,12 @@ async function testTypes() {
   const v = (await db.prepare("SELECT value FROM settings WHERE key = 'test_types'").get() || {}).value;
   try { const a = JSON.parse(v || '[]'); return Array.isArray(a) && a.length ? a : TEST_TYPES_DEFAULT; } catch (e) { return TEST_TYPES_DEFAULT; }
 }
-const testFields = async function (values) {
+const testFields = async function (values, sid) {
   return [
-    { key: 'swimmer_id', label: 'السباح', type: 'select', options: await swimmerOptions(), required: true, section: 'بيانات الاختبار', sectionIcon: 'fa-vial-circle-check' },
+    { key: 'swimmer_id', label: 'السباح', type: 'select', options: await swimmerOptions(sid), required: true, section: 'بيانات الاختبار', sectionIcon: 'fa-vial-circle-check' },
     { key: 'type', label: 'نوع الاختبار', type: 'select', options: (await testTypes()).map(v => ({ value: v, label: v })) },
     { key: 'race_type', label: 'نوع السباق (اكتبه يدوياً)', type: 'text', placeholder: 'مثال: حرة — ظهر — صدر — فراشة' },
-    { key: 'level_id', label: 'المستوى (يظهر مع نوع "مستوى" فقط)', type: 'select', options: await levelOptions() },
+    { key: 'level_id', label: 'المستوى (يظهر مع نوع "مستوى" فقط)', type: 'select', options: await levelOptions(sid) },
     { key: 'date', label: 'تاريخ الاختبار', type: 'date' },
     { key: 'distance_m', label: 'المسافة (متر)', type: 'number', number: true },
     { key: 'time_seconds', label: 'الزمن (ثانية)', type: 'number', number: true, step: '0.01' },
@@ -314,8 +314,8 @@ const testFields = async function (values) {
 };
 
 /* مجموعات التدريب مع السباحين (لنموذج الاختبار الجماعي) */
-async function testGroupsWithSwimmers() {
-  const groups = await db.prepare('SELECT g.id, g.name, g.coach_id FROM groups g WHERE g.deleted_at IS NULL ORDER BY g.name').all();
+async function testGroupsWithSwimmers(sid) {
+  const groups = await db.prepare('SELECT g.id, g.name, g.coach_id FROM groups g WHERE g.deleted_at IS NULL' + groupClause(sid) + ' ORDER BY g.name').all();
   const result = [];
   for (const g of groups) {
     result.push({ id: g.id, name: g.name, coach_id: g.coach_id, swimmers: await groupSwimmers(g.id) });
@@ -365,8 +365,8 @@ router.get('/tests', async function (req, res) {
     rows,
     filters: [
       { name: 'type', label: 'النوع', options: (await testTypes()).map(v => ({ value: v, label: v })) },
-      { name: 'level_id', label: 'المستوى', options: await levelOptions() },
-      { name: 'coach_id', label: 'الكابتن', options: await coachOptions() },
+      { name: 'level_id', label: 'المستوى', options: await levelOptions(activeSport(req)) },
+      { name: 'coach_id', label: 'الكابتن', options: await coachOptions(activeSport(req)) },
       { name: 'status', label: 'النتيجة', options: [{ value: 'اجتاز', label: 'اجتاز' }, { value: 'لم يجتز', label: 'لم يجتز' }] }
     ],
     canAdd: canAdd(req.currentUser, 'tests'), addUrl: canAdd(req.currentUser, 'tests') ? '/tests/new' : null, addLabel: 'اختبار جديد',
@@ -381,8 +381,8 @@ router.get('/tests', async function (req, res) {
 router.get('/tests/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'tests')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   res.render('test_group_form', {
-    form: { title: 'اختبار جديد', subtitle: 'تسجيل اختبار لسباح واحد أو لكل سباح في مجموعة', icon: 'fa-plus', active: 'tests', action: '/tests/new', fields: await testFields({}), values: {}, submitLabel: 'حفظ الاختبار', cancelUrl: '/tests', csrf: '' },
-    groups: await testGroupsWithSwimmers(), testTypes: await testTypes(), levelOptions: await levelOptions(), swimmerOptions: await swimmerOptions()
+    form: { title: 'اختبار جديد', subtitle: 'تسجيل اختبار لسباح واحد أو لكل سباح في مجموعة', icon: 'fa-plus', active: 'tests', action: '/tests/new', fields: await testFields({}, activeSport(req)), values: {}, submitLabel: 'حفظ الاختبار', cancelUrl: '/tests', csrf: '' },
+    groups: await testGroupsWithSwimmers(activeSport(req)), testTypes: await testTypes(), levelOptions: await levelOptions(activeSport(req)), swimmerOptions: await swimmerOptions(activeSport(req))
   });
 });
 router.post('/tests/new', async function (req, res) {
@@ -428,7 +428,7 @@ router.get('/tests/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'tests')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const row = await db.prepare('SELECT * FROM tests WHERE id=?').get(Number(req.params.id));
   if (!row) return res.redirect('/tests');
-  res.render('form', { form: { title: 'تعديل الاختبار', subtitle: 'تحديث نتيجة الاختبار', icon: 'fa-pen', active: 'tests', action: '/tests/' + row.id + '/edit', fields: testFields(row), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/tests', csrf: '' } });
+  res.render('form', { form: { title: 'تعديل الاختبار', subtitle: 'تحديث نتيجة الاختبار', icon: 'fa-pen', active: 'tests', action: '/tests/' + row.id + '/edit', fields: testFields(row, activeSport(req)), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/tests', csrf: '' } });
 });
 router.post('/tests/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'tests')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -453,7 +453,7 @@ router.post('/tests/:id/delete', async function (req, res) {
 /* ============================================================== */
 router.get('/measurements', async function (req, res) {
   if (!canView(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT pm.*, s.full_name AS swimmer_name, s.membership_no FROM player_measurements pm LEFT JOIN swimmers s ON s.id = pm.swimmer_id ORDER BY pm.date DESC LIMIT 200`).all();
+  const rows = await db.prepare(`SELECT pm.*, s.full_name AS swimmer_name, s.membership_no FROM player_measurements pm LEFT JOIN swimmers s ON s.id = pm.swimmer_id WHERE 1=1` + swimmerOfClause(activeSport(req), 'pm') + ` ORDER BY pm.date DESC LIMIT 200`).all();
   const page = {
     title: 'الأزمنة الشخصية', subtitle: 'سجل أزمنة السباحين الشخصية (PB)', icon: 'fa-stopwatch', module: 'teams', active: 'teams',
     columns: [
@@ -476,7 +476,7 @@ router.get('/measurements/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   res.render('form', { form: { title: 'زمن شخصي جديد', subtitle: 'تسجيل أفضل زمن للسباح', icon: 'fa-plus', active: 'teams', action: '/measurements/new',
     fields: [
-      { key: 'swimmer_id', label: 'السباح', type: 'select', options: await swimmerOptions(), required: true },
+      { key: 'swimmer_id', label: 'السباح', type: 'select', options: await swimmerOptions(activeSport(req)), required: true },
       { key: 'race_type', label: 'السباحة', type: 'select', options: ['حرة', 'ظهر', 'صدر', 'فراشة', 'متنوع'].map(v => ({ value: v, label: v })) },
       { key: 'distance_m', label: 'المسافة (متر)', type: 'number', number: true },
       { key: 'time_seconds', label: 'الزمن (ثانية)', type: 'number', number: true, step: '0.01', required: true },
@@ -502,9 +502,10 @@ router.post('/measurements/:id/delete', async function (req, res) {
 /* ============================================================== */
 /*                           فرق السباحة                          */
 /* ============================================================== */
-const teamFields = async function (values) {
+const teamFields = async function (values, sports, defaultSport) {
   return [
     { key: 'name', label: 'اسم الفريق', type: 'text', required: true, section: 'بيانات الفريق', sectionIcon: 'fa-flag-checkered' },
+    { key: 'sport_id', label: 'اللعبة', type: 'select', options: (sports || []).map(sp => ({ value: Number(sp.id), label: sp.name })), value: (!values.sport_id ? defaultSport : values.sport_id) },
     { key: 'age_group', label: 'الفئة العمرية', type: 'text', hint: 'مثال: تحت 12 سنة' },
     { key: 'coach_id', label: 'المدرب المسؤول', type: 'select', options: await coachOptions() },
     { key: 'branch_id', label: 'الفرع', type: 'select', options: (await db.prepare('SELECT * FROM branches').all()).map(b => ({ value: b.id, label: b.name })) },
@@ -515,7 +516,7 @@ const teamFields = async function (values) {
 
 router.get('/teams', async function (req, res) {
   if (!canView(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT t.*, c.full_name AS coach_name, (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id) AS members FROM teams t LEFT JOIN coaches c ON c.id = t.coach_id ORDER BY t.id`).all();
+  const rows = await db.prepare(`SELECT t.*, c.full_name AS coach_name, (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id) AS members FROM teams t LEFT JOIN coaches c ON c.id = t.coach_id WHERE 1=1` + sportClause(activeSport(req), 't') + ` ORDER BY t.id`).all();
   const page = {
     title: 'فرق السباحة', subtitle: 'فرق الناشئين والبطولات', icon: 'fa-flag-checkered', module: 'teams', active: 'teams',
     columns: [
@@ -525,7 +526,7 @@ router.get('/teams', async function (req, res) {
       { key: 'training_plan', label: 'الخطة التدريبية', html: row => row.training_plan ? (row.training_plan.length > 40 ? row.training_plan.slice(0, 40) + '…' : row.training_plan) : '—' }
     ],
     rows,
-    filters: [{ name: 'coach_id', label: 'المدرب', options: await coachOptions() }],
+    filters: [{ name: 'coach_id', label: 'المدرب', options: await coachOptions(activeSport(req)) }],
     canAdd: canAdd(req.currentUser, 'teams'), addUrl: canAdd(req.currentUser, 'teams') ? '/teams/new' : null, addLabel: 'فريق جديد',
     actions: () => row => [
       { label: 'الأعضاء', icon: 'fa-users', href: '/teams/' + row.id },
@@ -538,13 +539,13 @@ router.get('/teams', async function (req, res) {
 
 router.get('/teams/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  res.render('form', { form: { title: 'فريق جديد', subtitle: 'إنشاء فريق سباحة', icon: 'fa-plus', active: 'teams', action: '/teams/new', fields: teamFields({}), values: {}, submitLabel: 'إنشاء الفريق', cancelUrl: '/teams', csrf: '' } });
+  res.render('form', { form: { title: 'فريق جديد', subtitle: 'إنشاء فريق سباحة', icon: 'fa-plus', active: 'teams', action: '/teams/new', fields: teamFields({}, res.locals.adminSports || [], activeSport(req)), values: {}, submitLabel: 'إنشاء الفريق', cancelUrl: '/teams', csrf: '' } });
 });
 router.post('/teams/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
-  const info = await db.prepare('INSERT INTO teams (name, age_group, coach_id, branch_id, description, training_plan) VALUES (?,?,?,?,?,?)')
-    .run(b.name, b.age_group || '', b.coach_id || null, b.branch_id || null, b.description || '', b.training_plan || '');
+  const info = await db.prepare('INSERT INTO teams (name, age_group, coach_id, branch_id, description, training_plan, sport_id) VALUES (?,?,?,?,?,?,?)')
+    .run(b.name, b.age_group || '', b.coach_id || null, b.branch_id || null, b.description || '', b.training_plan || '', Number(b.sport_id) || activeSport(req) || 0);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'teams', info.lastInsertRowid, 'فريق جديد: ' + b.name, req);
   setFlash(res, { type: 'success', message: 'تم إنشاء الفريق' });
   res.redirect('/teams/' + info.lastInsertRowid);
@@ -554,10 +555,10 @@ router.post('/teams/new', async function (req, res) {
 router.get('/teams/:id', async function (req, res) {
   if (!canView(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
-  const t = await db.prepare(`SELECT t.*, c.full_name AS coach_name, b.name AS branch_name FROM teams t LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN branches b ON b.id = t.branch_id WHERE t.id = ?`).get(id);
+  const t = await db.prepare(`SELECT t.*, c.full_name AS coach_name, b.name AS branch_name FROM teams t LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN branches b ON b.id = t.branch_id WHERE t.id = ?` + sportClause(activeSport(req), 't')).get(id);
   if (!t) return res.redirect('/teams');
   const members = await db.prepare(`SELECT tm.*, s.full_name, s.membership_no, s.birth_date FROM team_members tm JOIN swimmers s ON s.id = tm.swimmer_id WHERE tm.team_id = ? ORDER BY s.full_name`).all(id);
-  const swimmers = await db.prepare(`SELECT id, full_name, membership_no FROM swimmers WHERE deleted_at IS NULL AND id NOT IN (SELECT swimmer_id FROM team_members WHERE team_id = ?) ORDER BY full_name`).all(id)
+  const swimmers = (await db.prepare(`SELECT id, full_name, membership_no FROM swimmers WHERE deleted_at IS NULL AND id NOT IN (SELECT swimmer_id FROM team_members WHERE team_id = ?)` + progClause(activeSport(req), 'swimmers') + ` ORDER BY full_name`).all(id))
     .map(s => ({ value: s.id, label: s.full_name + ' (' + s.membership_no + ')' }));
   res.render('team_detail', { title: 'تفاصيل الفريق', active: 'teams', t, members, swimmers, money,
     canEdit: canEdit(req.currentUser, 'teams'), canDel: canDel(req.currentUser, 'teams') });
@@ -566,14 +567,14 @@ router.get('/teams/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const row = await db.prepare('SELECT * FROM teams WHERE id=?').get(Number(req.params.id));
   if (!row) return res.redirect('/teams');
-  res.render('form', { form: { title: 'تعديل الفريق', subtitle: row.name, icon: 'fa-pen', active: 'teams', action: '/teams/' + row.id + '/edit', fields: teamFields(row), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/teams/' + row.id, csrf: '' } });
+  res.render('form', { form: { title: 'تعديل الفريق', subtitle: row.name, icon: 'fa-pen', active: 'teams', action: '/teams/' + row.id + '/edit', fields: teamFields(row, res.locals.adminSports || [], activeSport(req)), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/teams/' + row.id, csrf: '' } });
 });
 router.post('/teams/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
   const b = req.body;
-  await db.prepare('UPDATE teams SET name=?, age_group=?, coach_id=?, branch_id=?, description=?, training_plan=? WHERE id=?')
-    .run(b.name, b.age_group || '', b.coach_id || null, b.branch_id || null, b.description || '', b.training_plan || '', id);
+  await db.prepare('UPDATE teams SET name=?, age_group=?, coach_id=?, branch_id=?, description=?, training_plan=?, sport_id=? WHERE id=?')
+    .run(b.name, b.age_group || '', b.coach_id || null, b.branch_id || null, b.description || '', b.training_plan || '', Number(b.sport_id) || activeSport(req) || 0, id);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'teams', id, 'تعديل فريق', req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/teams/' + id);
@@ -610,9 +611,10 @@ router.post('/teams/:id/members/:mid/delete', async function (req, res) {
 /*                           البطولات                             */
 /* ============================================================== */
 const COMP_TYPES = ['محلية', 'إقليمية', 'وطنية', 'دولية', 'صيفية', 'أخرى'];
-const compFields = async function (values) {
+const compFields = async function (values, sports, defaultSport) {
   return [
     { key: 'name', label: 'اسم البطولة', type: 'text', required: true, section: 'بيانات البطولة', sectionIcon: 'fa-trophy' },
+    { key: 'sport_id', label: 'اللعبة', type: 'select', options: (sports || []).map(sp => ({ value: Number(sp.id), label: sp.name })), value: (!values.sport_id ? defaultSport : values.sport_id) },
     { key: 'type', label: 'النوع', type: 'select', options: COMP_TYPES.map(v => ({ value: v, label: v })) },
     { key: 'status', label: 'الحالة', type: 'select', options: [{ value: 'قادمة', label: 'قادمة' }, { value: 'جارية', label: 'جارية' }, { value: 'منتهية', label: 'منتهية' }] },
     { key: 'date', label: 'تاريخ البطولة', type: 'date' },
@@ -625,7 +627,7 @@ const compFields = async function (values) {
 
 router.get('/competitions', async function (req, res) {
   if (!canView(req.currentUser, 'competitions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT c.*, b.name AS branch_name, (SELECT COUNT(*) FROM competition_results cr WHERE cr.competition_id = c.id) AS results FROM competitions c LEFT JOIN branches b ON b.id = c.branch_id ORDER BY c.date DESC`).all();
+  const rows = await db.prepare(`SELECT c.*, b.name AS branch_name, (SELECT COUNT(*) FROM competition_results cr WHERE cr.competition_id = c.id) AS results FROM competitions c LEFT JOIN branches b ON b.id = c.branch_id WHERE 1=1` + sportClause(activeSport(req), 'c') + ` ORDER BY c.date DESC`).all();
   const page = {
     title: 'البطولات', subtitle: 'البطولات والمسابقات ونتائجها', icon: 'fa-trophy', module: 'competitions', active: 'competitions',
     columns: [
@@ -652,13 +654,13 @@ router.get('/competitions', async function (req, res) {
 
 router.get('/competitions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'competitions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  res.render('form', { form: { title: 'بطولة جديدة', subtitle: 'تسجيل بطولة أو مسابقة', icon: 'fa-plus', active: 'competitions', action: '/competitions/new', fields: await compFields({}), values: {}, submitLabel: 'إنشاء البطولة', cancelUrl: '/competitions', csrf: '' } });
+  res.render('form', { form: { title: 'بطولة جديدة', subtitle: 'تسجيل بطولة أو مسابقة', icon: 'fa-plus', active: 'competitions', action: '/competitions/new', fields: await compFields({}, res.locals.adminSports || [], activeSport(req)), values: {}, submitLabel: 'إنشاء البطولة', cancelUrl: '/competitions', csrf: '' } });
 });
 router.post('/competitions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'competitions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
-  const info = await db.prepare('INSERT INTO competitions (name, type, date, end_date, place, branch_id, status, note) VALUES (?,?,?,?,?,?,?,?)')
-    .run(b.name, b.type || 'محلية', b.date || null, b.end_date || null, b.place || '', b.branch_id || null, b.status || 'قادمة', b.note || '');
+  const info = await db.prepare('INSERT INTO competitions (name, type, date, end_date, place, branch_id, status, note, sport_id) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(b.name, b.type || 'محلية', b.date || null, b.end_date || null, b.place || '', b.branch_id || null, b.status || 'قادمة', b.note || '', Number(b.sport_id) || activeSport(req) || 0);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'competitions', info.lastInsertRowid, 'بطولة جديدة: ' + b.name, req);
   setFlash(res, { type: 'success', message: 'تم إنشاء البطولة' });
   res.redirect('/competitions/' + info.lastInsertRowid);
@@ -668,11 +670,11 @@ router.post('/competitions/new', async function (req, res) {
 router.get('/competitions/:id', async function (req, res) {
   if (!canView(req.currentUser, 'competitions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
-  const c = await db.prepare(`SELECT c.*, b.name AS branch_name FROM competitions c LEFT JOIN branches b ON b.id = c.branch_id WHERE c.id = ?`).get(id);
+  const c = await db.prepare(`SELECT c.*, b.name AS branch_name FROM competitions c LEFT JOIN branches b ON b.id = c.branch_id WHERE c.id = ?` + sportClause(activeSport(req), 'c')).get(id);
   if (!c) return res.redirect('/competitions');
   const results = await db.prepare(`SELECT cr.*, s.full_name, s.membership_no FROM competition_results cr LEFT JOIN swimmers s ON s.id = cr.swimmer_id WHERE cr.competition_id = ? ORDER BY cr.distance_m, cr.time_seconds`).all(id);
   const teamIds = (await db.prepare('SELECT DISTINCT team_id FROM team_members').all()).map(t => t.team_id);
-  const swimmers = (await db.prepare('SELECT id, full_name, membership_no FROM swimmers WHERE deleted_at IS NULL ORDER BY full_name').all()).map(s => ({ value: s.id, label: s.full_name + ' (' + s.membership_no + ')' }));
+  const swimmers = (await db.prepare('SELECT id, full_name, membership_no FROM swimmers WHERE deleted_at IS NULL' + progClause(activeSport(req), 'swimmers') + ' ORDER BY full_name').all()).map(s => ({ value: s.id, label: s.full_name + ' (' + s.membership_no + ')' }));
   res.render('competition_detail', { title: 'تفاصيل البطولة', active: 'competitions', c, results, swimmers, money,
     canEdit: canEdit(req.currentUser, 'competitions'), canDel: canDel(req.currentUser, 'competitions') });
 });
@@ -680,14 +682,14 @@ router.get('/competitions/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'competitions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const row = await db.prepare('SELECT * FROM competitions WHERE id=?').get(Number(req.params.id));
   if (!row) return res.redirect('/competitions');
-  res.render('form', { form: { title: 'تعديل البطولة', subtitle: row.name, icon: 'fa-pen', active: 'competitions', action: '/competitions/' + row.id + '/edit', fields: await compFields(row), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/competitions/' + row.id, csrf: '' } });
+  res.render('form', { form: { title: 'تعديل البطولة', subtitle: row.name, icon: 'fa-pen', active: 'competitions', action: '/competitions/' + row.id + '/edit', fields: await compFields(row, res.locals.adminSports || [], activeSport(req)), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/competitions/' + row.id, csrf: '' } });
 });
 router.post('/competitions/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'competitions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
   const b = req.body;
-  await db.prepare('UPDATE competitions SET name=?, type=?, date=?, end_date=?, place=?, branch_id=?, status=?, note=? WHERE id=?')
-    .run(b.name, b.type || 'محلية', b.date || null, b.end_date || null, b.place || '', b.branch_id || null, b.status || 'قادمة', b.note || '', id);
+  await db.prepare('UPDATE competitions SET name=?, type=?, date=?, end_date=?, place=?, branch_id=?, status=?, note=?, sport_id=? WHERE id=?')
+    .run(b.name, b.type || 'محلية', b.date || null, b.end_date || null, b.place || '', b.branch_id || null, b.status || 'قادمة', b.note || '', Number(b.sport_id) || activeSport(req) || 0, id);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'competitions', id, 'تعديل بطولة', req);
   res.redirect('/competitions/' + id);
 });

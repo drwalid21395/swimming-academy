@@ -21,8 +21,9 @@ async function programTypes() {
 /* ============================================================== */
 router.get('/levels', async function (req, res) {
   if (!canView(req.currentUser, 'levels')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const sid = activeSport(req);
   const levels = await db.prepare(`SELECT l.*, (SELECT COUNT(*) FROM assessment_criteria c WHERE c.level_id = l.id) AS skills_count,
-    (SELECT COUNT(*) FROM swimmers s WHERE s.level_id = l.id) AS swimmers_count FROM levels l ORDER BY l.order_no`).all();
+    (SELECT COUNT(*) FROM swimmers s WHERE s.level_id = l.id` + progClause(sid, 's') + `) AS swimmers_count FROM levels l WHERE 1=1` + sportClause(sid, 'l') + ` ORDER BY l.order_no`).all();
   const skillsByLevel = {};
   (await db.prepare('SELECT level_id, name FROM assessment_criteria ORDER BY order_no, id').all()).forEach(c => {
     (skillsByLevel[c.level_id] = skillsByLevel[c.level_id] || []).push(c.name);
@@ -50,20 +51,20 @@ router.get('/levels', async function (req, res) {
   res.render('list', { page });
 });
 
-async function levelForm(values, skills) {
+async function levelForm(values, skills, sports, defaultSport) {
   const sharedSkills = await db.prepare('SELECT * FROM assessment_criteria WHERE level_id IS NULL ORDER BY order_no, id').all();
-  return { title: values.id ? 'تعديل المستوى' : 'مستوى جديد', subtitle: values.id ? values.name : 'إضافة مستوى جديد بمهاراته', icon: values.id ? 'fa-pen' : 'fa-plus', active: 'levels', action: values.id ? '/levels/' + values.id + '/edit' : '/levels/new', values, skills, sharedSkills, submitLabel: 'حفظ', cancelUrl: '/levels' };
+  return { title: values.id ? 'تعديل المستوى' : 'مستوى جديد', subtitle: values.id ? values.name : 'إضافة مستوى جديد بمهاراته', icon: values.id ? 'fa-pen' : 'fa-plus', active: 'levels', action: values.id ? '/levels/' + values.id + '/edit' : '/levels/new', values, skills, sharedSkills, sports: sports || [], defaultSport: defaultSport || (sports && sports[0] && Number(sports[0].id)) || 0, submitLabel: 'حفظ', cancelUrl: '/levels' };
 }
 
 router.get('/levels/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'levels')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  res.render('levels_form', await levelForm({ order_no: (await db.prepare('SELECT COALESCE(MAX(order_no),0)+1 n FROM levels').get()).n }, []));
+  res.render('levels_form', await levelForm({ order_no: (await db.prepare('SELECT COALESCE(MAX(order_no),0)+1 n FROM levels').get()).n }, [], res.locals.adminSports || [], activeSport(req)));
 });
 router.post('/levels/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'levels')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
-  const info = await db.prepare('INSERT INTO levels (name, order_no, color, description) VALUES (?,?,?,?)')
-    .run((b.name || '').trim(), Number(b.order_no || 1), b.color || '#0284c7', b.description || '');
+  const info = await db.prepare('INSERT INTO levels (name, order_no, color, description, sport_id) VALUES (?,?,?,?,?)')
+    .run((b.name || '').trim(), Number(b.order_no || 1), b.color || '#0284c7', b.description || '', Number(b.sport_id) || activeSport(req) || 1);
   await saveSkills(info.lastInsertRowid, b);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'levels', info.lastInsertRowid, 'مستوى جديد: ' + b.name, req);
   setFlash(res, { type: 'success', message: 'تم حفظ المستوى ومهاراته' });
@@ -74,14 +75,14 @@ router.get('/levels/:id/edit', async function (req, res) {
   const row = await db.prepare('SELECT * FROM levels WHERE id = ?').get(Number(req.params.id));
   if (!row) return res.redirect('/levels');
   const skills = await db.prepare('SELECT * FROM assessment_criteria WHERE level_id = ? ORDER BY order_no').all(row.id);
-  res.render('levels_form', await levelForm(row, skills));
+  res.render('levels_form', await levelForm(row, skills, res.locals.adminSports || [], activeSport(req)));
 });
 router.post('/levels/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'levels')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
   const b = req.body;
-  await db.prepare('UPDATE levels SET name=?, order_no=?, color=?, description=? WHERE id=?')
-    .run((b.name || '').trim(), Number(b.order_no || 1), b.color || '#0284c7', b.description || '', id);
+  await db.prepare('UPDATE levels SET name=?, order_no=?, color=?, description=?, sport_id=? WHERE id=?')
+    .run((b.name || '').trim(), Number(b.order_no || 1), b.color || '#0284c7', b.description || '', Number(b.sport_id) || activeSport(req) || 1, id);
   await saveSkills(id, b);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'levels', id, 'تعديل مستوى: ' + b.name, req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });

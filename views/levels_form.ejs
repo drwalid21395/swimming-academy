@@ -12,6 +12,14 @@
       <div class="form-grid">
         <div class="full form-section-title"><i class="fas fa-signal"></i> بيانات المستوى</div>
         <div class="form-group">
+          <label>اللعبة</label>
+          <select class="form-control" name="sport_id">
+            <% (sports || []).forEach(function (sp) { %>
+              <option value="<%= sp.id %>" <%= String((!values.sport_id ? defaultSport : values.sport_id)) === String(sp.id) ? 'selected' : '' %>><%= sp.name %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div class="form-group">
           <label>اسم المستوى <span class="req">*</span></label>
           <input type="text" class="form-control" name="name" required value="<%= values.name || '' %>">
         </div>
