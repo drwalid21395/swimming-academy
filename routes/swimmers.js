@@ -318,14 +318,14 @@ router.get('/swimmers/new', async function (req, res) {
 
 const SW_FK_COLS = ['guardian_id', 'level_id', 'group_id', 'coach_id', 'program_id'];
 
-async function resolveGuardian(b) {
+async function resolveGuardian(d, b) {
   const name = (b.guardian_name || '').trim();
   if (b.guardian_id) return Number(b.guardian_id);
   if (!name) return null;
-  const existing = await db.prepare('SELECT id FROM guardians WHERE full_name = ? AND deleted_at IS NULL').get(name);
+  const existing = await d.get('SELECT id FROM guardians WHERE full_name = ? AND deleted_at IS NULL', name);
   if (existing) return existing.id;
-  const info = await db.prepare('INSERT INTO guardians (full_name, relation, phone) VALUES (?,?,?)')
-    .run(name, b.guardian_relation || 'أب', b.guardian_phone || null);
+  const info = await d.run('INSERT INTO guardians (full_name, relation, phone) VALUES (?,?,?)',
+    name, b.guardian_relation || 'أب', b.guardian_phone || null);
   return info.lastInsertRowid;
 }
 
@@ -337,9 +337,9 @@ function swimmerVal(c, b, avatar, guardianId) {
   return v;
 }
 
-async function syncSwimmerGroups(swimmerId, groupId) {
-  await db.prepare('DELETE FROM swimmer_group WHERE swimmer_id = ?').run(swimmerId);
-  if (groupId) await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) VALUES (?,?)').run(swimmerId, groupId);
+async function syncSwimmerGroups(d, swimmerId, groupId) {
+  await d.run('DELETE FROM swimmer_group WHERE swimmer_id = ?', swimmerId);
+  if (groupId) await d.run('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) VALUES (?,?)', swimmerId, groupId);
 }
 
 router.post('/swimmers/new', uploadAndStore('avatar'), async function (req, res) {
@@ -354,21 +354,22 @@ router.post('/swimmers/new', uploadAndStore('avatar'), async function (req, res)
   let lastErr;
   for (let attempt = 0; attempt <= 5; attempt++) {
     const membership = (attempt === 0 && suppliedNo) ? suppliedNo : await nextMembership();
-    await db.client.execute('BEGIN');
+    let tx;
     try {
-      const guardianId = await resolveGuardian(b);
+      tx = await db.transaction();
+      const guardianId = await resolveGuardian(tx, b);
       const vals = cols.map(c => swimmerVal(c, b, avatar, guardianId));
       vals[0] = membership;
       vals[18] = b.registration_date || today();
       vals[19] = b.status || 'نشط';
-      const info = await db.prepare(`INSERT INTO swimmers (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(membership, ...vals.slice(1));
-      await syncSwimmerGroups(info.lastInsertRowid, b.group_id);
-      await db.client.execute('COMMIT');
+      const info = await tx.run(`INSERT INTO swimmers (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`, membership, ...vals.slice(1));
+      await syncSwimmerGroups(tx, info.lastInsertRowid, b.group_id);
+      await tx.commit();
       audit(req.currentUser.id, req.currentUser.full_name, 'add', 'swimmers', info.lastInsertRowid, 'تسجيل لاعب جديد: ' + String(b.full_name || '').trim(), req);
       setFlash(res, { type: 'success', message: 'تم تسجيل اللاعب بنجاح' });
       return res.redirect('/swimmers/' + info.lastInsertRowid);
     } catch (e) {
-      await db.client.execute('ROLLBACK').catch(() => {});
+      if (tx && tx.rollback) await tx.rollback().catch(() => {});
       lastErr = e;
       if (isUniqueViolation(e) && attempt < 5) continue;
       break;

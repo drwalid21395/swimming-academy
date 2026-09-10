@@ -55,10 +55,11 @@ async function convertReservation(req, res, r) {
   let lastErr;
   for (let attempt = 0; attempt <= 5; attempt++) {
     const membership_no = await nextMembership();
-    await db.client.execute('BEGIN');
+    let tx;
     try {
+      tx = await db.transaction();
       if (!levelId && r.initial_level) {
-        const lvl = await db.prepare('SELECT id FROM levels WHERE name = ?').get(r.initial_level);
+        const lvl = await tx.get('SELECT id FROM levels WHERE name = ?', r.initial_level);
         if (lvl) levelId = lvl.id;
       }
 
@@ -66,26 +67,26 @@ async function convertReservation(req, res, r) {
       let guardianId = null;
       const gPhone = String(r.guardian_phone || r.phone || '').trim();
       if (gPhone) {
-        const g = await db.prepare(`INSERT INTO guardians (full_name, phone, whatsapp, relation, notes)
-          VALUES (?,?,?,?,?)`)
-          .run(String(r.swimmer_name || '') + ' - ولي الأمر', gPhone, String(r.whatsapp || '').trim() || null, 'ولي أمر',
-            'حول من حجز رقم ' + r.id + (r.notes ? ': ' + r.notes : ''));
+        const g = await tx.run(`INSERT INTO guardians (full_name, phone, whatsapp, relation, notes)
+          VALUES (?,?,?,?,?)`,
+          String(r.swimmer_name || '') + ' - ولي الأمر', gPhone, String(r.whatsapp || '').trim() || null, 'ولي أمر',
+          'حول من حجز رقم ' + r.id + (r.notes ? ': ' + r.notes : ''));
         guardianId = g.lastInsertRowid;
       }
 
       /* إنشاء اللاعب */
-      const sw = await db.prepare(`INSERT INTO swimmers (membership_no, full_name, birth_date, gender, phone, guardian_id, level_id, program_id, registration_date, status, notes)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(membership_no, r.swimmer_name, r.birth_date || null, r.gender || 'ذكر', String(r.phone || '').trim() || null,
-          guardianId, levelId, r.program_id || null, today(), 'نشط',
-          'حول من حجز رقم ' + r.id + (r.notes ? ': ' + r.notes : ''));
+      const sw = await tx.run(`INSERT INTO swimmers (membership_no, full_name, birth_date, gender, phone, guardian_id, level_id, program_id, registration_date, status, notes)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        membership_no, r.swimmer_name, r.birth_date || null, r.gender || 'ذكر', String(r.phone || '').trim() || null,
+        guardianId, levelId, r.program_id || null, today(), 'نشط',
+        'حول من حجز رقم ' + r.id + (r.notes ? ': ' + r.notes : ''));
       const swimmerId = sw.lastInsertRowid;
 
       /* ربط الحجز باللاعب وولي الأمر */
-      await db.prepare(`UPDATE reservations SET status = 'تم التحويل للاعب', swimmer_id = ?, guardian_id = ?, converted_at = datetime('now','localtime') WHERE id = ?`)
-        .run(swimmerId, guardianId, r.id);
+      await tx.run(`UPDATE reservations SET status = 'تم التحويل للاعب', swimmer_id = ?, guardian_id = ?, converted_at = datetime('now','localtime') WHERE id = ?`,
+        swimmerId, guardianId, r.id);
 
-      await db.client.execute('COMMIT');
+      await tx.commit();
 
       audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'reservations', r.id,
         'تحويل الحجز إلى لاعب (' + membership_no + ') وانتظار تسكين المجموعة', req);
@@ -105,7 +106,7 @@ async function convertReservation(req, res, r) {
       });
       return res.redirect('/swimmers/' + swimmerId);
     } catch (e) {
-      await db.client.execute('ROLLBACK').catch(() => {});
+      if (tx && tx.rollback) await tx.rollback().catch(() => {});
       lastErr = e;
       if (isUniqueViolation(e) && attempt < 5) continue;
       break;
