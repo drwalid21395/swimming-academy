@@ -209,7 +209,12 @@ app.use(async function (req, res, next) {
       try {
         const sports = (await enabledSportsForAcademy(acadId)).filter(r => r.is_enabled);
         res.locals.adminSports = sports;
-        if (req.activeSportId && !sports.some(s => Number(s.id) === req.activeSportId)) {
+        /* أكاديمية برياضة واحدة فقط: لا نطبّق فلتر الرياضة إطلاقاً،
+           حتى لا تختفي السجلات الجديدة المسجّلة بدون برنامج من القوائم. */
+        if (sports.length <= 1) {
+          req.activeSportId = 0;
+          res.locals.activeSportId = 0;
+        } else if (req.activeSportId && !sports.some(s => Number(s.id) === req.activeSportId)) {
           req.activeSportId = 0;
           res.locals.activeSportId = 0;
         }
