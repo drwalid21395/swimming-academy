@@ -269,7 +269,7 @@ router.get('/swimmers', async function (req, res) {
   const rows = await db.prepare(sql).all(...params);
 
   const page = {
-    title: 'اللاعبون واللاعبون', subtitle: 'إدارة الملفات الكاملة لللاعبين', icon: 'fa-person-swimming', module: 'swimmers', active: 'swimmers',
+    title: 'اللاعبون', subtitle: 'إدارة الملفات الكاملة لللاعبين', icon: 'fa-person-swimming', module: 'swimmers', active: 'swimmers',
     columns: [
       { key: 'full_name', label: 'اللاعب', html: row => `<div class="avatar-cell">${row.avatar ? `<div class="avatar-sm avatar-img"><img src="${row.avatar}" alt=""></div>` : `<div class="avatar-sm">${(row.full_name || 'س').trim().charAt(0)}</div>`}<div><div class="cell-title">${row.full_name}</div><div class="cell-sub">${row.membership_no}</div></div></div>` },
       { key: 'guardian_name', label: 'ولي الأمر' },
