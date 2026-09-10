@@ -3,6 +3,7 @@ const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON, today, canView, canExport, canDel } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
+const { nextMembership, isUniqueViolation } = require('../lib/membership');
 const crud = require('../lib/crud');
 const { uploadAndStore, removeUploaded } = require('../lib/upload');
 const { activeSport, sportClause, progClause, swimmerClause, groupClause, sessionClause } = require('../lib/sport-context');
@@ -343,19 +344,40 @@ async function syncSwimmerGroups(swimmerId, groupId) {
 
 router.post('/swimmers/new', uploadAndStore('avatar'), async function (req, res) {
   const b = req.body;
-  const membership = b.membership_no || await nextMembership();
-  const guardianId = await resolveGuardian(b);
   const avatar = req.file ? '/uploads/' + req.file.filename : null;
   const cols = ['membership_no','full_name','birth_date','gender','phone','address','school','guardian_id','blood_type','emergency_name','emergency_phone','allergies','chronic_diseases','medical_note','level_id','program_id','group_id','coach_id','registration_date','status','notes','avatar'];
-  const vals = cols.map(c => swimmerVal(c, b, avatar, guardianId));
-  if (!vals[1]) return res.status(400).send('الاسم مطلوب');
-  vals[18] = b.registration_date || today();
-  vals[19] = b.status || 'نشط';
-  const info = await db.prepare(`INSERT INTO swimmers (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(membership, ...vals.slice(1));
-  await syncSwimmerGroups(info.lastInsertRowid, b.group_id);
-  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'swimmers', info.lastInsertRowid, 'تسجيل لاعب جديد: ' + b.full_name, req);
-  setFlash(res, { type: 'success', message: 'تم تسجيل اللاعب بنجاح' });
-  res.redirect('/swimmers/' + info.lastInsertRowid);
+  if (!String(b.full_name || '').trim()) return res.status(400).send('الاسم مطلوب');
+  const suppliedNo = String(b.membership_no || '').trim();
+
+  /* تسجيل ولي الأمر + اللاعب في معاملة واحدة: عند أي فشل يُلغى كل شيء
+     (لا تبقى أسماء أولياء بلا لاعبين) ويعاد توليد الرقم عند تصادمه. */
+  let lastErr;
+  for (let attempt = 0; attempt <= 5; attempt++) {
+    const membership = (attempt === 0 && suppliedNo) ? suppliedNo : await nextMembership();
+    await db.client.execute('BEGIN');
+    try {
+      const guardianId = await resolveGuardian(b);
+      const vals = cols.map(c => swimmerVal(c, b, avatar, guardianId));
+      vals[0] = membership;
+      vals[18] = b.registration_date || today();
+      vals[19] = b.status || 'نشط';
+      const info = await db.prepare(`INSERT INTO swimmers (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(membership, ...vals.slice(1));
+      await syncSwimmerGroups(info.lastInsertRowid, b.group_id);
+      await db.client.execute('COMMIT');
+      audit(req.currentUser.id, req.currentUser.full_name, 'add', 'swimmers', info.lastInsertRowid, 'تسجيل لاعب جديد: ' + String(b.full_name || '').trim(), req);
+      setFlash(res, { type: 'success', message: 'تم تسجيل اللاعب بنجاح' });
+      return res.redirect('/swimmers/' + info.lastInsertRowid);
+    } catch (e) {
+      await db.client.execute('ROLLBACK').catch(() => {});
+      lastErr = e;
+      if (isUniqueViolation(e) && attempt < 5) continue;
+      break;
+    }
+  }
+  if (avatar) { try { removeUploaded(avatar); } catch (e) { /* تجاهل */ } }
+  console.error('فشل تسجيل لاعب جديد:', (lastErr && lastErr.message) || lastErr);
+  setFlash(res, { type: 'error', message: 'تعذّر تسجيل اللاعب: ' + ((lastErr && lastErr.message) || 'خطأ غير متوقع') });
+  return res.render('form', { form: { title: 'تسجيل لاعب جديد', subtitle: 'إنشاء ملف متكامل للاعب جديد', icon: 'fa-user-plus', active: 'swimmers', action: '/swimmers/new', encType: 'multipart/form-data', fields: await swimmerFields(b, req), values: b, submitLabel: 'تسجيل اللاعب', cancelUrl: '/swimmers', csrf: '' } });
 });
 
 router.get('/swimmers/:id/edit', async function (req, res) {
@@ -889,13 +911,6 @@ function statusBadge(st) {
   const map = { 'نشط': ['badge-success', 'fa-user-check'], 'متوقف مؤقتاً': ['badge-warning', 'fa-pause'], 'مجمد': ['badge-info', 'fa-snowflake'], 'منسحب': ['badge-danger', 'fa-user-minus'], 'خريج': ['badge-purple', 'fa-graduation-cap'] };
   const m = map[st] || ['badge-gray', 'fa-circle'];
   return `<span class="badge ${m[0]}"><i class="fas ${m[1]}"></i> ${st}</span>`;
-}
-
-async function nextMembership() {
-  const last = await db.prepare('SELECT membership_no FROM swimmers ORDER BY id DESC LIMIT 1').get();
-  if (!last) return 'SW-0001';
-  const num = parseInt(last.membership_no.replace(/\D/g, ''), 10) || 0;
-  return 'SW-' + String(num + 1).padStart(4, '0');
 }
 
 function chartScript(history, name) {
