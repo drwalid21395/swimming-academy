@@ -229,7 +229,7 @@ async function submitReserve(req, res, acad, base) {
     swimmer_number: String(b.swimmer_number || '').trim(), notes: String(b.notes || '').trim()
   };
   if (!values.swimmer_name) {
-    return renderPage(req, res, acad, base, 'reserve', { message: 'يرجى إدخال اسم السباح لحجز مكانه', values });
+    return renderPage(req, res, acad, base, 'reserve', { message: 'يرجى إدخال اسم اللاعب لحجز مكانه', values });
   }
   let programName = '';
   let age = null;
@@ -271,7 +271,7 @@ async function submitReserve(req, res, acad, base) {
       'واتساب: ' + (values.whatsapp || '—'),
       'المستوى المبدئي: ' + (values.initial_level || '—'),
       'رقم ولي الأمر: ' + (values.guardian_phone || '—'),
-      'رقم السباح: ' + (values.swimmer_number || '—'),
+      'رقم اللاعب: ' + (values.swimmer_number || '—'),
       values.notes ? 'ملاحظات: ' + values.notes : ''
     ].filter(Boolean).join(' | ');
 

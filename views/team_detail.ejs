@@ -18,7 +18,7 @@
       <% if (canEdit) { %>
         <form method="POST" action="/teams/<%= t.id %>/members" class="flex gap-1 mb-1">
           <select name="swimmer_id" class="form-control" required style="min-width:250px">
-            <option value="">— أضف سباحاً إلى الفريق —</option>
+            <option value="">— أضف لاعباً إلى الفريق —</option>
             <% swimmers.forEach(function (s) { %><option value="<%= s.value %>"><%= s.label %></option><% }); %>
           </select>
           <button class="btn btn-primary" type="submit"><i class="fas fa-user-plus"></i> إضافة</button>
@@ -26,7 +26,7 @@
       <% } %>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>السباح</th><th>رقم العضوية</th><th>تاريخ الانضمام</th><th>الدور</th><% if (canEdit) { %><th></th><% } %></tr></thead>
+          <thead><tr><th>اللاعب</th><th>رقم العضوية</th><th>تاريخ الانضمام</th><th>الدور</th><% if (canEdit) { %><th></th><% } %></tr></thead>
           <tbody>
             <% members.forEach(function (m) { %>
               <tr>
@@ -37,7 +37,7 @@
                 <% if (canEdit) { %>
                   <td>
                     <form method="POST" action="/teams/<%= t.id %>/members/<%= m.id %>/delete" style="display:inline;margin:0">
-                      <button type="submit" class="btn btn-ghost btn-sm text-danger" data-confirm="إخراج هذا السباح من الفريق؟" data-action="submit">إخراج</button>
+                      <button type="submit" class="btn btn-ghost btn-sm text-danger" data-confirm="إخراج هذا اللاعب من الفريق؟" data-action="submit">إخراج</button>
                     </form>
                   </td>
                 <% } %>

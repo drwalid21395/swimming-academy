@@ -17,7 +17,7 @@
     <% if (canEdit) { %>
       <form method="POST" action="/competitions/<%= c.id %>/results" class="form-grid" style="background:var(--bg-soft);padding:14px;border-radius:12px;margin-bottom:14px">
         <div class="form-group">
-          <label>السباح <span class="req">*</span></label>
+          <label>اللاعب <span class="req">*</span></label>
           <select name="swimmer_id" class="form-control" required>
             <option value="">— اختر —</option>
             <% swimmers.forEach(function (s) { %><option value="<%= s.value %>"><%= s.label %></option><% }); %>
@@ -46,7 +46,7 @@
     <% } %>
     <div class="table-wrap">
       <table class="data-table">
-        <thead><tr><th>السباح</th><th>السباحة</th><th>المسافة</th><th>الزمن</th><th>المركز</th><th>التأهل</th><th>PB</th><% if (canEdit) { %><th></th><% } %></tr></thead>
+        <thead><tr><th>اللاعب</th><th>السباحة</th><th>المسافة</th><th>الزمن</th><th>المركز</th><th>التأهل</th><th>PB</th><% if (canEdit) { %><th></th><% } %></tr></thead>
         <tbody>
           <% results.forEach(function (r) { %>
             <tr>

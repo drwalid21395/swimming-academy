@@ -6,14 +6,14 @@ const { setFlash } = require('../lib/auth-cookie');
 const { activeSport, progClause } = require('../lib/sport-context');
 const router = express.Router();
 
-const RESERVE_STATUS = ['جديدة', 'تم التواصل', 'تم الحجز', 'تم التحويل لسباح', 'ملغي'];
+const RESERVE_STATUS = ['جديدة', 'تم التواصل', 'تم الحجز', 'تم التحويل للاعب', 'ملغي'];
 
 function statusBadge(st) {
   const map = {
     'جديدة': ['badge-primary', 'fa-circle'],
     'تم التواصل': ['badge-info', 'fa-phone'],
     'تم الحجز': ['badge-success', 'fa-check'],
-    'تم التحويل لسباح': ['badge-purple', 'fa-person-swimming'],
+    'تم التحويل للاعب': ['badge-purple', 'fa-person-swimming'],
     'ملغي': ['badge-danger', 'fa-ban']
   };
   const m = map[st] || ['badge-gray', 'fa-circle'];
@@ -43,9 +43,9 @@ router.get('/reservations', async function (req, res) {
   res.render('reservations', { page, fmtDateTime });
 });
 
-/* تحويل الحجز إلى سباح: إنشاء ولي أمر + سباح وربطهم، ثم تسكين المجموعة من صفحة السباح */
+/* تحويل الحجز إلى لاعب: إنشاء ولي أمر + لاعب وربطهم، ثم تسكين المجموعة من صفحة اللاعب */
 async function convertReservation(req, res, r) {
-  if (r.swimmer_id) { setFlash(res, { type: 'error', message: 'تم تحويل الحجز إلى سباح مسبقاً' }); return res.redirect('/reservations'); }
+  if (r.swimmer_id) { setFlash(res, { type: 'error', message: 'تم تحويل الحجز إلى لاعب مسبقاً' }); return res.redirect('/reservations'); }
 
   /* رقم العضوية التالي */
   const last = await db.prepare('SELECT membership_no FROM swimmers ORDER BY id DESC LIMIT 1').get();
@@ -70,7 +70,7 @@ async function convertReservation(req, res, r) {
     guardianId = g.lastInsertRowid;
   }
 
-  /* إنشاء السباح */
+  /* إنشاء اللاعب */
   const sw = await db.prepare(`INSERT INTO swimmers (membership_no, full_name, birth_date, gender, phone, guardian_id, level_id, program_id, registration_date, status, notes)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
     .run(membership_no, r.swimmer_name, r.birth_date || null, r.gender || 'ذكر', String(r.phone || '').trim() || null,
@@ -78,17 +78,17 @@ async function convertReservation(req, res, r) {
       'حول من حجز رقم ' + r.id + (r.notes ? ': ' + r.notes : ''));
   const swimmerId = sw.lastInsertRowid;
 
-  /* ربط الحجز بالسباح وولي الأمر */
-  await db.prepare(`UPDATE reservations SET status = 'تم التحويل لسباح', swimmer_id = ?, guardian_id = ?, converted_at = datetime('now','localtime') WHERE id = ?`)
+  /* ربط الحجز باللاعب وولي الأمر */
+  await db.prepare(`UPDATE reservations SET status = 'تم التحويل للاعب', swimmer_id = ?, guardian_id = ?, converted_at = datetime('now','localtime') WHERE id = ?`)
     .run(swimmerId, guardianId, r.id);
 
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'reservations', r.id,
-    'تحويل الحجز إلى سباح (' + membership_no + ') وانتظار تسكين المجموعة', req);
+    'تحويل الحجز إلى لاعب (' + membership_no + ') وانتظار تسكين المجموعة', req);
 
   /* إشعار للمسؤولين لاستكمال تسكين المجموعة */
   try {
     const n = await db.prepare('INSERT INTO notifications (title, message, type, link, is_broadcast, created_by) VALUES (?,?,?,?,?,?)')
-      .run('تحويل حجز لسباح: ' + r.swimmer_name, 'رقم العضوية: ' + membership_no + ' | البرنامج: ' + (r.program_name || '—'), 'حجوزات', '/swimmers/' + swimmerId, 1, req.currentUser.id);
+      .run('تحويل حجز للاعب: ' + r.swimmer_name, 'رقم العضوية: ' + membership_no + ' | البرنامج: ' + (r.program_name || '—'), 'حجوزات', '/swimmers/' + swimmerId, 1, req.currentUser.id);
     const rcpts = await db.prepare("SELECT id FROM users WHERE status='active'").all();
     const insR = db.prepare('INSERT INTO notification_recipients (notification_id, user_id) VALUES (?,?)');
     for (const rc of rcpts) await insR.run(n.lastInsertRowid, rc.id);
@@ -96,7 +96,7 @@ async function convertReservation(req, res, r) {
 
   setFlash(res, {
     type: 'success',
-    message: 'تم تحويل الحجز إلى السباح ' + r.swimmer_name + ' (' + membership_no + ') وولي الأمر — بقي فقط تسكين المجموعة من صفحة السباح'
+    message: 'تم تحويل الحجز إلى اللاعب ' + r.swimmer_name + ' (' + membership_no + ') وولي الأمر — بقي فقط تسكين المجموعة من صفحة اللاعب'
   });
   return res.redirect('/swimmers/' + swimmerId);
 }
@@ -109,8 +109,8 @@ router.post('/reservations/:id/status', async function (req, res) {
   const r = await db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
   if (!r) { setFlash(res, { type: 'error', message: 'الحجز غير موجود' }); return res.redirect('/reservations'); }
 
-  /* اختيار «تم التحويل لسباح» ينفذ التحويل الكامل تلقائياً */
-  if (st === 'تم التحويل لسباح' && !r.swimmer_id) {
+  /* اختيار «تم التحويل للاعب» ينفذ التحويل الكامل تلقائياً */
+  if (st === 'تم التحويل للاعب' && !r.swimmer_id) {
     return convertReservation(req, res, r);
   }
 
@@ -180,8 +180,8 @@ router.get('/reports/reservations.xls', async function (req, res) {
       td.big { white-space: normal; word-wrap: break-word; }
     </style></head><body dir="rtl"><table dir="rtl" style="width:1100px">
       <thead><tr>
-        <th>م</th><th>اسم السباح</th><th>البرنامج</th><th>تاريخ الميلاد</th><th>السن</th><th>النوع</th>
-        <th>الهاتف</th><th>الواتساب</th><th>المستوى المبدئي</th><th>رقم ولي الأمر</th><th>رقم السباح</th>
+        <th>م</th><th>اسم اللاعب</th><th>البرنامج</th><th>تاريخ الميلاد</th><th>السن</th><th>النوع</th>
+        <th>الهاتف</th><th>الواتساب</th><th>المستوى المبدئي</th><th>رقم ولي الأمر</th><th>رقم اللاعب</th>
         <th>الملاحظات</th><th>تاريخ الحجز</th><th>وقت الحجز</th><th>الحالة</th>
       </tr></thead><tbody>${body}</tbody></table></body></html>`;
   res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
@@ -189,7 +189,7 @@ router.get('/reports/reservations.xls', async function (req, res) {
   res.send(html);
 });
 
-/* ===== تحويل الحجز إلى سباح (زر مستقل) ===== */
+/* ===== تحويل الحجز إلى لاعب (زر مستقل) ===== */
 router.post('/reservations/:id/convert', async function (req, res) {
   if (!canEdit(req.currentUser, 'reservations')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);

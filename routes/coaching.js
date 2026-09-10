@@ -99,9 +99,9 @@ router.get('/assessments', async function (req, res) {
     LEFT JOIN swimmers s ON s.id = t.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN levels l ON l.id = t.level_id WHERE 1=1` + swimmerOfClause(activeSport(req), 't') + `
     ORDER BY date DESC`).all();
   const page = {
-    title: 'التقييمات الفنية', subtitle: 'تقييم مهارات السباحين ونتائج الاختبارات', icon: 'fa-clipboard-check', module: 'assessments', active: 'assessments',
+    title: 'التقييمات الفنية', subtitle: 'تقييم مهارات اللاعبين ونتائج الاختبارات', icon: 'fa-clipboard-check', module: 'assessments', active: 'assessments',
     columns: [
-      { key: 'swimmer_name', label: 'السباح', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div></div></div>` },
+      { key: 'swimmer_name', label: 'اللاعب', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div></div></div>` },
       { key: 'kind', label: 'النوع', html: row => row.kind === 'اختبار' ? `<span class="badge badge-warning">اختبار · ${row.t_type || ''}</span>` : `<span class="badge badge-primary">تقييم</span>` },
       { key: 't_race', label: 'نوع السباق', html: row => row.kind === 'اختبار' && row.t_race ? `<span class="badge badge-info">${row.t_race}</span>` : '—' },
       { key: 'date', label: 'التاريخ', html: row => fmtDate(row.date) },
@@ -122,11 +122,11 @@ router.get('/assessments', async function (req, res) {
     headerActions: [{ href: '/tests/new', label: 'اختبار (فردي/جماعي)', icon: 'fa-vial-circle-check', cls: 'btn-outline' }],
     actions: () => row => row.kind === 'اختبار' ? [
       { label: 'تعديل', icon: 'fa-pen', href: '/tests/' + row.id + '/edit' },
-      { label: 'السباح', icon: 'fa-person-swimming', href: '/swimmers/' + row.swimmer_id },
+      { label: 'اللاعب', icon: 'fa-person-swimming', href: '/swimmers/' + row.swimmer_id },
       { label: 'حذف', icon: 'fa-trash', href: '/tests/' + row.id + '/delete', confirm: 'حذف الاختبار؟', cls: 'text-danger' }
     ] : [
       { label: 'عرض', icon: 'fa-eye', href: '/assessments/' + row.id },
-      { label: 'السباح', icon: 'fa-person-swimming', href: '/swimmers/' + row.swimmer_id },
+      { label: 'اللاعب', icon: 'fa-person-swimming', href: '/swimmers/' + row.swimmer_id },
       { label: 'تعديل', icon: 'fa-pen', href: '/assessments/' + row.id + '/edit' },
       { label: 'حذف', icon: 'fa-trash', href: '/assessments/' + row.id + '/delete', confirm: 'حذف التقييم؟', cls: 'text-danger' }
     ]
@@ -199,7 +199,7 @@ router.get('/assessments/:id', async function (req, res) {
     canEdit: canEdit(req.currentUser, 'assessments'), canDel: canDel(req.currentUser, 'assessments') });
 });
 
-/* ترقية السباح لمستوى أعلى من التقييم (خطوة واحدة فقط لمنع تخطي المستويات) */
+/* ترقية اللاعب لمستوى أعلى من التقييم (خطوة واحدة فقط لمنع تخطي المستويات) */
 router.post('/assessments/:id/advance', async function (req, res) {
   if (!canEdit(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
@@ -211,7 +211,7 @@ router.post('/assessments/:id/advance', async function (req, res) {
   }
   const sw = await db.prepare('SELECT id, level_id FROM swimmers WHERE id=?').get(a.swimmer_id);
   if (sw && sw.level_id && sw.level_id !== a.level_id) {
-    setFlash(res, { type: 'error', message: 'لا يمكن الترقية: مستوى التقييم لا يطابق المستوى الحالي للسباح — منعاً لتخطي المستويات' });
+    setFlash(res, { type: 'error', message: 'لا يمكن الترقية: مستوى التقييم لا يطابق المستوى الحالي لللاعب — منعاً لتخطي المستويات' });
     return res.redirect('/assessments/' + id);
   }
   const level = await db.prepare('SELECT * FROM levels ORDER BY order_no').all();
@@ -221,8 +221,8 @@ router.post('/assessments/:id/advance', async function (req, res) {
   await db.prepare('INSERT INTO level_progress (swimmer_id, from_level_id, to_level_id, date, assessment_id, reason) VALUES (?,?,?,?,?,?)')
     .run(a.swimmer_id, a.level_id, nextLvl ? nextLvl.id : null, new Date().toISOString().slice(0, 10), id, 'اجتياز التقييم الفني');
   await db.prepare("UPDATE assessments SET ready_to_advance=0 WHERE id=?").run(id);
-  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'assessments', id, 'ترقية السباح إلى ' + (nextLvl ? nextLvl.name : 'مستوى أعلى'), req);
-  setFlash(res, { type: 'success', message: 'تم ترقية السباح إلى ' + (nextLvl ? nextLvl.name : 'مستوى أعلى') });
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'assessments', id, 'ترقية اللاعب إلى ' + (nextLvl ? nextLvl.name : 'مستوى أعلى'), req);
+  setFlash(res, { type: 'success', message: 'تم ترقية اللاعب إلى ' + (nextLvl ? nextLvl.name : 'مستوى أعلى') });
   res.redirect('/assessments/' + id);
 });
 
@@ -234,7 +234,7 @@ router.get('/assessments/:id/edit', async function (req, res) {
   try { saved = JSON.parse(row.scores || '{}'); } catch (e) { saved = {}; }
   const values = { ...row };
   Object.keys(saved).forEach(k => { values['score_' + k] = saved[k]; });
-  /* تعبئة أحدث تقييم لكل مستوى آخر + المعايير العامة للسباح (تعديل شامل لكل المستويات) */
+  /* تعبئة أحدث تقييم لكل مستوى آخر + المعايير العامة لللاعب (تعديل شامل لكل المستويات) */
   const seen = {};
   await db.prepare('SELECT * FROM assessments WHERE swimmer_id=? AND level_id IS NOT NULL ORDER BY date DESC, id DESC').all(row.swimmer_id)
     .forEach(a => { if (!seen[a.level_id]) { seen[a.level_id] = a; } });
@@ -299,7 +299,7 @@ async function testTypes() {
 }
 const testFields = async function (values, sid) {
   return [
-    { key: 'swimmer_id', label: 'السباح', type: 'select', options: await swimmerOptions(sid), required: true, section: 'بيانات الاختبار', sectionIcon: 'fa-vial-circle-check' },
+    { key: 'swimmer_id', label: 'اللاعب', type: 'select', options: await swimmerOptions(sid), required: true, section: 'بيانات الاختبار', sectionIcon: 'fa-vial-circle-check' },
     { key: 'type', label: 'نوع الاختبار', type: 'select', options: (await testTypes()).map(v => ({ value: v, label: v })) },
     { key: 'race_type', label: 'نوع السباق (اكتبه يدوياً)', type: 'text', placeholder: 'مثال: حرة — ظهر — صدر — فراشة' },
     { key: 'level_id', label: 'المستوى (يظهر مع نوع "مستوى" فقط)', type: 'select', options: await levelOptions(sid) },
@@ -313,7 +313,7 @@ const testFields = async function (values, sid) {
   ];
 };
 
-/* مجموعات التدريب مع السباحين (لنموذج الاختبار الجماعي) */
+/* مجموعات التدريب مع اللاعبين (لنموذج الاختبار الجماعي) */
 async function testGroupsWithSwimmers(sid) {
   const groups = await db.prepare('SELECT g.id, g.name, g.coach_id FROM groups g WHERE g.deleted_at IS NULL' + groupClause(sid) + ' ORDER BY g.name').all();
   const result = [];
@@ -327,7 +327,7 @@ async function groupSwimmers(gid) {
     JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN levels l ON l.id = s.level_id WHERE sg.group_id = ? AND s.deleted_at IS NULL ORDER BY s.full_name`).all(gid);
 }
 
-/* حفظ نتيجة اختبار لسباح واحد (سجل مستقل في الاختبارات) + ترقية عند اجتياز اختبار المستوى */
+/* حفظ نتيجة اختبار للاعب واحد (سجل مستقل في الاختبارات) + ترقية عند اجتياز اختبار المستوى */
 async function saveTestResult(o) {
   const passed = o.passed === '1' || o.passed === 1 || o.passed === true;
   const status = o.status || (passed ? 'اجتاز' : 'لم يجتز');
@@ -353,7 +353,7 @@ router.get('/tests', async function (req, res) {
   const page = {
     title: 'الاختبارات', subtitle: 'اختبارات المستويات والأزمنة', icon: 'fa-vial-circle-check', module: 'tests', active: 'tests',
     columns: [
-      { key: 'swimmer_name', label: 'السباح', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#06b6d4,#0ea5e9)">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div></div></div>` },
+      { key: 'swimmer_name', label: 'اللاعب', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#06b6d4,#0ea5e9)">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div></div></div>` },
       { key: 'type', label: 'النوع', html: row => `<span class="badge badge-primary">${row.type}</span>` },
       { key: 'race_type', label: 'نوع السباق', html: row => row.race_type ? `<span class="badge badge-info">${row.race_type}</span>` : '—' },
       { key: 'level_name', label: 'المستوى', html: row => row.level_name ? `<span class="badge badge-violet">${row.level_name}</span>` : '—' },
@@ -381,7 +381,7 @@ router.get('/tests', async function (req, res) {
 router.get('/tests/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'tests')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   res.render('test_group_form', {
-    form: { title: 'اختبار جديد', subtitle: 'تسجيل اختبار لسباح واحد أو لكل سباح في مجموعة', icon: 'fa-plus', active: 'tests', action: '/tests/new', fields: await testFields({}, activeSport(req)), values: {}, submitLabel: 'حفظ الاختبار', cancelUrl: '/tests', csrf: '' },
+    form: { title: 'اختبار جديد', subtitle: 'تسجيل اختبار للاعب واحد أو لكل لاعب في مجموعة', icon: 'fa-plus', active: 'tests', action: '/tests/new', fields: await testFields({}, activeSport(req)), values: {}, submitLabel: 'حفظ الاختبار', cancelUrl: '/tests', csrf: '' },
     groups: await testGroupsWithSwimmers(activeSport(req)), testTypes: await testTypes(), levelOptions: await levelOptions(activeSport(req)), swimmerOptions: await swimmerOptions(activeSport(req))
   });
 });
@@ -407,7 +407,7 @@ router.post('/tests/new', async function (req, res) {
       }
     }
     if (!saved) {
-      setFlash(res, { type: 'error', message: 'لم تُسجل أي نتائج — أضف اختباراً لواحد من السباحين أولاً' });
+      setFlash(res, { type: 'error', message: 'لم تُسجل أي نتائج — أضف اختباراً لواحد من اللاعبين أولاً' });
       return res.redirect('/tests/new');
     }
   } else {
@@ -455,9 +455,9 @@ router.get('/measurements', async function (req, res) {
   if (!canView(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const rows = await db.prepare(`SELECT pm.*, s.full_name AS swimmer_name, s.membership_no FROM player_measurements pm LEFT JOIN swimmers s ON s.id = pm.swimmer_id WHERE 1=1` + swimmerOfClause(activeSport(req), 'pm') + ` ORDER BY pm.date DESC LIMIT 200`).all();
   const page = {
-    title: 'الأزمنة الشخصية', subtitle: 'سجل أزمنة السباحين الشخصية (PB)', icon: 'fa-stopwatch', module: 'teams', active: 'teams',
+    title: 'الأزمنة الشخصية', subtitle: 'سجل أزمنة اللاعبين الشخصية (PB)', icon: 'fa-stopwatch', module: 'teams', active: 'teams',
     columns: [
-      { key: 'swimmer_name', label: 'السباح', html: row => `<div class="avatar-cell"><div class="avatar-sm">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div></div></div>` },
+      { key: 'swimmer_name', label: 'اللاعب', html: row => `<div class="avatar-cell"><div class="avatar-sm">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div></div></div>` },
       { key: 'race_type', label: 'السباحة', html: row => `<span class="badge badge-primary">${row.race_type}</span>` },
       { key: 'distance_m', label: 'المسافة', html: row => `${row.distance_m} م` },
       { key: 'time_seconds', label: 'الزمن', html: row => `<span class="fw-700 text-primary">${row.time_seconds}s</span>` },
@@ -474,9 +474,9 @@ router.get('/measurements', async function (req, res) {
 });
 router.get('/measurements/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  res.render('form', { form: { title: 'زمن شخصي جديد', subtitle: 'تسجيل أفضل زمن للسباح', icon: 'fa-plus', active: 'teams', action: '/measurements/new',
+  res.render('form', { form: { title: 'زمن شخصي جديد', subtitle: 'تسجيل أفضل زمن لللاعب', icon: 'fa-plus', active: 'teams', action: '/measurements/new',
     fields: [
-      { key: 'swimmer_id', label: 'السباح', type: 'select', options: await swimmerOptions(activeSport(req)), required: true },
+      { key: 'swimmer_id', label: 'اللاعب', type: 'select', options: await swimmerOptions(activeSport(req)), required: true },
       { key: 'race_type', label: 'السباحة', type: 'select', options: ['حرة', 'ظهر', 'صدر', 'فراشة', 'متنوع'].map(v => ({ value: v, label: v })) },
       { key: 'distance_m', label: 'المسافة (متر)', type: 'number', number: true },
       { key: 'time_seconds', label: 'الزمن (ثانية)', type: 'number', number: true, step: '0.01', required: true },

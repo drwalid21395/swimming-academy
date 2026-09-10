@@ -101,7 +101,7 @@ router.get('/reports/subscriptions', async function (req, res) {
 });
 
 /* ============================================================== */
-/*                  تقرير تقدم السباحين                            */
+/*                  تقرير تقدم اللاعبين                            */
 /* ============================================================== */
 router.get('/reports/progress', async function (req, res) {
   if (!canView(req.currentUser, 'reports')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -110,7 +110,7 @@ router.get('/reports/progress', async function (req, res) {
     (SELECT overall_percent FROM assessments a WHERE a.swimmer_id = s.id ORDER BY a.date DESC LIMIT 1) AS last_percent,
     (SELECT COUNT(*) FROM tests t WHERE t.swimmer_id = s.id AND t.passed = 1) AS passed_tests
     FROM swimmers s LEFT JOIN levels l ON l.id = s.level_id WHERE s.deleted_at IS NULL` + swimmerClause(activeSport(req)) + ` ORDER BY s.full_name`).all();
-  res.render('report_progress', { title: 'تقرير تقدم السباحين', active: 'reports', rows, pct, fmtDate });
+  res.render('report_progress', { title: 'تقرير تقدم اللاعبين', active: 'reports', rows, pct, fmtDate });
 });
 
 module.exports = router;

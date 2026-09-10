@@ -117,10 +117,10 @@ function modalFragment(entity, user, query) {
   return { status: 200, body: renderModal(entity, row, mode) };
 }
 
-// ===== صفحة ملف السباح =====
+// ===== صفحة ملف اللاعب =====
 function swimmerProfile(user, id, query) {
   const sw = db.prepare(`SELECT s.*, g.full_name AS guardian_name, l.name AS level_name, pr.name AS program_name, pr.program_type, gr.name AS group_name, c.full_name AS coach_name FROM swimmers s LEFT JOIN guardians g ON g.id=s.guardian_id LEFT JOIN levels l ON l.id=s.current_level_id LEFT JOIN programs pr ON pr.id=s.program_id LEFT JOIN groups gr ON gr.id=s.group_id LEFT JOIN coaches c ON c.id=s.coach_id WHERE s.id=?`).get(id);
-  if (!sw) return { status: 404, body: 'السباح غير موجود' };
+  if (!sw) return { status: 404, body: 'اللاعب غير موجود' };
   if (!can(user, 'swimmers', 'view')) return { status: 403, body: 'لا صلاحية' };
 
   const age = calcAge(sw.birth_date);
@@ -241,7 +241,7 @@ function swimmerProfile(user, id, query) {
     ${stats}
     ${tabs}
   `;
-  return { status: 200, body: adminShell(user, { content, active: 'swimmers', counts: countsFor(user), notifications: notificationsFor(user), title: `ملف السباح - ${sw.full_name}` }) };
+  return { status: 200, body: adminShell(user, { content, active: 'swimmers', counts: countsFor(user), notifications: notificationsFor(user), title: `ملف اللاعب - ${sw.full_name}` }) };
 }
 
 // ===== صفحة الحضور =====
@@ -270,7 +270,7 @@ function attendancePage(user, query) {
     ${pageHead('الحضور والغياب', `سجل الحضور اليومي وحصص ${fmtDate(date)}`, `<form method="get" style="display:flex;gap:8px;"><input type="date" name="date" value="${date}" onchange="this.form.submit()" style="padding:8px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-family:inherit;"><a class="btn btn-outline" href="/api/export/attendance?date=${esc(date)}">${icon('download')} تصدير</a></form>`)}
     <div class="grid-2" style="align-items:start;">
       <div>${card(`حصص ${fmtDate(date)}`, todayCards || '<div class="empty-state">لا توجد حصص في هذا اليوم</div>', { icon: 'sessions' })}</div>
-      <div>${card('آخر سجلات الحضور', `<div class="table-wrap"><table class="tbl"><thead><tr><th>السباح</th><th>التاريخ</th><th>الحصة</th><th>الحالة</th><th>السبب</th><th>الخصم</th></tr></thead><tbody>${recentRows}</tbody></table></div>`, { icon: 'attendance' })}</div>
+      <div>${card('آخر سجلات الحضور', `<div class="table-wrap"><table class="tbl"><thead><tr><th>اللاعب</th><th>التاريخ</th><th>الحصة</th><th>الحالة</th><th>السبب</th><th>الخصم</th></tr></thead><tbody>${recentRows}</tbody></table></div>`, { icon: 'attendance' })}</div>
     </div>
   `;
   return { status: 200, body: adminShell(user, { content, active: 'attendance', counts: countsFor(user), notifications: notificationsFor(user), title: 'الحضور والغياب' }) };
@@ -307,7 +307,7 @@ function attendanceSessionPage(user, id) {
     <div class="card">
       <div class="card-body">
         <form id="attForm" data-session="${id}">
-          <div class="table-wrap"><table class="tbl"><thead><tr><th>السباح</th><th>رقم العضوية</th><th>الحالة</th><th>السبب / الملاحظة</th><th>السياسة</th></tr></thead><tbody>${rows}</tbody></table></div>
+          <div class="table-wrap"><table class="tbl"><thead><tr><th>اللاعب</th><th>رقم العضوية</th><th>الحالة</th><th>السبب / الملاحظة</th><th>السياسة</th></tr></thead><tbody>${rows}</tbody></table></div>
           <div class="form-actions">
             <button type="button" class="btn btn-outline" id="allPresent">الكل حاضر</button>
             <button type="submit" class="btn btn-primary">${icon('check')} حفظ الحضور</button>
@@ -356,7 +356,7 @@ function assessmentsPage(user, query) {
   const canAdd = can(user, 'assessments', 'add');
   const content = `
     ${pageHead('التقييمات الفنية', 'نموذج تقييم شامل حسب نوع البرنامج', `${canAdd ? `<button class="btn btn-primary" data-load-modal="/admin/assessments/modal?mode=add">${icon('plus')} تقييم جديد</button>` : ''}`)}
-    ${card('آخر التقييمات', `<div class="table-wrap"><table class="tbl"><thead><tr><th>السباح</th><th>المقيم</th><th>التاريخ</th><th>المستوى</th><th>المتوسط</th><th>جاهز للانتقال</th><th>إجراءات</th></tr></thead><tbody>${bodyRows}</tbody></table></div>`, { icon: 'assessments' })}
+    ${card('آخر التقييمات', `<div class="table-wrap"><table class="tbl"><thead><tr><th>اللاعب</th><th>المقيم</th><th>التاريخ</th><th>المستوى</th><th>المتوسط</th><th>جاهز للانتقال</th><th>إجراءات</th></tr></thead><tbody>${bodyRows}</tbody></table></div>`, { icon: 'assessments' })}
   `;
   return { status: 200, body: adminShell(user, { content, active: 'assessments', counts: countsFor(user), notifications: notificationsFor(user), title: 'التقييمات الفنية' }) };
 }
@@ -387,7 +387,7 @@ function assessmentModal(user, query) {
   <form data-post="/api/assessments" data-method="${mode === 'edit' ? 'PUT' : 'POST'}" ${mode === 'edit' ? `data-id="${row.id}"` : ''}>
     <div class="modal-body">
       <div class="form-grid" style="margin-bottom:16px;">
-        <div class="field"><label>السباح <span class="req">*</span></label><select name="swimmer_id" required>${swOpts}</select></div>
+        <div class="field"><label>اللاعب <span class="req">*</span></label><select name="swimmer_id" required>${swOpts}</select></div>
         <div class="field"><label>الكابتن المقيم</label><select name="coach_id">${coOpts}</select></div>
         <div class="field"><label>البرنامج</label><select name="program_id" id="progSel">${prOpts}</select></div>
         <div class="field"><label>تاريخ التقييم</label><input type="date" name="date" value="${row ? row.date : today()}"></div>
@@ -464,7 +464,7 @@ function rolesPage(user, query) {
   if (!can(user, 'users', 'edit')) return { status: 403, body: 'لا صلاحية' };
   const roles = db.prepare('SELECT * FROM roles ORDER BY is_system DESC').all();
   const modAr = {
-    dashboard: 'لوحة التحكم', swimmers: 'السباحون', guardians: 'أولياء الأمور', coaches: 'المدربون',
+    dashboard: 'لوحة التحكم', swimmers: 'اللاعبون', guardians: 'أولياء الأمور', coaches: 'المدربون',
     staff: 'الموظفون', programs: 'البرامج', levels: 'المستويات', groups: 'المجموعات', sessions: 'الحصص',
     attendance: 'الحضور', assessments: 'التقييمات', tests: 'الاختبارات', teams: 'الفرق', tournaments: 'البطولات',
     subscriptions: 'الاشتراكات', payments: 'المدفوعات', revenues: 'الإيرادات', expenses: 'المصروفات',
@@ -542,7 +542,7 @@ function receiptPage(user, id) {
           <div class="card-sub">رقم الإيصال: ${esc(su.receipt_no || '—')}</div>
         </div>
         <div class="detail-grid" style="text-align:right;">
-          <div class="detail-item"><div class="k">السباح</div><div class="v">${esc(su.swimmer_name)}</div></div>
+          <div class="detail-item"><div class="k">اللاعب</div><div class="v">${esc(su.swimmer_name)}</div></div>
           <div class="detail-item"><div class="k">رقم العضوية</div><div class="v">${esc(su.membership_no)}</div></div>
           <div class="detail-item"><div class="k">البرنامج</div><div class="v">${esc(su.program_name || '—')}</div></div>
           <div class="detail-item"><div class="k">المجموعة</div><div class="v">${esc(su.group_name || '—')}</div></div>
@@ -585,7 +585,7 @@ function coachProfile(user, id) {
       </div>
     </div>
     ${statCards([
-      { val: swimmers.length, label: 'عدد السباحين', color: 'blue', icon: 'swimmers' },
+      { val: swimmers.length, label: 'عدد اللاعبين', color: 'blue', icon: 'swimmers' },
       { val: groups.length, label: 'المجموعات', color: 'cyan', icon: 'groups' },
       { val: c.performance_rating ? c.performance_rating.toFixed(1) : '—', label: 'تقييم الأداء', color: 'amber', icon: 'assessments' },
       { val: fmtDateShort(c.license_expiry), label: 'انتهاء الترخيص', color: 'purple', icon: 'calendar' }
@@ -594,7 +594,7 @@ function coachProfile(user, id) {
       ${card('المجموعات', groups.length ? groups.map(g => `<a href="/admin/groups" class="badge badge-blue" style="margin:3px;">${esc(g.name)} • ${esc(g.program_name || '')}</a>`).join('') : '<div class="empty-state">لا توجد مجموعات</div>', { icon: 'groups' })}
       ${card('مستحقات مالية', dues.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>الشهر</th><th>المستحق</th><th>الصافي</th><th>الحالة</th></tr></thead><tbody>${dues.map(d => `<tr><td>${esc(d.month)}</td><td>${money(d.amount)}</td><td>${money(d.net_amount)}</td><td>${badge(d.status, { paid: ['مدفوع', 'green'], pending: ['معلق', 'amber'] })}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty-state">لا توجد مستحقات</div>', { icon: 'coach_dues' })}
     </div>
-    ${card('السباحين المسؤول عنهم', swRows ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>الاسم</th><th>رقم العضوية</th><th>المجموعة</th><th>الحالة</th></tr></thead><tbody>${swRows}</tbody></table></div>` : '<div class="empty-state">لا يوجد سباحون</div>', { icon: 'swimmers' })}
+    ${card('اللاعبين المسؤول عنهم', swRows ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>الاسم</th><th>رقم العضوية</th><th>المجموعة</th><th>الحالة</th></tr></thead><tbody>${swRows}</tbody></table></div>` : '<div class="empty-state">لا يوجد لاعبون</div>', { icon: 'swimmers' })}
   `;
   return { status: 200, body: adminShell(user, { content, active: 'coaches', counts: countsFor(user), notifications: notificationsFor(user), title: `ملف الكابتن - ${c.full_name}` }) };
 }
@@ -606,7 +606,7 @@ function searchPage(user, query) {
   if (q) {
     try {
       const swimmers = db.prepare(`SELECT * FROM swimmers WHERE full_name LIKE ? OR membership_no LIKE ? OR phone LIKE ? OR guardian_phone LIKE ? LIMIT 15`).all(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
-      swimmers.forEach(s => results.push({ title: s.full_name, sub: `سباح • ${s.membership_no}`, link: `/admin/swimmers/${s.id}`, icon: 'swimmers' }));
+      swimmers.forEach(s => results.push({ title: s.full_name, sub: `لاعب • ${s.membership_no}`, link: `/admin/swimmers/${s.id}`, icon: 'swimmers' }));
       const guardians = db.prepare(`SELECT * FROM guardians WHERE full_name LIKE ? OR phone LIKE ? LIMIT 10`).all(`%${q}%`, `%${q}%`);
       guardians.forEach(g => results.push({ title: g.full_name, sub: `ولي أمر`, link: `/admin/guardians`, icon: 'guardians' }));
       const coaches = db.prepare(`SELECT * FROM coaches WHERE full_name LIKE ? OR phone LIKE ? LIMIT 10`).all(`%${q}%`, `%${q}%`);
@@ -643,7 +643,7 @@ const adminRoutes = {
 };
 
 function adminRoute(req, res, user, path, query) {
-  // ملف السباح
+  // ملف اللاعب
   let m = path.match(/^\/admin\/swimmers\/(\d+)$/);
   if (m) return swimmerProfile(user, Number(m[1]), query);
   m = path.match(/^\/admin\/coaches\/(\d+)$/);

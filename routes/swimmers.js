@@ -1,4 +1,4 @@
-/** السباحون (ملف شامل) + أولياء الأمور + المدربون + الموظفون */
+/** اللاعبون (ملف شامل) + أولياء الأمور + المدربون + الموظفون */
 const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON, today, canView, canExport, canDel } = require('../lib/helpers');
@@ -189,7 +189,7 @@ crud(router, '/coaches', {
   });
 
 /* ============================================================== */
-/*                           السباحون                             */
+/*                           اللاعبون                             */
 /* ============================================================== */
 const SW_STATUS = ['نشط', 'متوقف مؤقتاً', 'مجمد', 'منسحب', 'خريج'];
 const SW_GENDER = ['ذكر', 'أنثى'];
@@ -215,9 +215,9 @@ const swimmerFields = async function (values, req) {
     { key: 'membership_no', label: 'رقم العضوية', type: 'text', hint: 'يُترك فارغاً لإنشائه تلقائياً', value: values.membership_no || '' },
     { key: 'birth_date', label: 'تاريخ الميلاد', type: 'date' },
     { key: 'gender', label: 'النوع', type: 'select', options: SW_GENDER.map(v => ({ value: v, label: v })) },
-    { key: 'phone', label: 'رقم هاتف السباح', type: 'tel' },
+    { key: 'phone', label: 'رقم هاتف اللاعب', type: 'tel' },
     { key: 'address', label: 'العنوان', type: 'text' },
-    { key: 'avatar', label: 'الصورة الشخصية', type: 'file', accept: 'image/*', hint: 'صورة شخصية للسباح (JPG/PNG)', preview: true, initial: (values && values.full_name ? values.full_name.trim().charAt(0) : 'س') },
+    { key: 'avatar', label: 'الصورة الشخصية', type: 'file', accept: 'image/*', hint: 'صورة شخصية لللاعب (JPG/PNG)', preview: true, initial: (values && values.full_name ? values.full_name.trim().charAt(0) : 'س') },
     { key: 'school', label: 'المدرسة / جهة الدراسة', type: 'select', options: schoolList },
     { key: 'blood_type', label: 'فصيلة الدم', type: 'select', options: blood },
     { key: 'registration_date', label: 'تاريخ التسجيل', type: 'date' },
@@ -238,7 +238,7 @@ const swimmerFields = async function (values, req) {
     { key: 'program_id', label: 'البرنامج المشترك', type: 'select', options: programs },
     { key: 'group_id', label: 'المجموعة التدريبية', type: 'select', options: groups },
     { key: 'coach_id', label: 'الكابتن المسؤول', type: 'coach_auto', groupField: 'group_id', coaches },
-    { key: 'status', label: 'حالة السباح', type: 'select', options: SW_STATUS.map(v => ({ value: v, label: v })) },
+    { key: 'status', label: 'حالة اللاعب', type: 'select', options: SW_STATUS.map(v => ({ value: v, label: v })) },
     { key: 'notes', label: 'ملاحظات عامة', type: 'textarea', full: true }
   ];
 };
@@ -269,9 +269,9 @@ router.get('/swimmers', async function (req, res) {
   const rows = await db.prepare(sql).all(...params);
 
   const page = {
-    title: 'السباحون واللاعبون', subtitle: 'إدارة الملفات الكاملة للسباحين', icon: 'fa-person-swimming', module: 'swimmers', active: 'swimmers',
+    title: 'اللاعبون واللاعبون', subtitle: 'إدارة الملفات الكاملة لللاعبين', icon: 'fa-person-swimming', module: 'swimmers', active: 'swimmers',
     columns: [
-      { key: 'full_name', label: 'السباح', html: row => `<div class="avatar-cell">${row.avatar ? `<div class="avatar-sm avatar-img"><img src="${row.avatar}" alt=""></div>` : `<div class="avatar-sm">${(row.full_name || 'س').trim().charAt(0)}</div>`}<div><div class="cell-title">${row.full_name}</div><div class="cell-sub">${row.membership_no}</div></div></div>` },
+      { key: 'full_name', label: 'اللاعب', html: row => `<div class="avatar-cell">${row.avatar ? `<div class="avatar-sm avatar-img"><img src="${row.avatar}" alt=""></div>` : `<div class="avatar-sm">${(row.full_name || 'س').trim().charAt(0)}</div>`}<div><div class="cell-title">${row.full_name}</div><div class="cell-sub">${row.membership_no}</div></div></div>` },
       { key: 'guardian_name', label: 'ولي الأمر' },
       { key: 'phone', label: 'رقم التليفون', html: row => row.phone ? `<span dir="ltr">${row.phone}</span>` : '—' },
       { key: 'birth_date', label: 'تاريخ الميلاد', html: row => row.birth_date ? fmtDate(row.birth_date) : '—' },
@@ -295,16 +295,16 @@ router.get('/swimmers', async function (req, res) {
     ],
     canAdd: true,
     addUrl: '/swimmers/new',
-    addLabel: 'تسجيل سباح جديد',
+    addLabel: 'تسجيل لاعب جديد',
     headerActions: canExport(req.currentUser, 'swimmers') ? [
-      { href: '/reports/swimmers-print', label: 'ملف السباحين PDF', icon: 'fa-file-pdf', cls: 'btn-outline' },
-      { href: '/reports/swimmers.xls', label: 'ملف السباحين Excel', icon: 'fa-file-excel', cls: 'btn-outline' }
+      { href: '/reports/swimmers-print', label: 'ملف اللاعبين PDF', icon: 'fa-file-pdf', cls: 'btn-outline' },
+      { href: '/reports/swimmers.xls', label: 'ملف اللاعبين Excel', icon: 'fa-file-excel', cls: 'btn-outline' }
     ] : [],
     actions: user => row => [
       { label: 'اشترك', icon: 'fa-file-contract', href: '/subscriptions/new?swimmer_id=' + row.id },
       { label: 'عرض', icon: 'fa-eye', href: '/swimmers/' + row.id },
       { label: 'تعديل', icon: 'fa-pen', href: '/swimmers/' + row.id + '/edit' },
-      { label: 'حذف', icon: 'fa-trash', href: '/swimmers/' + row.id + '/delete', confirm: 'هل أنت متأكد من حذف هذا السباح؟ سيتم الاحتفاظ بسجل بياناته.', cls: 'text-danger' }
+      { label: 'حذف', icon: 'fa-trash', href: '/swimmers/' + row.id + '/delete', confirm: 'هل أنت متأكد من حذف هذا اللاعب؟ سيتم الاحتفاظ بسجل بياناته.', cls: 'text-danger' }
     ]
   };
   res.render('list', { page });
@@ -312,7 +312,7 @@ router.get('/swimmers', async function (req, res) {
 
 /* نموذج إضافة/تعديل */
 router.get('/swimmers/new', async function (req, res) {
-  res.render('form', { form: { title: 'تسجيل سباح جديد', subtitle: 'إنشاء ملف متكامل لسباح جديد', icon: 'fa-user-plus', active: 'swimmers', action: '/swimmers/new', encType: 'multipart/form-data', fields: await swimmerFields({}, req), values: {}, submitLabel: 'تسجيل السباح', cancelUrl: '/swimmers', csrf: '' } });
+  res.render('form', { form: { title: 'تسجيل لاعب جديد', subtitle: 'إنشاء ملف متكامل للاعب جديد', icon: 'fa-user-plus', active: 'swimmers', action: '/swimmers/new', encType: 'multipart/form-data', fields: await swimmerFields({}, req), values: {}, submitLabel: 'تسجيل اللاعب', cancelUrl: '/swimmers', csrf: '' } });
 });
 
 const SW_FK_COLS = ['guardian_id', 'level_id', 'group_id', 'coach_id', 'program_id'];
@@ -353,8 +353,8 @@ router.post('/swimmers/new', uploadAndStore('avatar'), async function (req, res)
   vals[19] = b.status || 'نشط';
   const info = await db.prepare(`INSERT INTO swimmers (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(membership, ...vals.slice(1));
   await syncSwimmerGroups(info.lastInsertRowid, b.group_id);
-  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'swimmers', info.lastInsertRowid, 'تسجيل سباح جديد: ' + b.full_name, req);
-  setFlash(res, { type: 'success', message: 'تم تسجيل السباح بنجاح' });
+  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'swimmers', info.lastInsertRowid, 'تسجيل لاعب جديد: ' + b.full_name, req);
+  setFlash(res, { type: 'success', message: 'تم تسجيل اللاعب بنجاح' });
   res.redirect('/swimmers/' + info.lastInsertRowid);
 });
 
@@ -365,7 +365,7 @@ router.get('/swimmers/:id/edit', async function (req, res) {
   const tc = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all();
   const curG = row.group_id ? await db.prepare('SELECT name FROM groups WHERE id = ?').get(row.group_id) : null;
   const curC = row.coach_id ? await db.prepare('SELECT full_name FROM coaches WHERE id = ?').get(row.coach_id) : null;
-  res.render('form', { form: { title: 'تعديل ملف السباح', subtitle: row.full_name, icon: 'fa-user-pen', active: 'swimmers', action: '/swimmers/' + row.id + '/edit', encType: 'multipart/form-data', fields: await swimmerFields(row, req), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/swimmers/' + row.id, csrf: '', transfer: { action: '/swimmers/' + row.id + '/transfer', groups: tg, coaches: tc, current_group: row.group_id, current_group_name: curG ? curG.name : 'بدون مجموعة', current_coach_name: curC ? curC.full_name : '—' } } });
+  res.render('form', { form: { title: 'تعديل ملف اللاعب', subtitle: row.full_name, icon: 'fa-user-pen', active: 'swimmers', action: '/swimmers/' + row.id + '/edit', encType: 'multipart/form-data', fields: await swimmerFields(row, req), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/swimmers/' + row.id, csrf: '', transfer: { action: '/swimmers/' + row.id + '/transfer', groups: tg, coaches: tc, current_group: row.group_id, current_group_name: curG ? curG.name : 'بدون مجموعة', current_coach_name: curC ? curC.full_name : '—' } } });
 });
 router.post('/swimmers/:id/edit', uploadAndStore('avatar'), async function (req, res) {
   const id = Number(req.params.id);
@@ -387,7 +387,7 @@ router.post('/swimmers/:id/edit', uploadAndStore('avatar'), async function (req,
   res.redirect('/swimmers/' + id);
 });
 
-/* نسبة آخر تقييم للمستوى المحدد (تعرض في نموذج السباح) */
+/* نسبة آخر تقييم للمستوى المحدد (تعرض في نموذج اللاعب) */
 router.get('/api/swimmers/level-percent', async function (req, res) {
   const level = Number(req.query.level_id || 0);
   const swimmer = Number(req.query.swimmer_id || 0);
@@ -410,11 +410,11 @@ router.post('/swimmers/:id/delete', async function (req, res) {
   try {
     await db.prepare('UPDATE swimmers SET deleted_at = datetime(\'now\',\'localtime\') WHERE id = ?').run(id);
     await db.prepare('DELETE FROM swimmer_group WHERE swimmer_id = ?').run(id);
-    audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'swimmers', id, 'حذف سباح', req);
-    setFlash(res, { type: 'success', message: 'تم حذف السباح ' + s.full_name + ' مع الاحتفاظ بسجل بياناته' });
+    audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'swimmers', id, 'حذف لاعب', req);
+    setFlash(res, { type: 'success', message: 'تم حذف اللاعب ' + s.full_name + ' مع الاحتفاظ بسجل بياناته' });
   } catch (e) {
-    console.error('فشل حذف سباح ' + id + ':', e.message);
-    setFlash(res, { type: 'error', message: 'تعذّر حذف السباح: ' + e.message });
+    console.error('فشل حذف لاعب ' + id + ':', e.message);
+    setFlash(res, { type: 'error', message: 'تعذّر حذف اللاعب: ' + e.message });
   }
   res.redirect('/swimmers');
 });
@@ -460,7 +460,7 @@ router.get('/swimmers/:id', async function (req, res) {
   const assessFinal = assessCount ? Math.round((assessTotal / assessCount) * 10) / 10 : 0;
 
   res.render('swimmer_profile', {
-    title: 'ملف السباح',
+    title: 'ملف اللاعب',
     active: 'swimmers',
     s, age, subs, payments, assessments, tests, attRecords, attStats, nextSessions, docs, progress, teamRows, pbs, compResults, history, activeSub,
     transfers, allGroups, allCoaches,
@@ -471,7 +471,7 @@ router.get('/swimmers/:id', async function (req, res) {
   });
 });
 
-/* نقل السباح إلى مجموعة/كابتن آخر (تبقى كل بياناته من تقييمات وحضور واشتراكات) */
+/* نقل اللاعب إلى مجموعة/كابتن آخر (تبقى كل بياناته من تقييمات وحضور واشتراكات) */
 router.post('/swimmers/:id/transfer', async function (req, res) {
   const id = Number(req.params.id);
   const s = await db.prepare('SELECT * FROM swimmers WHERE id = ?').get(id);
@@ -490,12 +490,12 @@ router.post('/swimmers/:id/transfer', async function (req, res) {
   await syncSwimmerGroups(id, toGroup);
   await db.prepare('INSERT INTO swimmer_transfers (swimmer_id, from_group_id, from_coach_id, to_group_id, to_coach_id, note, created_by) VALUES (?,?,?,?,?,?,?)')
     .run(id, s.group_id, s.coach_id, toGroup, toCoach, req.body.note || null, req.currentUser.id);
-  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'swimmers', id, 'نقل السباح ' + s.full_name + ' إلى مجموعة/كابتن جديد', req);
-  setFlash(res, { type: 'success', message: 'تم نقل السباح إلى المجموعة والكابتن الجديد مع الاحتفاظ بكل بياناته' });
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'swimmers', id, 'نقل اللاعب ' + s.full_name + ' إلى مجموعة/كابتن جديد', req);
+  setFlash(res, { type: 'success', message: 'تم نقل اللاعب إلى المجموعة والكابتن الجديد مع الاحتفاظ بكل بياناته' });
   res.redirect('/swimmers/' + id);
 });
 
-/* نسخة طباعة سجل الحضور والغياب لسباح واحد */
+/* نسخة طباعة سجل الحضور والغياب للاعب واحد */
 router.get('/swimmers/:id/attendance-print', async function (req, res) {
   if (!canExport(req.currentUser, 'swimmers')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
@@ -514,13 +514,13 @@ router.get('/swimmers/:id/attendance-print', async function (req, res) {
   };
   stats.rate = stats.total ? pct(stats.present, stats.total) : 0;
   res.render('swimmer_attendance_print', {
-    title: 'سجل حضور السباح', active: 'swimmers',
+    title: 'سجل حضور اللاعب', active: 'swimmers',
     s, records, stats, today: today(), fmtDate, pct
   });
 });
 
 /* ============================================================== */
-/*        ملف السباحين الشامل: بيانات شخصية + صور + ملفات + تقييمات       */
+/*        ملف اللاعبين الشامل: بيانات شخصية + صور + ملفات + تقييمات       */
 /* ============================================================== */
 function buildSkills(sc, criteriaMap) {
   const skills = Object.entries(sc).map(function (e) {
@@ -577,14 +577,14 @@ async function swimmerAssessmentReport(swimmerId) {
   return { swimmer, levels, general: gen, totalLevels: levels.length, allSkills, grandSum, grandAvg };
 }
 
-/* تقرير شامل: تقييمات السباح على كل المستويات (مستوى ← مهارات + نسب) */
+/* تقرير شامل: تقييمات اللاعب على كل المستويات (مستوى ← مهارات + نسب) */
 router.get('/swimmers/:id/assessment-report', async function (req, res) {
   if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   if (!canExport(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const data = await swimmerAssessmentReport(Number(req.params.id));
   if (!data) return res.redirect('/swimmers');
   res.render('assessment_report', {
-    title: 'تقرير تقييمات السباح', active: 'assessments', data,
+    title: 'تقرير تقييمات اللاعب', active: 'assessments', data,
     today: today(), fmtDate
   });
 });
@@ -615,7 +615,7 @@ function buildReportPdf(data, todayStr) {
     { text: 'تاريخ الإصدار: ' + todayStr, style: 'meta' },
     { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1.6, lineColor: '#0284c7' }], margin: [0, 6, 0, 0] },
     { table: { headerRows: 0, widths: ['14%', '36%', '14%', '36%'], body: [
-      [{ text: 'السباح', style: 'lbl' }, { text: s.full_name, style: 'val' }, { text: 'رقم العضوية', style: 'lbl' }, { text: s.membership_no || '—', style: 'val' }],
+      [{ text: 'اللاعب', style: 'lbl' }, { text: s.full_name, style: 'val' }, { text: 'رقم العضوية', style: 'lbl' }, { text: s.membership_no || '—', style: 'val' }],
       [{ text: 'المستوى', style: 'lbl' }, { text: s.level_name || '—', style: 'val' }, { text: 'المجموعة', style: 'lbl' }, { text: s.group_name || '—', style: 'val' }],
       [{ text: 'الكابتن', style: 'lbl' }, { text: s.coach_name || '—', style: 'val' }, { text: 'البرنامج', style: 'lbl' }, { text: s.program_name || '—', style: 'val' }]
     ] }, layout: 'noBorders', margin: [0, 10, 0, 4] },
@@ -678,7 +678,7 @@ function buildReportPdf(data, todayStr) {
     });
     content.push.apply(content, buildSection('المعايير العامة', 'قسم منفصل', rows, data.general.avg, data.general.assessment.coach_name, fmtDate(data.general.assessment.date), data.general.assessment.ready_to_advance));
   } else {
-    content.push({ text: 'لا توجد تقييمات مسجلة لهذا السباح حتى الآن.', style: 'note', alignment: 'center', margin: [0, 16, 0, 0] });
+    content.push({ text: 'لا توجد تقييمات مسجلة لهذا اللاعب حتى الآن.', style: 'note', alignment: 'center', margin: [0, 16, 0, 0] });
   }
 
   /* الملاحظات (من أحدث تقييم) */
@@ -794,27 +794,27 @@ async function reportGroupsSql(where, params) {
   return await db.prepare(sql).all(...params);
 }
 
-/* طباعة ملف السباحين — كل المجاميع */
+/* طباعة ملف اللاعبين — كل المجاميع */
 router.get('/reports/swimmers-print', async function (req, res) {
   if (!canView(req.currentUser, 'swimmers')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const data = await buildSwimmerReport(await reportGroupsSql('', []));
   const un = await unassignedSwimmerBlock();
   if (un.length) data.push({ id: 0, name: 'بدون مجموعة', coach_name: '', schedule: [], swimmerCount: un.length, swimmers: un });
   res.render('swimmer_report_print', {
-    title: 'ملف السباحين الشامل', active: 'swimmers', mode: 'all',
+    title: 'ملف اللاعبين الشامل', active: 'swimmers', mode: 'all',
     groups: data, total: data.reduce((n, g) => n + g.swimmerCount, 0),
     today: today(), fmtDate
   });
 });
 
-/* طباعة ملف السباحين — مجموعة واحدة */
+/* طباعة ملف اللاعبين — مجموعة واحدة */
 router.get('/groups/:id/swimmers-print', async function (req, res) {
   if (!canView(req.currentUser, 'swimmers')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const g = await db.prepare('SELECT g.*, c.full_name AS coach_name FROM groups g LEFT JOIN coaches c ON c.id = g.coach_id WHERE g.id = ?').get(Number(req.params.id));
   if (!g) return res.redirect('/groups');
   const data = await buildSwimmerReport([g]);
   res.render('swimmer_report_print', {
-    title: 'ملف سباحي المجموعة — ' + g.name, active: 'groups', mode: 'group',
+    title: 'ملف لاعبي المجموعة — ' + g.name, active: 'groups', mode: 'group',
     groups: data, total: data[0].swimmerCount, today: today(), fmtDate
   });
 });
@@ -850,7 +850,7 @@ function swimmerXlsHtml(groups) {
   const widths = [22, 26, 15, 11, 9, 17, 16, 22, 16, 30, 60];
   const colgroup = widths.map(function (w) { return `<col width="${w}">`; }).join('');
   return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8">
-    <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>السباحين</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+    <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>اللاعبين</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
     <style>
       table { border-collapse: collapse; table-layout: fixed; }
       td, th { border: 1px solid #999; padding: 4px 7px; font-size: 12px; vertical-align: top; font-family: Tahoma, Arial, sans-serif; }
@@ -858,7 +858,7 @@ function swimmerXlsHtml(groups) {
       td.b { font-weight: 700; }
       td.big { white-space: normal; word-wrap: break-word; }
     </style></head><body dir="rtl"><table dir="rtl" style="width:900px"><colgroup>${colgroup}</colgroup>
-      <thead><tr><th>المجموعة</th><th>السباح</th><th>رقم العضوية</th><th>العمر</th><th>النوع</th><th>المستوى</th><th>الهاتف</th><th>ولي الأمر</th><th>هاتف ولي الأمر</th><th>الملفات</th><th>التقييمات (التاريخ — المستوى — النسبة)</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+      <thead><tr><th>المجموعة</th><th>اللاعب</th><th>رقم العضوية</th><th>العمر</th><th>النوع</th><th>المستوى</th><th>الهاتف</th><th>ولي الأمر</th><th>هاتف ولي الأمر</th><th>الملفات</th><th>التقييمات (التاريخ — المستوى — النسبة)</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
 }
 
 function sendXls(res, groups, total, filename) {
@@ -868,16 +868,16 @@ function sendXls(res, groups, total, filename) {
   res.send(html);
 }
 
-/* Excel ملف السباحين — كل المجاميع */
+/* Excel ملف اللاعبين — كل المجاميع */
 router.get('/reports/swimmers.xls', async function (req, res) {
   if (!canView(req.currentUser, 'swimmers')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const data = buildSwimmerReport(reportGroupsSql('', []));
   const un = unassignedSwimmerBlock();
   if (un.length) data.push({ id: 0, name: 'بدون مجموعة', coach_name: '', schedule: [], swimmerCount: un.length, swimmers: un });
-  sendXls(res, data, data.reduce((n, g) => n + g.swimmerCount, 0), 'ملف-السباحين.xls');
+  sendXls(res, data, data.reduce((n, g) => n + g.swimmerCount, 0), 'ملف-اللاعبين.xls');
 });
 
-/* Excel ملف السباحين — مجموعة واحدة */
+/* Excel ملف اللاعبين — مجموعة واحدة */
 router.get('/groups/:id/swimmers.xls', async function (req, res) {
   if (!canView(req.currentUser, 'swimmers')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const g = await db.prepare('SELECT g.*, c.full_name AS coach_name FROM groups g LEFT JOIN coaches c ON c.id = g.coach_id WHERE g.id = ?').get(Number(req.params.id));

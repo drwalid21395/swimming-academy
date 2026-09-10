@@ -7,8 +7,8 @@
   <div class="spacer"></div>
   <div class="flex gap-1">
     <a href="/subscriptions" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل الاشتراكات</a>
-    <a href="/swimmers/<%= s.swimmer_id %>" class="btn btn-primary"><i class="fas fa-person-swimming"></i> ملف السباح</a>
-    <% if (s.guardian_whatsapp && s.end_date) { %><a href="/subscriptions/<%= s.id %>/whatsapp" class="btn btn-success" title="رسالة تلقائية باسم السباح وتاريخ انتهاء الاشتراك تطلب التجديد"><i class="fab fa-whatsapp"></i> تذكير واتساب</a><% } %>
+    <a href="/swimmers/<%= s.swimmer_id %>" class="btn btn-primary"><i class="fas fa-person-swimming"></i> ملف اللاعب</a>
+    <% if (s.guardian_whatsapp && s.end_date) { %><a href="/subscriptions/<%= s.id %>/whatsapp" class="btn btn-success" title="رسالة تلقائية باسم اللاعب وتاريخ انتهاء الاشتراك تطلب التجديد"><i class="fab fa-whatsapp"></i> تذكير واتساب</a><% } %>
     <a href="/subscriptions/<%= s.id %>/receipt?confirm=1" class="btn btn-success" title="إرسال إيصال اشتراك بتفاصيل كاملة لولي الأمر عبر واتساب"><i class="fab fa-whatsapp"></i> إرسال الإيصال</a>
     <% if (canEdit) { %><a href="/subscriptions/<%= s.id %>/edit" class="btn btn-primary"><i class="fas fa-pen"></i> تعديل</a><% } %>
   </div>
@@ -26,7 +26,7 @@
     <div class="card-header"><h3><i class="fas fa-circle-info"></i> بيانات الاشتراك</h3></div>
     <div class="card-body">
       <div class="detail-grid">
-        <div class="detail-item"><div class="dl">السباح</div><div class="dv"><a href="/swimmers/<%= s.swimmer_id %>" class="link"><%= s.swimmer_name %></a> (<%= s.membership_no %>)</div></div>
+        <div class="detail-item"><div class="dl">اللاعب</div><div class="dv"><a href="/swimmers/<%= s.swimmer_id %>" class="link"><%= s.swimmer_name %></a> (<%= s.membership_no %>)</div></div>
         <div class="detail-item"><div class="dl">البرنامج</div><div class="dv"><%= s.program_name || '—' %></div></div>
         <div class="detail-item"><div class="dl">المجموعة</div><div class="dv"><%= s.group_name || '—' %></div></div>
         <div class="detail-item"><div class="dl">ولي الأمر</div><div class="dv"><%= s.guardian_name || '—' %><% if (s.guardian_whatsapp) { %> · <span dir="ltr" class="text-soft font-11"><i class="fab fa-whatsapp" style="color:#25d366"></i> <%= s.guardian_whatsapp %></span><% } %></div></div>

@@ -2,7 +2,7 @@
 <div class="page-head">
   <div>
     <div class="page-title"><i class="fas fa-clipboard-user"></i> الحضور والغياب</div>
-    <div class="page-sub">تسجيل ومتابعة حضور السباحين في جميع المجموعات</div>
+    <div class="page-sub">تسجيل ومتابعة حضور اللاعبين في جميع المجموعات</div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
@@ -33,7 +33,7 @@
         <h3><i class="fas fa-people-group"></i> <%= g.name %>
           <% if (g.session) { %><span class="badge badge-success"><i class="fas fa-clock"></i> <%= g.session.start_time %></span><% } else { %><span class="badge badge-gray">لا توجد حصة في هذا اليوم</span><% } %>
         </h3>
-        <span class="text-muted font-12"><i class="fas fa-user-tie"></i> <%= g.coach_name || '—' %> · <i class="fas fa-water"></i> <%= g.pool_name || '—' %> · <b><%= g.members.length %></b> سباح</span>
+        <span class="text-muted font-12"><i class="fas fa-user-tie"></i> <%= g.coach_name || '—' %> · <i class="fas fa-water"></i> <%= g.pool_name || '—' %> · <b><%= g.members.length %></b> لاعب</span>
       </div>
       <div class="card-body att-card">
         <% if (g.members.length) { %>
@@ -47,7 +47,7 @@
             <% if (g.session) { %><a href="/attendance/session/<%= g.session.id %>" class="btn btn-outline btn-sm"><i class="fas fa-clipboard-user"></i> صفحة تسجيل الحضور</a><% } %>
           </div>
           <div class="att-row" style="border-bottom-width:2px">
-            <div class="att-name"><b>السباح</b></div>
+            <div class="att-name"><b>اللاعب</b></div>
             <div class="att-btns">
               <span class="att-btn att-head" title="حاضر" style="cursor:default"><i class="fas fa-check"></i> <span>حاضر</span></span>
               <span class="att-btn att-head" title="غائب" style="cursor:default"><i class="fas fa-xmark"></i> <span>غائب</span></span>
@@ -75,7 +75,7 @@
             </div>
           <% }); %>
         <% } else { %>
-          <div class="empty-state"><i class="fas fa-user-slash"></i><p>لا يوجد سباحون في هذه المجموعة</p></div>
+          <div class="empty-state"><i class="fas fa-user-slash"></i><p>لا يوجد لاعبون في هذه المجموعة</p></div>
         <% } %>
       </div>
     </div>
@@ -106,7 +106,7 @@
         body: JSON.stringify({ group_id: btn.dataset.group, date: btn.dataset.date, statuses: statuses })
       }).then(function (r) { return r.json(); }).then(function (res) {
         btn.disabled = false;
-        if (res.ok) { App.showToast('تم حفظ حضور المجموعة (' + (res.count || 0) + ' سباح)', 'success'); }
+        if (res.ok) { App.showToast('تم حفظ حضور المجموعة (' + (res.count || 0) + ' لاعب)', 'success'); }
         else { App.showToast(res.error || 'فشل الحفظ', 'danger'); }
       }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'danger'); });
     });

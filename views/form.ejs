@@ -99,7 +99,7 @@
 </div>
 <% if (form.transfer) { %>
 <div class="card mt-2">
-  <div class="card-header"><h3><i class="fas fa-right-left"></i> نقل السباح من مجموعة إلى مجموعة</h3></div>
+  <div class="card-header"><h3><i class="fas fa-right-left"></i> نقل اللاعب من مجموعة إلى مجموعة</h3></div>
   <div class="card-body">
     <div class="transfer-summary">
       <div class="ts-box">
@@ -116,7 +116,7 @@
         <em><i class="fas fa-user-tie"></i> الكابتن: <span id="transferToCoach">—</span></em>
       </div>
     </div>
-    <form method="post" action="<%= form.transfer.action %>" class="grid-2" style="align-items:end" data-confirm="تأكيد نقل السباح إلى المجموعة والكابتن الجديد؟ ستبقى كل بياناته (الحضور، التقييمات، الاشتراكات) كما هي.">
+    <form method="post" action="<%= form.transfer.action %>" class="grid-2" style="align-items:end" data-confirm="تأكيد نقل اللاعب إلى المجموعة والكابتن الجديد؟ ستبقى كل بياناته (الحضور، التقييمات، الاشتراكات) كما هي.">
       <div class="field">
         <label>المجموعة الجديدة</label>
         <select name="group_id" id="transferGroup" required>
@@ -141,7 +141,7 @@
         <input type="text" name="note" placeholder="مثال: انتقال بسبب تغيير المستوى">
       </div>
       <div class="field">
-        <button type="submit" class="btn btn-primary"><i class="fas fa-right-left"></i> نقل السباح</button>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-right-left"></i> نقل اللاعب</button>
       </div>
     </form>
     <script>

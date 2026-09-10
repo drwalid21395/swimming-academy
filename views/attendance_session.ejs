@@ -14,7 +14,7 @@
 
 <div class="att-card card">
   <div class="card-header">
-    <h3><i class="fas fa-users"></i> السباحون (<%= members.length %>)</h3>
+    <h3><i class="fas fa-users"></i> اللاعبون (<%= members.length %>)</h3>
     <div class="flex gap-1">
       <button class="btn btn-success btn-sm" data-mark-all="present" data-session="<%= s.id %>"><i class="fas fa-check"></i> الكل حاضر</button>
       <button class="btn btn-outline-danger btn-sm" data-mark-all="absent" data-session="<%= s.id %>"><i class="fas fa-xmark"></i> الكل غائب</button>
@@ -23,7 +23,7 @@
   </div>
   <div class="card-body">
     <div class="att-row" style="border-bottom-width:2px">
-      <div class="att-name"><b>السباح</b></div>
+      <div class="att-name"><b>اللاعب</b></div>
       <div class="att-btns">
         <span class="att-btn att-head" title="حاضر" style="cursor:default"><i class="fas fa-check"></i> <span>حاضر</span></span>
         <span class="att-btn att-head" title="غائب" style="cursor:default"><i class="fas fa-xmark"></i> <span>غائب</span></span>
@@ -51,7 +51,7 @@
       </div>
     <% }); %>
     <% if (!members.length) { %>
-      <div class="empty-state"><i class="fas fa-user-xmark"></i><p>لا يوجد سباحون مسجلون في هذه المجموعة</p></div>
+      <div class="empty-state"><i class="fas fa-user-xmark"></i><p>لا يوجد لاعبون مسجلون في هذه المجموعة</p></div>
     <% } %>
   </div>
 </div>

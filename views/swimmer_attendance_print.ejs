@@ -1,4 +1,4 @@
-<%- include('partials/layout_top', { title: 'سجل حضور السباح', active: 'swimmers' }) %>
+<%- include('partials/layout_top', { title: 'سجل حضور اللاعب', active: 'swimmers' }) %>
 <div class="page-head no-print">
   <div>
     <div class="page-title"><i class="fas fa-clipboard-user"></i> سجل الحضور والغياب</div>
@@ -7,7 +7,7 @@
   <div class="spacer"></div>
   <div class="flex gap-1">
     <button class="btn btn-primary" onclick="window.print()"><i class="fas fa-file-pdf"></i> طباعة / تحميل PDF</button>
-    <a href="/swimmers/<%= s.id %>" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> ملف السباح</a>
+    <a href="/swimmers/<%= s.id %>" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> ملف اللاعب</a>
   </div>
 </div>
 
@@ -56,7 +56,7 @@
             <td><%= r.coach_note || '—' %></td>
           </tr>
         <% }); %>
-        <% if (!records.length) { %><tr><td colspan="6"><div class="empty-state"><i class="fas fa-clipboard-user"></i><p>لا توجد سجلات حضور لهذا السباح</p></div></td></tr><% } %>
+        <% if (!records.length) { %><tr><td colspan="6"><div class="empty-state"><i class="fas fa-clipboard-user"></i><p>لا توجد سجلات حضور لهذا اللاعب</p></div></td></tr><% } %>
       </tbody>
     </table>
   </div>

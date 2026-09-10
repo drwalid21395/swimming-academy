@@ -39,13 +39,13 @@ router.get('/levels', async function (req, res) {
         ? `<a href="/levels/${row.id}/edit" class="skills-link" title="اضغط لتعديل المهارات">${row.skills.map(s => `<span class="skill-chip">${s}</span>`).join('')}<span class="skill-edit"><i class="fas fa-pen"></i> تعديل</span></a>`
         : `<a href="/levels/${row.id}/edit" class="skills-link empty" title="إضافة مهارات"><span class="text-muted">لا توجد مهارات — اضغط للإضافة</span></a>` },
       { key: 'skills_count', label: 'العدد', html: row => `<span class="badge badge-info">${row.skills_count} مهارة</span>` },
-      { key: 'swimmers_count', label: 'السباحون', html: row => `${row.swimmers_count} سباح` }
+      { key: 'swimmers_count', label: 'اللاعبون', html: row => `${row.swimmers_count} لاعب` }
     ],
     rows,
     canAdd: canAdd(req.currentUser, 'levels'), addUrl: canAdd(req.currentUser, 'levels') ? '/levels/new' : null, addLabel: 'مستوى جديد',
     actions: () => row => [
       { label: 'تعديل المهارات', icon: 'fa-list-check', href: '/levels/' + row.id + '/edit' },
-      { label: 'حذف', icon: 'fa-trash', href: '/levels/' + row.id + '/delete', confirm: 'حذف المستوى؟ سيتم حذف مهاراته وتقييماته، ورفع السباحين الموجودين عليه إلى بدون مستوى', cls: 'text-danger' }
+      { label: 'حذف', icon: 'fa-trash', href: '/levels/' + row.id + '/delete', confirm: 'حذف المستوى؟ سيتم حذف مهاراته وتقييماته، ورفع اللاعبين الموجودين عليه إلى بدون مستوى', cls: 'text-danger' }
     ]
   };
   res.render('list', { page });
@@ -101,7 +101,7 @@ router.post('/levels/:id/delete', async function (req, res) {
   audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'levels', id, 'حذف مستوى', req);
   setFlash(res, {
     type: 'success',
-    message: 'تم حذف المستوى' + (swimmersMoved ? ' (' + swimmersMoved + ' سباح رُفع مستواهم وأصبح بدون مستوى)' : '')
+    message: 'تم حذف المستوى' + (swimmersMoved ? ' (' + swimmersMoved + ' لاعب رُفع مستواهم وأصبح بدون مستوى)' : '')
   });
   res.redirect('/levels');
 });
@@ -286,7 +286,7 @@ router.get('/groups', async function (req, res) {
     LEFT JOIN programs p ON p.id = g.program_id LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools pool ON pool.id = g.pool_id
     LEFT JOIN branches b ON b.id = g.branch_id WHERE g.deleted_at IS NULL` + pScope + ` ORDER BY g.id`).all();
   const page = {
-    title: 'المجموعات التدريبية', subtitle: 'تنظيم السباحين في مجموعات حسب البرنامج', icon: 'fa-people-group', module: 'groups', active: 'groups',
+    title: 'المجموعات التدريبية', subtitle: 'تنظيم اللاعبين في مجموعات حسب البرنامج', icon: 'fa-people-group', module: 'groups', active: 'groups',
     columns: [
       { key: 'name', label: 'المجموعة', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#14b8a6,#0d9488)">${(row.name || 'م').trim().charAt(0)}</div><div><div class="cell-title">${row.name}</div><div class="cell-sub">${row.program_name || ''}</div></div></div>` },
       { key: 'members', label: 'الأعضاء', html: row => `<span class="badge badge-info">${row.members} / ${row.capacity}</span>` },
@@ -304,7 +304,7 @@ router.get('/groups', async function (req, res) {
     canAdd: true, addUrl: '/groups/new', addLabel: 'مجموعة جديدة',
     actions: () => row => [
       { label: 'الحصص', icon: 'fa-calendar-days', href: '/sessions?group=' + row.id },
-      { label: 'مزامنة الأعضاء', icon: 'fa-arrows-rotate', href: '/groups/' + row.id + '/sync', confirm: 'مزامنة أعضاء المجموعة من السباحين المسجلين فيها؟' },
+      { label: 'مزامنة الأعضاء', icon: 'fa-arrows-rotate', href: '/groups/' + row.id + '/sync', confirm: 'مزامنة أعضاء المجموعة من اللاعبين المسجلين فيها؟' },
       { label: 'تعديل', icon: 'fa-pen', href: '/groups/' + row.id + '/edit' },
       { label: 'حذف', icon: 'fa-trash', href: '/groups/' + row.id + '/delete', confirm: 'حذف المجموعة؟', cls: 'text-danger' }
     ]
@@ -312,7 +312,7 @@ router.get('/groups', async function (req, res) {
   res.render('list', { page });
 });
 
-/* مزامنة أعضاء المجموعة من السباحين المرتبطين بها */
+/* مزامنة أعضاء المجموعة من اللاعبين المرتبطين بها */
 router.post('/groups/:id/sync', async function (req, res) {
   const id = Number(req.params.id);
   await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) SELECT id, ? FROM swimmers WHERE group_id = ? AND deleted_at IS NULL').run(id, id);
@@ -355,7 +355,7 @@ router.post('/groups/:id/edit', async function (req, res) {
   res.redirect('/groups/' + id + '/edit');
 });
 
-/* إضافة سباح إلى المجموعة (يُحدّث group_id ويتمّت المزامنة تلقائياً) */
+/* إضافة لاعب إلى المجموعة (يُحدّث group_id ويتمّت المزامنة تلقائياً) */
 router.post('/groups/:id/members/add', async function (req, res) {
   const id = Number(req.params.id);
   const swimmerId = Number(req.body.swimmer_id || 0);
@@ -369,9 +369,9 @@ router.post('/groups/:id/members/add', async function (req, res) {
   }
   if (swimmerId) {
     await db.prepare('UPDATE swimmers SET group_id = ? WHERE id = ?').run(id, swimmerId);
-    audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'groups', id, 'إضافة سباح #' + swimmerId + ' إلى المجموعة', req);
+    audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'groups', id, 'إضافة لاعب #' + swimmerId + ' إلى المجموعة', req);
   }
-  const flash = { type: 'success', message: 'تمت إضافة السباح إلى المجموعة' };
+  const flash = { type: 'success', message: 'تمت إضافة اللاعب إلى المجموعة' };
   if (req.xhr) {
     const row = swimmerId ? await db.prepare(`SELECT s.id, s.full_name, s.membership_no, l.name AS level_name FROM swimmers s LEFT JOIN levels l ON l.id = s.level_id WHERE s.id = ?`).get(swimmerId) : null;
     return res.json({ ok: true, message: flash.message, member: row, group_id: id });
@@ -380,15 +380,15 @@ router.post('/groups/:id/members/add', async function (req, res) {
   res.redirect('/groups/' + id + '/edit');
 });
 
-/* إزالة سباح من المجموعة */
+/* إزالة لاعب من المجموعة */
 router.post('/groups/:id/members/remove', async function (req, res) {
   const id = Number(req.params.id);
   const swimmerId = Number(req.body.swimmer_id || 0);
   if (swimmerId) {
     await db.prepare('UPDATE swimmers SET group_id = NULL WHERE id = ? AND group_id = ?').run(swimmerId, id);
-    audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'groups', id, 'إزالة سباح #' + swimmerId + ' من المجموعة', req);
+    audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'groups', id, 'إزالة لاعب #' + swimmerId + ' من المجموعة', req);
   }
-  const flash = { type: 'success', message: 'تمت إزالة السباح من المجموعة' };
+  const flash = { type: 'success', message: 'تمت إزالة اللاعب من المجموعة' };
   if (req.xhr) {
     const sw = swimmerId ? await db.prepare('SELECT full_name, membership_no FROM swimmers WHERE id = ?').get(swimmerId) : null;
     return res.json({ ok: true, message: flash.message, swimmer_id: swimmerId, removed_name: sw ? sw.full_name : '', removed_membership: sw ? sw.membership_no : '' });

@@ -111,7 +111,7 @@
     <div class="card-body">
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>#</th><th>السباح</th><th>رقم العضوية</th><th>المستوى</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>اللاعب</th><th>رقم العضوية</th><th>المستوى</th><th></th></tr></thead>
           <tbody>
             <% members.forEach(function (m, i) { %>
               <tr>
@@ -133,17 +133,17 @@
       </div>
       <div class="empty-state" data-empty-members <%= members.length ? 'style="display:none"' : '' %>><i class="fas fa-user-slash"></i><p>لا يوجد أعضاء في هذه المجموعة بعد</p></div>
 
-      <div class="form-section-title mt-2"><i class="fas fa-user-plus"></i> إضافة سباح إلى المجموعة</div>
+      <div class="form-section-title mt-2"><i class="fas fa-user-plus"></i> إضافة لاعب إلى المجموعة</div>
       <form method="POST" action="/groups/<%= group.id %>/members/add" class="chip-add" data-ajax-add>
         <select name="swimmer_id" class="form-control" required style="flex:1;min-width:220px">
-          <option value="">— اختر السباح —</option>
+          <option value="">— اختر اللاعب —</option>
           <% allSwimmers.forEach(function (s) { %>
             <option value="<%= s.id %>"><%= s.full_name %> (<%= s.membership_no %>)</option>
           <% }); %>
         </select>
         <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> إضافة</button>
       </form>
-      <% if (!allSwimmers.length) { %><div class="form-hint">جميع السباحين مضافون بالفعل لهذه المجموعة.</div><% } %>
+      <% if (!allSwimmers.length) { %><div class="form-hint">جميع اللاعبين مضافون بالفعل لهذه المجموعة.</div><% } %>
     </div>
   </div>
 <% } %>

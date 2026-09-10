@@ -1,4 +1,4 @@
-/** لوحة التحكم + بوابة ولي الأمر والسباح */
+/** لوحة التحكم + بوابة ولي الأمر واللاعب */
 const express = require('express');
 const { db } = require('../lib/db');
 const { money, fmtDate, fmtDateTime, dayAr, calcAge, pct, daysAhead, daysAgo, today } = require('../lib/helpers');
@@ -87,7 +87,7 @@ router.get('/', async function (req, res) {
     attAbsent.push((await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status IN ('absent','excused')` + sessionClause(sid, 's')).get(day)).c);
   }
 
-  /* السباحون حسب البرنامج */
+  /* اللاعبون حسب البرنامج */
   const byProgram = await db.prepare(`SELECT p.name, COUNT(s.id) c FROM programs p LEFT JOIN swimmers s ON s.program_id = p.id AND s.deleted_at IS NULL WHERE p.deleted_at IS NULL` + sportClause(sid, 'p') + ` GROUP BY p.id ORDER BY c DESC LIMIT 8`).all();
 
   /* تنبيهات */
@@ -158,7 +158,7 @@ mk('${progEl}', { type: 'doughnut', data: { labels: pd.map(function (p) { return
 `;
 }
 
-/* ---------- بوابة ولي الأمر / السباح ---------- */
+/* ---------- بوابة ولي الأمر / اللاعب ---------- */
 router.get('/my-portal', async function (req, res) {
   const user = req.currentUser;
   let kidIds = [];

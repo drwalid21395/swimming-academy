@@ -32,7 +32,7 @@
   <div class="reserve-card">
     <div class="reserve-head">
       <h1><i class="fas fa-calendar-check"></i> احجز مكانك في <%= data.siteName %></h1>
-      <p>اختر البرنامج المناسب وأدخل بيانات السباح وسنتواصل معكم لتأكيد الحجز</p>
+      <p>اختر البرنامج المناسب وأدخل بيانات اللاعب وسنتواصل معكم لتأكيد الحجز</p>
     </div>
     <div class="reserve-body">
       <% if (confirmed) { %>
@@ -44,7 +44,7 @@
         <div style="margin:20px 0;border:1px dashed var(--card-border);border-radius:14px;background:var(--bg, #f8fafc);padding:16px 20px">
           <div style="font-size:13px;display:grid;grid-template-columns:1fr 1fr;gap:10px 18px">
             <% if (confirmed.program_name) { %><div><span style="color:var(--text-muted)">البرنامج:</span> <b><%= confirmed.program_name %></b></div><% } %>
-            <div><span style="color:var(--text-muted)">اسم السباح:</span> <b><%= confirmed.swimmer_name %></b></div>
+            <div><span style="color:var(--text-muted)">اسم اللاعب:</span> <b><%= confirmed.swimmer_name %></b></div>
             <% if (confirmed.birth_date) { %><div><span style="color:var(--text-muted)">تاريخ الميلاد:</span> <b><%= confirmed.birth_date %></b></div><% } %>
             <% if (confirmed.age !== null && confirmed.age !== undefined && confirmed.age !== '') { %><div><span style="color:var(--text-muted)">السن:</span> <b><%= confirmed.age %> سنة</b></div><% } %>
             <% if (confirmed.phone) { %><div><span style="color:var(--text-muted)">الهاتف:</span> <b dir="ltr"><%= confirmed.phone %></b></div><% } %>
@@ -77,7 +77,7 @@
             <input type="hidden" name="program_name" id="programNameInput" value="">
           </div>
           <div class="form-group">
-            <label>اسم السباح <span class="text-danger">*</span></label>
+            <label>اسم اللاعب <span class="text-danger">*</span></label>
             <input type="text" name="swimmer_name" required placeholder="الاسم الثلاثي" value="<%= v.swimmer_name || '' %>">
           </div>
           <div class="form-group">
@@ -117,7 +117,7 @@
             <input type="tel" name="guardian_phone" placeholder="01xxxxxxxxx" dir="ltr" value="<%= v.guardian_phone || '' %>">
           </div>
           <div class="form-group">
-            <label>رقم السباح <small>(إن وجد — اختياري)</small></label>
+            <label>رقم اللاعب <small>(إن وجد — اختياري)</small></label>
             <input type="text" name="swimmer_number" placeholder="مثال: SW-0001" value="<%= v.swimmer_number || '' %>">
           </div>
           <div class="form-group full">

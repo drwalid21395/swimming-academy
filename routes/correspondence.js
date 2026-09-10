@@ -235,13 +235,13 @@ router.get('/documents', async function (req, res) {
       WHEN 'guardian' THEN (SELECT full_name FROM guardians WHERE id = d.owner_id) END AS owner_name
     FROM documents d LEFT JOIN users u ON u.id = d.uploaded_by ORDER BY d.created_at DESC`).all();
   const page = {
-    title: 'المستندات', subtitle: 'ملفات السباحين والمستندات الإدارية', icon: 'fa-folder-open', module: 'documents', active: 'documents',
+    title: 'المستندات', subtitle: 'ملفات اللاعبين والمستندات الإدارية', icon: 'fa-folder-open', module: 'documents', active: 'documents',
     columns: [
       { key: 'title', label: 'المستند', html: row => `<div><b>${row.title || row.file_name}</b><div class="cell-sub">${row.doc_type || ''}</div></div>` },
       { key: 'owner', label: 'الجهة', html: row => {
         if (!row.owner_name) return '<span class="badge badge-gray">عام</span>';
         const cls = row.owner_type === 'swimmer' ? 'badge-info' : row.owner_type === 'coach' ? 'badge-primary' : 'badge-warning';
-        const lbl = row.owner_type === 'swimmer' ? 'سباح' : row.owner_type === 'coach' ? 'مدرب' : 'ولي أمر';
+        const lbl = row.owner_type === 'swimmer' ? 'لاعب' : row.owner_type === 'coach' ? 'مدرب' : 'ولي أمر';
         return `<span class="badge ${cls}">${lbl}: ${row.owner_name}</span>`;
       } },
       { key: 'file', label: 'الملف', html: row => fileBadge(row.file_name, canExport(req.currentUser, 'documents')) },
@@ -250,7 +250,7 @@ router.get('/documents', async function (req, res) {
     ],
     rows,
     filters: [
-      { name: 'owner_type', label: 'الجهة', options: [{ value: 'general', label: 'عام' }, { value: 'swimmer', label: 'سباح' }, { value: 'coach', label: 'مدرب' }, { value: 'guardian', label: 'ولي أمر' }] },
+      { name: 'owner_type', label: 'الجهة', options: [{ value: 'general', label: 'عام' }, { value: 'swimmer', label: 'لاعب' }, { value: 'coach', label: 'مدرب' }, { value: 'guardian', label: 'ولي أمر' }] },
       { name: 'visibility', label: 'الظهور', options: [{ value: 'staff', label: 'الإدارة' }, { value: 'coach', label: 'المدربون' }, { value: 'guardian', label: 'ولي الأمر' }] }
     ],
     canAdd: canAdd(req.currentUser, 'documents'), addUrl: canAdd(req.currentUser, 'documents') ? '/documents/new' : null, addLabel: 'رفع مستند',
@@ -264,7 +264,7 @@ router.get('/documents/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'documents')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   res.render('form', { form: { title: 'رفع مستند', subtitle: 'إضافة ملف للأكاديمية', icon: 'fa-upload', active: 'documents', action: '/documents/new', encType: 'multipart/form-data',
     fields: [
-      { key: 'owner_type', label: 'نوع الجهة', type: 'select', options: [{ value: 'general', label: 'عام' }, { value: 'swimmer', label: 'سباح' }, { value: 'coach', label: 'مدرب' }, { value: 'guardian', label: 'ولي أمر' }] },
+      { key: 'owner_type', label: 'نوع الجهة', type: 'select', options: [{ value: 'general', label: 'عام' }, { value: 'swimmer', label: 'لاعب' }, { value: 'coach', label: 'مدرب' }, { value: 'guardian', label: 'ولي أمر' }] },
       { key: 'owner_id', label: 'رقم الجهة (id)', type: 'number', number: true },
       { key: 'doc_type', label: 'نوع المستند', type: 'text', hint: 'مثال: شهادة ميلاد، تقرير طبي، عقد' },
       { key: 'title', label: 'العنوان', type: 'text' },
@@ -377,7 +377,7 @@ router.get('/complaints', async function (req, res) {
     columns: [
       { key: 'title', label: 'الشكوى', html: row => `<div><b>${row.title}</b><div class="cell-sub">${row.category} · ${(row.description || '').slice(0, 50)}</div></div>` },
       { key: 'guardian_name', label: 'ولي الأمر' },
-      { key: 'swimmer_name', label: 'السباح', html: row => row.swimmer_name || '—' },
+      { key: 'swimmer_name', label: 'اللاعب', html: row => row.swimmer_name || '—' },
       { key: 'created_at', label: 'التاريخ', html: row => fmtDateTime(row.created_at) },
       { key: 'status', label: 'الحالة', html: row => `<span class="badge ${row.status === 'جديدة' ? 'badge-danger' : row.status === 'قيد المعالجة' ? 'badge-warning' : row.status === 'تمت المعالجة' ? 'badge-info' : 'badge-gray'}">${row.status}</span>` }
     ],
@@ -396,7 +396,7 @@ router.get('/complaints/new', async function (req, res) {
   res.render('form', { form: { title: 'شكوى جديدة', subtitle: 'تسجيل شكوى أو طلب', icon: 'fa-plus', active: 'complaints', action: '/complaints/new',
     fields: [
       { key: 'guardian_id', label: 'ولي الأمر', type: 'select', options: (await db.prepare('SELECT * FROM guardians WHERE deleted_at IS NULL').all()).map(g => ({ value: g.id, label: g.full_name })) },
-      { key: 'swimmer_id', label: 'السباح', type: 'select', options: (await db.prepare('SELECT id, full_name FROM swimmers WHERE deleted_at IS NULL ORDER BY full_name').all()).map(s => ({ value: s.id, label: s.full_name })) },
+      { key: 'swimmer_id', label: 'اللاعب', type: 'select', options: (await db.prepare('SELECT id, full_name FROM swimmers WHERE deleted_at IS NULL ORDER BY full_name').all()).map(s => ({ value: s.id, label: s.full_name })) },
       { key: 'category', label: 'الفئة', type: 'select', options: ['عام', 'مالية', 'تدريب', 'إداري', 'أخرى'].map(v => ({ value: v, label: v })) },
       { key: 'title', label: 'العنوان', type: 'text', required: true },
       { key: 'description', label: 'الوصف', type: 'textarea', full: true }
@@ -419,7 +419,7 @@ router.get('/complaints/:id', async function (req, res) {
   if (!c) return res.redirect('/complaints');
   const fields = [
     { label: 'العنوان', value: c.title }, { label: 'الفئة', value: c.category },
-    { label: 'ولي الأمر', value: c.guardian_name || '—' }, { label: 'السباح', value: c.swimmer_name || '—' },
+    { label: 'ولي الأمر', value: c.guardian_name || '—' }, { label: 'اللاعب', value: c.swimmer_name || '—' },
     { label: 'الوصف', value: c.description || '—' }, { label: 'الحالة', value: c.status },
     { label: 'الرد', value: c.response || '—' }, { label: 'المعالج', value: c.responder_name || '—' },
     { label: 'تاريخ التسجيل', value: fmtDateTime(c.created_at) }

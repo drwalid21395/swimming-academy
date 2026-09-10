@@ -53,7 +53,7 @@ router.post('/login', loginIpLimit, loginUserLimit, async function (req, res) {
   await db.prepare("UPDATE users SET last_login = datetime('now','localtime') WHERE id = ?").run(user.id);
   audit(user.id, user.full_name, 'login', 'auth', user.id, 'تسجيل دخول', req);
   const role = await db.prepare('SELECT * FROM roles WHERE id = ?').get(user.role_id);
-  const base = role && (role.name === 'ولي الأمر' || role.name === 'السباح أو اللاعب') ? '/my-portal' : '/';
+  const base = role && (role.name === 'ولي الأمر' || role.name === 'اللاعب') ? '/my-portal' : '/';
   res.redirect(base);
 });
 

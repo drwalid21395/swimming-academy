@@ -247,7 +247,7 @@ const NAV = [
   { group: 'عام', items: [['لوحة التحكم', '/admin', 'dashboard', 'dashboard']] },
   {
     group: 'الأعضاء', items: [
-      ['السباحون', '/admin/swimmers', 'swimmers', 'swimmers'],
+      ['اللاعبون', '/admin/swimmers', 'swimmers', 'swimmers'],
       ['أولياء الأمور', '/admin/guardians', 'guardians', 'guardians'],
       ['الكباتن والمدربون', '/admin/coaches', 'coaches', 'coaches'],
       ['المستخدمون والموظفون', '/admin/users', 'users', 'users']

@@ -30,7 +30,7 @@ function sesStatusBadge(st) {
   return `<span class="badge ${r[0]}">${r[1]}</span>`;
 }
 
-/* مزامنة أعضاء المجموعة من عمود group_id في السباحين */
+/* مزامنة أعضاء المجموعة من عمود group_id في اللاعبين */
 async function syncGroup(groupId) {
   if (!groupId) return;
   await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) SELECT id, ? FROM swimmers WHERE group_id = ? AND deleted_at IS NULL').run(groupId, groupId);
@@ -236,7 +236,7 @@ router.post('/attendance/save', async function (req, res) {
   await db.prepare(`INSERT INTO attendance (session_id, swimmer_id, status, reason, coach_note) VALUES (?,?,?,?,?)
     ON CONFLICT(session_id, swimmer_id) DO UPDATE SET status=excluded.status, reason=excluded.reason, coach_note=excluded.coach_note`)
     .run(session_id, swimmer_id, status || 'present', reason || '', coach_note || '');
-  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'attendance', session_id, 'تحديث حضور سباح #' + swimmer_id, req);
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'attendance', session_id, 'تحديث حضور لاعب #' + swimmer_id, req);
   res.json({ ok: true });
 });
 
@@ -279,7 +279,7 @@ router.post('/attendance/group-save', async function (req, res) {
     st.run(session.id, id, statuses[sid] || 'present', '', '');
     n++;
   }
-  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'attendance', session.id, 'حضور مجموعة #' + gid + ' (' + n + ' سباح)', req);
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'attendance', session.id, 'حضور مجموعة #' + gid + ' (' + n + ' لاعب)', req);
   res.json({ ok: true, count: n });
 });
 
@@ -293,7 +293,7 @@ function addDaysStr(dateStr, n) {
   return d.toISOString().slice(0, 10);
 }
 
-/* صفحة إلغاء الحصة: اختيار المجموعات/السباحين/الأيام التعويضية + مد التاريخ */
+/* صفحة إلغاء الحصة: اختيار المجموعات/اللاعبين/الأيام التعويضية + مد التاريخ */
 router.get('/sessions/:id/cancel', async function (req, res) {
   if (!canEdit(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
@@ -367,7 +367,7 @@ router.post('/sessions/:id/cancel', async function (req, res) {
     audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'sessions', id, 'إلغاء حصة بدون تعويض', req);
   }
 
-  /* 3) نطاق السباحين (المستفيدون من مدّ التاريخ وإضافة الرصيد) */
+  /* 3) نطاق اللاعبين (المستفيدون من مدّ التاريخ وإضافة الرصيد) */
   let swimmerIds = [];
   if (b.scope === 'selected') {
     swimmerIds = toIds(b.swimmers);

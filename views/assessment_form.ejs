@@ -2,7 +2,7 @@
 <div class="page-head">
   <div>
     <div class="page-title"><i class="fas <%= isEdit ? 'fa-pen' : 'fa-clipboard-check' %>"></i> <%= title %></div>
-    <div class="page-sub">تقييم مهارات السباح على جميع المستويات</div>
+    <div class="page-sub">تقييم مهارات اللاعب على جميع المستويات</div>
   </div>
 </div>
 
@@ -13,7 +13,7 @@
       <div class="form-grid">
         <div class="full form-section-title"><i class="fas fa-user"></i> بيانات التقييم</div>
         <div class="form-group">
-          <label>السباح <span class="req">*</span></label>
+          <label>اللاعب <span class="req">*</span></label>
           <select class="form-control" name="swimmer_id" required>
             <option value="">— اختر —</option>
             <% swimmers.forEach(function (s) { %><option value="<%= s.value %>" data-level="<%= s.level || '' %>" <%= String(values.swimmer_id) === String(s.value) ? 'selected' : '' %>><%= s.label %></option><% }); %>

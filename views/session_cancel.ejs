@@ -1,7 +1,7 @@
 <%- include('partials/layout_top', { title: 'إلغاء الحصة وتعويض', active: 'sessions' }) %>
 <div class="page-head">
   <div>
-    <div class="page-title"><i class="fas fa-ban"></i> إلغاء الحصة وتعويض السباحين</div>
+    <div class="page-title"><i class="fas fa-ban"></i> إلغاء الحصة وتعويض اللاعبين</div>
     <div class="page-sub"><b><%= s.group_name || '—' %></b> · <%= fmtDate(s.date) %> · <%= s.start_time %> — <%= s.end_time || '' %> · <%= s.coach_name || '—' %></div>
   </div>
   <div class="spacer"></div>
@@ -86,10 +86,10 @@
     </div>
   </div>
 
-  <!-- ============ مد التاريخ + نطاق السباحين ============ -->
+  <!-- ============ مد التاريخ + نطاق اللاعبين ============ -->
   <div class="card" style="margin-top:16px">
     <div class="card-header">
-      <h3><i class="fas fa-calendar-plus"></i> مدّ تاريخ الاشتراك + نطاق السباحين</h3>
+      <h3><i class="fas fa-calendar-plus"></i> مدّ تاريخ الاشتراك + نطاق اللاعبين</h3>
     </div>
     <div class="card-body">
       <div class="flex gap-1" style="flex-wrap:wrap;margin-bottom:16px">
@@ -99,7 +99,7 @@
         </label>
         <label class="check-chip">
           <input type="radio" name="scope" value="selected" id="scopeSelected">
-          <span class="chip-label"><i class="fas fa-user-check"></i> سباحون محددون فقط</span>
+          <span class="chip-label"><i class="fas fa-user-check"></i> لاعبون محددون فقط</span>
         </label>
       </div>
 
@@ -130,7 +130,7 @@
             <input type="checkbox" name="add_to_balance" value="1" id="balanceChk">
             <span class="chip-label"><i class="fas fa-layer-group"></i> إضافة الحصص التعويضية إلى رصيد الاشتراك</span>
           </label>
-          <div class="font-12 text-muted" style="margin-top:4px">يُستحق للسباحين المختارين الحصص التي ستنشئها، ويُطبّق على اشتراكاتهم النشطة فقط.</div>
+          <div class="font-12 text-muted" style="margin-top:4px">يُستحق لللاعبين المختارين الحصص التي ستنشئها، ويُطبّق على اشتراكاتهم النشطة فقط.</div>
         </div>
       </div>
     </div>

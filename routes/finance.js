@@ -37,9 +37,9 @@ router.get('/subscriptions', async function (req, res) {
   const rows = await db.prepare(`SELECT sub.*, s.full_name AS swimmer_name, s.membership_no, p.name AS program_name, g.name AS group_name, gu.whatsapp AS guardian_whatsapp FROM subscriptions sub
     LEFT JOIN swimmers s ON s.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id LEFT JOIN guardians gu ON gu.id = s.guardian_id WHERE 1=1` + progClause(activeSport(req), 'sub') + ` ORDER BY sub.created_at DESC`).all();
   const page = {
-    title: 'الاشتراكات', subtitle: 'اشتراكات السباحين في البرامج', icon: 'fa-file-contract', module: 'subscriptions', active: 'subscriptions',
+    title: 'الاشتراكات', subtitle: 'اشتراكات اللاعبين في البرامج', icon: 'fa-file-contract', module: 'subscriptions', active: 'subscriptions',
     columns: [
-      { key: 'swimmer_name', label: 'السباح', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#0ea5e9,#14b8a6)">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div></div></div>` },
+      { key: 'swimmer_name', label: 'اللاعب', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#0ea5e9,#14b8a6)">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div></div></div>` },
       { key: 'program_name', label: 'البرنامج' },
       { key: 'start_date', label: 'الفترة', html: row => `${fmtDate(row.start_date)}<div class="cell-sub">إلى ${fmtDate(row.end_date)}</div>` },
       { key: 'sessions_used', label: 'الحصص', html: row => `<span class="badge badge-info">${row.sessions_used} / ${row.sessions_total}</span>` },
@@ -57,7 +57,7 @@ router.get('/subscriptions', async function (req, res) {
     actions: () => row => {
       const acts = [
         { label: 'التفاصيل', icon: 'fa-eye', href: '/subscriptions/' + row.id },
-        { label: 'السباح', icon: 'fa-person-swimming', href: '/swimmers/' + row.swimmer_id },
+        { label: 'اللاعب', icon: 'fa-person-swimming', href: '/swimmers/' + row.swimmer_id },
         { label: 'تعديل', icon: 'fa-pen', href: '/subscriptions/' + row.id + '/edit' }
       ];
       if (row.guardian_whatsapp) acts.push({ label: 'تذكير واتساب', icon: 'fa-whatsapp', iconPrefix: 'fab', href: '/subscriptions/' + row.id + '/whatsapp' });
@@ -70,7 +70,7 @@ router.get('/subscriptions', async function (req, res) {
 const subFields = async function (values, req) {
   const sid = activeSport(req);
   return [
-    { key: 'swimmer_id', label: 'السباح', type: 'select', options: await swimmerOptions(sid), required: true, section: 'بيانات الاشتراك', sectionIcon: 'fa-file-contract' },
+    { key: 'swimmer_id', label: 'اللاعب', type: 'select', options: await swimmerOptions(sid), required: true, section: 'بيانات الاشتراك', sectionIcon: 'fa-file-contract' },
     { key: 'program_id', label: 'البرنامج', type: 'select', options: await programOptions(sid) },
     { key: 'group_id', label: 'المجموعة', type: 'select', options: await groupOptions(sid) },
     { key: 'start_date', label: 'تاريخ البداية', type: 'date' },
@@ -102,7 +102,7 @@ router.get('/subscriptions/new', async function (req, res) {
       if (sw.group_id) prefill.group_id = sw.group_id;
     }
   }
-  res.render('form', { form: { title: 'اشتراك جديد', subtitle: 'تسجيل اشتراك سباح', icon: 'fa-plus', active: 'subscriptions', action: '/subscriptions/new', fields: await subFields({ total: 0, paid_amount: 0, ...prefill }, req), values: prefill, submitLabel: 'حفظ الاشتراك', cancelUrl: '/subscriptions', csrf: '' } });
+  res.render('form', { form: { title: 'اشتراك جديد', subtitle: 'تسجيل اشتراك لاعب', icon: 'fa-plus', active: 'subscriptions', action: '/subscriptions/new', fields: await subFields({ total: 0, paid_amount: 0, ...prefill }, req), values: prefill, submitLabel: 'حفظ الاشتراك', cancelUrl: '/subscriptions', csrf: '' } });
 });
 router.post('/subscriptions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -111,7 +111,7 @@ router.post('/subscriptions/new', async function (req, res) {
   const paid = Number(b.paid_amount || 0);
   const remaining = Math.round((total - paid) * 100) / 100;
   const subInfo = await db.prepare('SELECT full_name, membership_no FROM swimmers WHERE id = ?').get(b.swimmer_id);
-  const swimmerName = (subInfo && subInfo.full_name) || ('سباح #' + b.swimmer_id);
+  const swimmerName = (subInfo && subInfo.full_name) || ('لاعب #' + b.swimmer_id);
   const info = await db.prepare(`INSERT INTO subscriptions (swimmer_id, program_id, group_id, start_date, end_date, sessions_total, sessions_used, price, discount, tax, total, paid_amount, remaining, payment_method, receipt_no, paid_date, is_installment, status, notes, created_by)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(b.swimmer_id, b.program_id || null, b.group_id || null, b.start_date || today(), b.end_date || null, Number(b.sessions_total || 8), 0, Number(b.price || 0), Number(b.discount || 0), Number(b.tax || 0), total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), b.is_installment === '1' ? 1 : 0, b.status || 'نشط', b.notes || '', req.currentUser.id);
@@ -171,7 +171,7 @@ router.get('/subscriptions/:id/whatsapp', async function (req, res) {
 });
 
 /* ================= إيصال الاشتراك عبر واتساب (مع تأكيد قبل الإرسال) ================= */
-/* جلب بيانات الاشتراك + سباح + ولي أمر + برنامج + مجموعة + إعدادات الأكاديمية لبناء نص الإيصال */
+/* جلب بيانات الاشتراك + لاعب + ولي أمر + برنامج + مجموعة + إعدادات الأكاديمية لبناء نص الإيصال */
 async function receiptPayload(id) {
   const s = await db.prepare(`SELECT sub.*, sw.full_name AS swimmer_name, sw.membership_no, p.name AS program_name, g.name AS group_name,
       gu.full_name AS guardian_name, COALESCE(gu.whatsapp, gu.phone) AS phone
@@ -276,7 +276,7 @@ router.get('/payments', async function (req, res) {
   const page = {
     title: 'المدفوعات', subtitle: 'دفعات الاشتراكات والرسوم', icon: 'fa-money-bill-wave', module: 'payments', active: 'payments',
     columns: [
-      { key: 'swimmer_name', label: 'السباح', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#10b981,#059669)">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div></div></div>` },
+      { key: 'swimmer_name', label: 'اللاعب', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#10b981,#059669)">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div></div></div>` },
       { key: 'paid_date', label: 'التاريخ', html: row => fmtDate(row.paid_date) },
       { key: 'amount', label: 'المبلغ', html: row => `<span class="fw-700 text-success">${money(row.amount)}</span>` },
       { key: 'method', label: 'الطريقة', html: row => `<span class="badge badge-primary">${row.method}</span>` },
@@ -296,7 +296,7 @@ router.get('/payments/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'payments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   res.render('form', { form: { title: 'دفعة جديدة', subtitle: 'تسجيل دفعة مالية', icon: 'fa-plus', active: 'payments', action: '/payments/new',
     fields: [
-      { key: 'swimmer_id', label: 'السباح', type: 'select', options: await swimmerOptions(activeSport(req)), required: true },
+      { key: 'swimmer_id', label: 'اللاعب', type: 'select', options: await swimmerOptions(activeSport(req)), required: true },
       { key: 'subscription_id', label: 'الاشتراك (اختياري)', type: 'select', options: (await db.prepare("SELECT * FROM subscriptions WHERE status='نشط'" + progClause(activeSport(req), 'subscriptions') + " ORDER BY id DESC").all()).map(x => ({ value: x.id, label: '#' + x.id + ' — ' + x.swimmer_id })) },
       { key: 'amount', label: 'المبلغ (ج.م)', type: 'number', number: true, required: true },
       { key: 'method', label: 'طريقة الدفع', type: 'select', options: ['نقدي', 'تحويل بنكي', 'بطاقة', 'محفظة إلكترونية', 'شيك'].map(v => ({ value: v, label: v })) },
@@ -310,7 +310,7 @@ router.post('/payments/new', async function (req, res) {
   const b = req.body;
   const amount = Number(b.amount || 0);
   const payInfo = await db.prepare('SELECT full_name FROM swimmers WHERE id = ?').get(b.swimmer_id);
-  const payerName = (payInfo && payInfo.full_name) || ('سباح #' + b.swimmer_id);
+  const payerName = (payInfo && payInfo.full_name) || ('لاعب #' + b.swimmer_id);
   const info = await db.prepare('INSERT INTO payments (subscription_id, swimmer_id, amount, method, receipt_no, paid_date, staff_id, note) VALUES (?,?,?,?,?,?,?,?)')
     .run(b.subscription_id || null, b.swimmer_id, amount, b.method || 'نقدي', b.receipt_no || '', b.paid_date || today(), req.currentUser.id, b.note || '');
   if (b.subscription_id) {

@@ -1,8 +1,8 @@
-<%- include('partials/layout_top', { title: 'ملف السباح', active: 'swimmers' }) %>
+<%- include('partials/layout_top', { title: 'ملف اللاعب', active: 'swimmers' }) %>
 
 <div class="page-head">
   <div class="flex items-center gap-1">
-    <a href="/swimmers" class="btn btn-outline btn-sm"><i class="fas fa-arrow-right"></i> السباحون</a>
+    <a href="/swimmers" class="btn btn-outline btn-sm"><i class="fas fa-arrow-right"></i> اللاعبون</a>
     <a href="/swimmers/<%= s.id %>/assessment-report" class="btn btn-primary btn-sm"><i class="fas fa-clipboard-check"></i> تقرير التقييمات</a>
     <a href="/swimmers/<%= s.id %>/edit" class="btn btn-primary btn-sm"><i class="fas fa-pen"></i> تعديل</a>
   </div>
@@ -139,9 +139,9 @@
   </div>
 
   <div class="card mt-2">
-    <div class="card-header"><h3><i class="fas fa-right-left"></i> نقل السباح إلى مجموعة / كابتن آخر</h3></div>
+    <div class="card-header"><h3><i class="fas fa-right-left"></i> نقل اللاعب إلى مجموعة / كابتن آخر</h3></div>
     <div class="card-body">
-      <form method="post" action="/swimmers/<%= s.id %>/transfer" class="grid-2" style="align-items:end" data-confirm="تأكيد نقل السباح إلى المجموعة والكابتن الجديد؟ ستبقى كل بياناته (الحضور، التقييمات، الاشتراكات) كما هي.">
+      <form method="post" action="/swimmers/<%= s.id %>/transfer" class="grid-2" style="align-items:end" data-confirm="تأكيد نقل اللاعب إلى المجموعة والكابتن الجديد؟ ستبقى كل بياناته (الحضور، التقييمات، الاشتراكات) كما هي.">
         <div class="field">
           <label>المجموعة الجديدة</label>
           <select name="group_id" id="transferGroup" required>
@@ -166,7 +166,7 @@
           <input type="text" name="note" placeholder="مثال: انتقال بسبب تغيير المستوى">
         </div>
         <div class="field">
-          <button type="submit" class="btn btn-primary"><i class="fas fa-right-left"></i> نقل السباح</button>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-right-left"></i> نقل اللاعب</button>
         </div>
       </form>
       <% if (transfers.length) { %>
@@ -394,7 +394,7 @@
 <!-- ===== المستندات ===== -->
 <div class="tab-panel" data-panel="docs" style="display:none">
   <div class="card">
-    <div class="card-header"><h3><i class="fas fa-folder-open"></i> مستندات السباح</h3></div>
+    <div class="card-header"><h3><i class="fas fa-folder-open"></i> مستندات اللاعب</h3></div>
     <div class="table-wrap">
       <table class="data-table">
         <thead><tr><th>النوع</th><th>العنوان</th><th>الملف</th><th>الصلاحية</th><th>تاريخ الرفع</th></tr></thead>

@@ -7,7 +7,7 @@
   <div class="spacer"></div>
   <div class="flex gap-1">
     <a href="/swimmers/<%= data.swimmer.id %>/assessment-report/pdf" target="_blank" class="btn btn-primary"><i class="fas fa-file-pdf"></i> طباعة / تحميل PDF</a>
-    <a href="/swimmers/<%= data.swimmer.id %>" class="btn btn-outline"><i class="fas fa-person-swimming"></i> ملف السباح</a>
+    <a href="/swimmers/<%= data.swimmer.id %>" class="btn btn-outline"><i class="fas fa-person-swimming"></i> ملف اللاعب</a>
     <a href="/assessments" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> كل التقييمات</a>
   </div>
 </div>
@@ -94,7 +94,7 @@
       </div>
     </div>
   <% } else { %>
-    <div class="empty-state"><i class="fas fa-clipboard-check"></i><p>لا توجد تقييمات مسجلة لهذا السباح</p></div>
+    <div class="empty-state"><i class="fas fa-clipboard-check"></i><p>لا توجد تقييمات مسجلة لهذا اللاعب</p></div>
   <% } %>
 <% } else { %>
   <div class="card" style="margin-top:14px;border-color:var(--primary)">

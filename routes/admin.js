@@ -19,7 +19,7 @@ async function saveArr(key, arr) {
 }
 
 const MODULE_LABELS = {
-  dashboard: 'لوحة التحكم', swimmers: 'السباحون', guardians: 'أولياء الأمور', coaches: 'الكباتن والمدربون', staff: 'الموظفون',
+  dashboard: 'لوحة التحكم', swimmers: 'اللاعبون', guardians: 'أولياء الأمور', coaches: 'الكباتن والمدربون', staff: 'الموظفون',
   programs: 'البرامج والدورات', levels: 'المستويات', groups: 'المجموعات', sessions: 'الحصص والجداول', attendance: 'الحضور والغياب',
   assessments: 'التقييمات الفنية', tests: 'الاختبارات', teams: 'فرق السباحة', competitions: 'البطولات',
   subscriptions: 'الاشتراكات', payments: 'المدفوعات', revenues: 'الإيرادات', expenses: 'المصروفات', coachPayments: 'مستحقات المدربين',
@@ -62,7 +62,7 @@ router.get('/users', async function (req, res) {
     filters: [
       { name: 'status', label: 'الحالة', options: [{ value: 'active', label: 'مفعّل' }, { value: 'disabled', label: 'معطّل' }] },
       { name: 'role_id', label: 'الدور', options: (await db.prepare('SELECT * FROM roles ORDER BY id').all()).map(r => ({ value: r.id, label: r.name })) },
-      { name: 'user_type', label: 'النوع', options: [{ value: 'staff', label: 'موظف' }, { value: 'coach', label: 'مدرب' }, { value: 'guardian', label: 'ولي أمر' }, { value: 'swimmer', label: 'سباح' }] }
+      { name: 'user_type', label: 'النوع', options: [{ value: 'staff', label: 'موظف' }, { value: 'coach', label: 'مدرب' }, { value: 'guardian', label: 'ولي أمر' }, { value: 'swimmer', label: 'لاعب' }] }
     ],
     canAdd: canAdd(req.currentUser, 'users'), addUrl: canAdd(req.currentUser, 'users') ? '/users/new' : null, addLabel: 'مستخدم جديد',
     actions: () => row => [
@@ -83,8 +83,8 @@ const userFields = async function (values) {
     { key: 'email', label: 'البريد الإلكتروني', type: 'email' },
     { key: 'phone', label: 'الهاتف', type: 'tel' },
     { key: 'role_id', label: 'الدور', type: 'select', options: roles, required: true },
-    { key: 'user_type', label: 'نوع الحساب', type: 'select', options: [{ value: 'staff', label: 'موظف' }, { value: 'coach', label: 'مدرب' }, { value: 'guardian', label: 'ولي أمر' }, { value: 'swimmer', label: 'سباح' }, { value: 'system', label: 'مدير النظام' }] },
-    { key: 'linked_id', label: 'رقم السجل المرتبط', type: 'number', number: true, hint: 'id في جدول السباحين أو المدربين أو أولياء الأمور' },
+    { key: 'user_type', label: 'نوع الحساب', type: 'select', options: [{ value: 'staff', label: 'موظف' }, { value: 'coach', label: 'مدرب' }, { value: 'guardian', label: 'ولي أمر' }, { value: 'swimmer', label: 'لاعب' }, { value: 'system', label: 'مدير النظام' }] },
+    { key: 'linked_id', label: 'رقم السجل المرتبط', type: 'number', number: true, hint: 'id في جدول اللاعبين أو المدربين أو أولياء الأمور' },
     { key: 'status', label: 'الحالة', type: 'select', options: [{ value: 'active', label: 'مفعّل' }, { value: 'disabled', label: 'معطّل' }] },
     { key: 'password', label: 'كلمة المرور', type: 'password', hint: 'اتركها فارغة للاحتفاظ بالكلمة الحالية (الافتراضي 123456)' }
   ];

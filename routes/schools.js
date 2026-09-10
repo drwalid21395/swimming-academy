@@ -1,4 +1,4 @@
-/** المدارس والجهات الدراسية: يحددها الأدمن وتستخدم في ملفات السباحين */
+/** المدارس والجهات الدراسية: يحددها الأدمن وتستخدم في ملفات اللاعبين */
 const express = require('express');
 const { db } = require('../lib/db');
 const crud = require('../lib/crud');
@@ -20,14 +20,14 @@ crud(router, '/schools', {
     { key: 'name', label: 'الاسم', html: row => `<b><i class="fas fa-school text-primary"></i> ${row.name}</b>` },
     { key: 'type', label: 'النوع', html: row => `<span class="badge badge-primary">${row.type}</span>` },
     { key: 'city', label: 'المدينة', html: row => row.city || '—' },
-    { key: 'swimmers_count', label: 'السباحون', html: row => `<span class="badge badge-info">${row.swimmers_count} سباح</span>` }
+    { key: 'swimmers_count', label: 'اللاعبون', html: row => `<span class="badge badge-info">${row.swimmers_count} لاعب</span>` }
   ],
   filters: async () => [
     { name: 'type', label: 'النوع', options: SCHOOL_TYPES.map(v => ({ value: v, label: v })) },
     { name: 'city', label: 'المدينة', options: (await db.prepare("SELECT DISTINCT city FROM schools WHERE city IS NOT NULL AND city != '' ORDER BY city").all()).map(c => ({ value: c.city, label: c.city })) }
   ],
   fields: [
-    { key: 'name', label: 'اسم المدرسة / الجهة الدراسية', type: 'text', required: true, full: true, hint: 'يُستخدم هذا الاسم في ملف السباح' },
+    { key: 'name', label: 'اسم المدرسة / الجهة الدراسية', type: 'text', required: true, full: true, hint: 'يُستخدم هذا الاسم في ملف اللاعب' },
     { key: 'type', label: 'نوع الجهة', type: 'select', options: SCHOOL_TYPES.map(v => ({ value: v, label: v })) },
     { key: 'city', label: 'المدينة', type: 'text' },
     { key: 'notes', label: 'ملاحظات', type: 'textarea', full: true }

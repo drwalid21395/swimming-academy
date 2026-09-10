@@ -2,7 +2,7 @@
 <div class="page-head no-print">
   <div>
     <div class="page-title"><i class="fas fa-clipboard-user"></i> تقرير الحضور والغياب اليومي</div>
-    <div class="page-sub">حضور وغياب جميع السباحين حسب التاريخ — جاهز للطباعة والتحميل PDF</div>
+    <div class="page-sub">حضور وغياب جميع اللاعبين حسب التاريخ — جاهز للطباعة والتحميل PDF</div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
@@ -39,7 +39,7 @@
       <div class="table-wrap">
         <table class="data-table report-table">
           <thead>
-            <tr><th style="width:38px">#</th><th>السباح</th><th>رقم العضوية</th><th>المستوى</th><th>الحالة</th><th>السبب / الملاحظة</th></tr>
+            <tr><th style="width:38px">#</th><th>اللاعب</th><th>رقم العضوية</th><th>المستوى</th><th>الحالة</th><th>السبب / الملاحظة</th></tr>
           </thead>
           <tbody>
             <% g.members.forEach(function (m, i) { %>
@@ -58,7 +58,7 @@
                 <td><%= m.reason || '—' %></td>
               </tr>
             <% }); %>
-            <% if (!g.members.length) { %><tr><td colspan="6" class="text-muted">لا يوجد سباحون مسجلون في هذه المجموعة</td></tr><% } %>
+            <% if (!g.members.length) { %><tr><td colspan="6" class="text-muted">لا يوجد لاعبون مسجلون في هذه المجموعة</td></tr><% } %>
           </tbody>
         </table>
       </div>

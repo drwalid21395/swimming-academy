@@ -2,7 +2,7 @@
 <div class="page-head no-print">
   <div>
     <div class="page-title"><i class="fas fa-folder-open"></i> <%= title %></div>
-    <div class="page-sub"><%= total %> سباحاً في <%= groups.length %> مجموعة — طباعة ملونة بهوية الأكاديمية، جاهز للحفظ PDF</div>
+    <div class="page-sub"><%= total %> لاعباً في <%= groups.length %> مجموعة — طباعة ملونة بهوية الأكاديمية، جاهز للحفظ PDF</div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1">
@@ -27,7 +27,7 @@
     <div class="cover-title"><i class="fas fa-folder-open"></i> <%= title %></div>
     <div class="cover-meta">
       <span><i class="fas fa-calendar-day"></i> تاريخ الإصدار: <%= fmtDate(today) %></span>
-      <span><i class="fas fa-people-group"></i> <%= total %> سباحاً</span>
+      <span><i class="fas fa-people-group"></i> <%= total %> لاعباً</span>
       <% if (typeof user !== 'undefined' && user) { %><span><i class="fas fa-user-tie"></i> أُعد بواسطة: <%= user.full_name %></span><% } %>
     </div>
   </div>
@@ -41,7 +41,7 @@
 <% groups.forEach(function (g) { %>
   <div class="report-group" style="page-break-before:<%= groups[0] && g === groups[0] ? 'auto' : 'always' %>">
     <div class="group-head">
-      <div class="gh-title"><i class="fas fa-people-group"></i> <%= g.name %> <span class="gh-count"><%= g.swimmerCount %> سباح</span></div>
+      <div class="gh-title"><i class="fas fa-people-group"></i> <%= g.name %> <span class="gh-count"><%= g.swimmerCount %> لاعب</span></div>
       <div class="gh-meta">
         <% if (g.coach_name) { %><span><i class="fas fa-user-tie"></i> <%= g.coach_name %></span><% } %>
         <% (g.schedule || []).forEach(function (sl) { %><span><i class="fas fa-calendar-day"></i> <%= dayAr(sl.day) %> <%= sl.start %> — <%= sl.end %></span><% }); %>
@@ -160,7 +160,7 @@
   .gh-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: #075985; }
   .gh-meta span { display: inline-flex; align-items: center; gap: 5px; }
 
-  /* ===== بطاقة السباح ===== */
+  /* ===== بطاقة اللاعب ===== */
   .report-swimmer { padding: 8px 0 4px; }
   .sw-head { display: flex; align-items: center; gap: 14px; }
   .avatar-lg {

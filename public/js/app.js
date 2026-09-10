@@ -178,7 +178,7 @@
       el.addEventListener('click', function () { window.print(); });
     });
 
-    /* ---------- نسبة المستوى المحدد في نموذج السباح ---------- */
+    /* ---------- نسبة المستوى المحدد في نموذج اللاعب ---------- */
     const lvlSelect = document.querySelector('select[name="level_id"]');
     const lpBadge = document.querySelector('.level-percent-badge');
     if (lvlSelect && lpBadge) {

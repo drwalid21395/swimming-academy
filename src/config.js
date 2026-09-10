@@ -19,7 +19,7 @@ const WEEKDAYS = ['السبت', 'الأحد', 'الاثنين', 'الثلاثا�
 
 const ENTITIES = {
   swimmers: {
-    table: 'swimmers', title: 'السباحون', module: 'swimmers',
+    table: 'swimmers', title: 'اللاعبون', module: 'swimmers',
     search: 'full_name,membership_no,phone,guardian_phone',
     orderBy: 's.id DESC',
     listQuery: `SELECT s.*, g.full_name AS guardian_name, l.name AS level_name, p.name AS program_name, gr.name AS group_name, c.full_name AS coach_name
@@ -31,7 +31,7 @@ const ENTITIES = {
       LEFT JOIN coaches c ON c.id=s.coach_id`,
     filterBy: 's.status, s.current_level_id, s.program_id, s.group_id, s.payment_status',
     columns: [
-      { k: 'full_name', label: 'السباح', type: 'avatar' },
+      { k: 'full_name', label: 'اللاعب', type: 'avatar' },
       { k: 'membership_no', label: 'رقم العضوية', type: 'code' },
       { k: 'gender', label: 'النوع' },
       { k: 'level_name', label: 'المستوى' },
@@ -109,7 +109,7 @@ const ENTITIES = {
       { k: 'specialty', label: 'التخصص', type: 'text' },
       { k: 'experience_years', label: 'الخبرة (سنوات)', type: 'num' },
       { k: 'contract_type', label: 'التعاقد', type: 'status', map: { full: ['راتب شهري', 'blue'], per_session: ['بالحصص', 'green'], ratio: ['نسبة', 'purple'] } },
-      { k: 'swimmer_count', label: 'عدد السباحين', type: 'num' },
+      { k: 'swimmer_count', label: 'عدد اللاعبين', type: 'num' },
       { k: 'performance_rating', label: 'التقييم', type: 'rating' },
       { k: 'license_expiry', label: 'انتهاء الترخيص', type: 'date', warnDays: 90 }
     ],
@@ -276,7 +276,7 @@ const ENTITIES = {
     orderBy: 'id DESC',
     listQuery: `SELECT su.*, sw.full_name AS swimmer_name, sw.membership_no, pr.name AS program_name, gr.name AS group_name FROM subscriptions su LEFT JOIN swimmers sw ON sw.id=su.swimmer_id LEFT JOIN programs pr ON pr.id=su.program_id LEFT JOIN groups gr ON gr.id=su.group_id`,
     columns: [
-      { k: 'swimmer_name', label: 'السباح', type: 'text' },
+      { k: 'swimmer_name', label: 'اللاعب', type: 'text' },
       { k: 'program_name', label: 'البرنامج', type: 'text' },
       { k: 'start_date', label: 'البداية', type: 'date' },
       { k: 'end_date', label: 'النهاية', type: 'date', warnDays: 10 },
@@ -287,7 +287,7 @@ const ENTITIES = {
       { k: 'status', label: 'الحالة', type: 'status', map: SUB_STATUS }
     ],
     fields: [
-      { name: 'swimmer_id', label: 'السباح', type: 'fk', table: 'swimmers', text: 'full_name', required: true },
+      { name: 'swimmer_id', label: 'اللاعب', type: 'fk', table: 'swimmers', text: 'full_name', required: true },
       { name: 'program_id', label: 'البرنامج', type: 'fk', table: 'programs', text: 'name' },
       { name: 'group_id', label: 'المجموعة', type: 'fk', table: 'groups', text: 'name' },
       { name: 'start_date', label: 'تاريخ البداية', type: 'date' },
@@ -311,7 +311,7 @@ const ENTITIES = {
     orderBy: 'id DESC',
     listQuery: `SELECT p.*, sw.full_name AS swimmer_name, sw.membership_no FROM payments p LEFT JOIN swimmers sw ON sw.id=p.swimmer_id`,
     columns: [
-      { k: 'swimmer_name', label: 'السباح', type: 'text' },
+      { k: 'swimmer_name', label: 'اللاعب', type: 'text' },
       { k: 'amount', label: 'المبلغ', type: 'money' },
       { k: 'method', label: 'الطريقة', type: 'status', map: PAY_METHOD },
       { k: 'receipt_no', label: 'الإيصال', type: 'code' },
@@ -319,7 +319,7 @@ const ENTITIES = {
       { k: 'status', label: 'الحالة', type: 'status', map: PAY_STATUS }
     ],
     fields: [
-      { name: 'swimmer_id', label: 'السباح', type: 'fk', table: 'swimmers', text: 'full_name', required: true },
+      { name: 'swimmer_id', label: 'اللاعب', type: 'fk', table: 'swimmers', text: 'full_name', required: true },
       { name: 'subscription_id', label: 'الاشتراك', type: 'fk', table: 'subscriptions', text: 'receipt_no' },
       { name: 'amount', label: 'المبلغ', type: 'number', required: true },
       { name: 'method', label: 'طريقة الدفع', type: 'select', options: PAY_METHODS.map(k => [k, PAY_METHOD[k]]) },
@@ -347,7 +347,7 @@ const ENTITIES = {
     fields: [
       { name: 'trans_no', label: 'رقم العملية', type: 'text' },
       { name: 'date', label: 'التاريخ', type: 'date' },
-      { name: 'category', label: 'التصنيف', type: 'select', options: [['اشتراكات السباحين', 'اشتراكات السباحين'], ['رسوم الاختبارات', 'رسوم الاختبارات'], ['رسوم البطولات', 'رسوم البطولات'], ['رسوم المعسكرات', 'رسوم المعسكرات'], ['بيع الأدوات', 'بيع الأدوات'], ['رسوم الشهادات', 'رسوم الشهادات'], ['إيرادات أخرى', 'إيرادات أخرى']] },
+      { name: 'category', label: 'التصنيف', type: 'select', options: [['اشتراكات اللاعبين', 'اشتراكات اللاعبين'], ['رسوم الاختبارات', 'رسوم الاختبارات'], ['رسوم البطولات', 'رسوم البطولات'], ['رسوم المعسكرات', 'رسوم المعسكرات'], ['بيع الأدوات', 'بيع الأدوات'], ['رسوم الشهادات', 'رسوم الشهادات'], ['إيرادات أخرى', 'إيرادات أخرى']] },
       { name: 'description', label: 'البيان', type: 'text' },
       { name: 'amount', label: 'المبلغ', type: 'number', required: true },
       { name: 'payment_method', label: 'طريقة الدفع', type: 'select', options: PAY_METHODS.map(k => [k, PAY_METHOD[k]]) },
@@ -522,14 +522,14 @@ const ENTITIES = {
     columns: [
       { k: 'category', label: 'التصنيف', type: 'text' },
       { k: 'title', label: 'العنوان', type: 'text' },
-      { k: 'entity_type', label: 'المرتبط بـ', type: 'status', map: { swimmer: ['سباح', 'blue'], coach: ['مدرب', 'green'], guardian: ['ولي أمر', 'purple'], other: ['عام', 'gray'] } },
+      { k: 'entity_type', label: 'المرتبط بـ', type: 'status', map: { swimmer: ['لاعب', 'blue'], coach: ['مدرب', 'green'], guardian: ['ولي أمر', 'purple'], other: ['عام', 'gray'] } },
       { k: 'visibility', label: 'الصلاحية', type: 'status', map: { private: ['خاص', 'amber'], public: ['عام', 'green'] } },
       { k: 'created_at', label: 'التاريخ', type: 'datetime' }
     ],
     fields: [
       { name: 'category', label: 'التصنيف', type: 'select', options: [['شهادة ميلاد', 'شهادة ميلاد'], ['بطاقة ولي الأمر', 'بطاقة ولي الأمر'], ['تقرير طبي', 'تقرير طبي'], ['إقرار حالة صحية', 'إقرار حالة صحية'], ['موافقة اشتراك', 'موافقة اشتراك'], ['إقرار مسؤولية', 'إقرار مسؤولية'], ['صورة لاعب', 'صورة لاعب'], ['شهادة مدرب', 'شهادة مدرب'], ['عقد', 'عقد'], ['إيصال', 'إيصال'], ['خطاب وارد/صادر', 'خطاب وارد/صادر'], ['نتيجة اختبار', 'نتيجة اختبار'], ['شهادة اجتياز', 'شهادة اجتياز'], ['أخرى', 'أخرى']] },
       { name: 'title', label: 'العنوان', type: 'text', required: true },
-      { name: 'entity_type', label: 'المرتبط بـ', type: 'select', options: [['swimmer', 'سباح'], ['coach', 'مدرب'], ['guardian', 'ولي أمر'], ['other', 'عام']] },
+      { name: 'entity_type', label: 'المرتبط بـ', type: 'select', options: [['swimmer', 'لاعب'], ['coach', 'مدرب'], ['guardian', 'ولي أمر'], ['other', 'عام']] },
       { name: 'entity_id', label: 'معرف العنصر المرتبط', type: 'number' },
       { name: 'visibility', label: 'صلاحية الاطلاع', type: 'select', options: [['private', 'خاص'], ['public', 'عام']] },
       { name: 'notes', label: 'ملاحظات', type: 'textarea' }
@@ -543,14 +543,14 @@ const ENTITIES = {
     listQuery: `SELECT c.*, g.full_name AS guardian_name, sw.full_name AS swimmer_name FROM complaints c LEFT JOIN guardians g ON g.id=c.guardian_id LEFT JOIN swimmers sw ON sw.id=c.swimmer_id`,
     columns: [
       { k: 'guardian_name', label: 'ولي الأمر', type: 'text' },
-      { k: 'swimmer_name', label: 'السباح', type: 'text' },
+      { k: 'swimmer_name', label: 'اللاعب', type: 'text' },
       { k: 'subject', label: 'الموضوع', type: 'text' },
       { k: 'status', label: 'الحالة', type: 'status', map: COMPLAINT_STATUS },
       { k: 'created_at', label: 'التاريخ', type: 'datetime' }
     ],
     fields: [
       { name: 'guardian_id', label: 'ولي الأمر', type: 'fk', table: 'guardians', text: 'full_name' },
-      { name: 'swimmer_id', label: 'السباح', type: 'fk', table: 'swimmers', text: 'full_name' },
+      { name: 'swimmer_id', label: 'اللاعب', type: 'fk', table: 'swimmers', text: 'full_name' },
       { name: 'subject', label: 'الموضوع', type: 'text', required: true },
       { name: 'description', label: 'التفاصيل', type: 'textarea' },
       { name: 'status', label: 'الحالة', type: 'select', options: [['open', 'مفتوحة'], ['in_progress', 'قيد المعالجة'], ['resolved', 'تم الحل']] },
@@ -626,7 +626,7 @@ const ENTITIES = {
     orderBy: 'id DESC',
     listQuery: `SELECT sr.*, pr.name AS program_name FROM subscription_requests sr LEFT JOIN programs pr ON pr.id=sr.program_id`,
     columns: [
-      { k: 'swimmer_name', label: 'السباح', type: 'text' },
+      { k: 'swimmer_name', label: 'اللاعب', type: 'text' },
       { k: 'age', label: 'العمر', type: 'num' },
       { k: 'guardian_name', label: 'ولي الأمر', type: 'text' },
       { k: 'guardian_phone', label: 'الهاتف', type: 'text' },
@@ -634,7 +634,7 @@ const ENTITIES = {
       { k: 'status', label: 'الحالة', type: 'status', map: REQ_STATUS }
     ],
     fields: [
-      { name: 'swimmer_name', label: 'اسم السباح', type: 'text', required: true },
+      { name: 'swimmer_name', label: 'اسم اللاعب', type: 'text', required: true },
       { name: 'age', label: 'العمر', type: 'number' },
       { name: 'guardian_name', label: 'اسم ولي الأمر', type: 'text' },
       { name: 'guardian_phone', label: 'هاتف ولي الأمر', type: 'phone' },
@@ -702,14 +702,14 @@ const ENTITIES = {
     orderBy: 'id DESC',
     listQuery: `SELECT c.*, sw.full_name AS swimmer_name, pr.name AS program_name FROM certificates c LEFT JOIN swimmers sw ON sw.id=c.swimmer_id LEFT JOIN programs pr ON pr.id=c.program_id`,
     columns: [
-      { k: 'swimmer_name', label: 'السباح', type: 'text' },
+      { k: 'swimmer_name', label: 'اللاعب', type: 'text' },
       { k: 'program_name', label: 'البرنامج', type: 'text' },
       { k: 'cert_no', label: 'رقم الشهادة', type: 'code' },
       { k: 'issue_date', label: 'تاريخ الإصدار', type: 'date' },
       { k: 'status', label: 'الحالة', type: 'status', map: { issued: ['صادرة', 'green'], pending: ['قيد الإصدار', 'amber'] } }
     ],
     fields: [
-      { name: 'swimmer_id', label: 'السباح', type: 'fk', table: 'swimmers', text: 'full_name', required: true },
+      { name: 'swimmer_id', label: 'اللاعب', type: 'fk', table: 'swimmers', text: 'full_name', required: true },
       { name: 'program_id', label: 'البرنامج', type: 'fk', table: 'programs', text: 'name' },
       { name: 'cert_no', label: 'رقم الشهادة', type: 'text' },
       { name: 'issue_date', label: 'تاريخ الإصدار', type: 'date' },
@@ -723,7 +723,7 @@ const ENTITIES = {
     orderBy: 'id DESC',
     listQuery: `SELECT a.*, sw.full_name AS swimmer_name, sw.membership_no, c.full_name AS coach_name, pr.name AS program_name, l.name AS level_name FROM assessments a LEFT JOIN swimmers sw ON sw.id=a.swimmer_id LEFT JOIN coaches c ON c.id=a.coach_id LEFT JOIN programs pr ON pr.id=a.program_id LEFT JOIN levels l ON l.id=a.level_id`,
     columns: [
-      { k: 'swimmer_name', label: 'السباح', type: 'text' },
+      { k: 'swimmer_name', label: 'اللاعب', type: 'text' },
       { k: 'coach_name', label: 'المقيم', type: 'text' },
       { k: 'date', label: 'التاريخ', type: 'date' },
       { k: 'level_name', label: 'المستوى', type: 'text' },
@@ -731,7 +731,7 @@ const ENTITIES = {
       { k: 'ready_to_advance', label: 'جاهز للانتقال', type: 'status', map: { 1: ['نعم', 'green'], 0: ['لا', 'amber'] } }
     ],
     fields: [
-      { name: 'swimmer_id', label: 'السباح', type: 'fk', table: 'swimmers', text: 'full_name', required: true },
+      { name: 'swimmer_id', label: 'اللاعب', type: 'fk', table: 'swimmers', text: 'full_name', required: true },
       { name: 'coach_id', label: 'الكابتن المقيم', type: 'fk', table: 'coaches', text: 'full_name' },
       { name: 'program_id', label: 'البرنامج', type: 'fk', table: 'programs', text: 'name' },
       { name: 'date', label: 'تاريخ التقييم', type: 'date' },
@@ -750,7 +750,7 @@ const ENTITIES = {
     orderBy: 'id DESC',
     listQuery: `SELECT t.*, sw.full_name AS swimmer_name, sw.membership_no, c.full_name AS coach_name FROM tests t LEFT JOIN swimmers sw ON sw.id=t.swimmer_id LEFT JOIN coaches c ON c.id=t.coach_id`,
     columns: [
-      { k: 'swimmer_name', label: 'السباح', type: 'text' },
+      { k: 'swimmer_name', label: 'اللاعب', type: 'text' },
       { k: 'name', label: 'الاختبار', type: 'text' },
       { k: 'distance', label: 'المسافة', type: 'num', suffix: ' م' },
       { k: 'stroke', label: 'النوع', type: 'text' },
@@ -758,7 +758,7 @@ const ENTITIES = {
       { k: 'result', label: 'النتيجة', type: 'text' }
     ],
     fields: [
-      { name: 'swimmer_id', label: 'السباح', type: 'fk', table: 'swimmers', text: 'full_name', required: true },
+      { name: 'swimmer_id', label: 'اللاعب', type: 'fk', table: 'swimmers', text: 'full_name', required: true },
       { name: 'coach_id', label: 'الكابتن', type: 'fk', table: 'coaches', text: 'full_name' },
       { name: 'name', label: 'اسم الاختبار', type: 'text' },
       { name: 'date', label: 'التاريخ', type: 'date' },
