@@ -6,7 +6,7 @@ const { setFlash } = require('../lib/auth-cookie');
 const { nextMembership, isUniqueViolation } = require('../lib/membership');
 const crud = require('../lib/crud');
 const { uploadAndStore, removeUploaded } = require('../lib/upload');
-const { activeSport, sportClause, progClause, swimmerClause, groupClause, sessionClause } = require('../lib/sport-context');
+const { activeSport, sportClause, progClause, swimmerClause, swimmerSportClause, groupClause, sessionClause } = require('../lib/sport-context');
 const pdfmake = require('../lib/pdf');
 const router = express.Router();
 
@@ -22,8 +22,10 @@ crud(router, '/guardians', {
   beforeRender: async function (rows, req) {
     const sid = (req && req.activeSportId) || 0;
     if (!sid) return rows;
-    const linked = await db.prepare(`SELECT DISTINCT s.guardian_id FROM swimmers s JOIN programs p ON p.id = s.program_id
-      WHERE s.guardian_id IS NOT NULL AND s.deleted_at IS NULL AND p.deleted_at IS NULL AND p.sport_id = ?`).all(sid);
+    const linked = await db.prepare(`SELECT DISTINCT s.guardian_id FROM swimmers s
+      WHERE s.guardian_id IS NOT NULL AND s.deleted_at IS NULL
+        AND (s.sport_id = ?
+          OR (s.sport_id IS NULL AND s.program_id IN (SELECT id FROM programs WHERE deleted_at IS NULL AND sport_id = ?)))`).all(sid, sid);
     const set = new Set(linked.map(r => r.guardian_id));
     return rows.filter(r => set.has(r.id));
   },
@@ -259,7 +261,7 @@ router.get('/swimmers', async function (req, res) {
     LEFT JOIN levels l ON l.id = s.level_id
     LEFT JOIN groups gr ON gr.id = s.group_id
     LEFT JOIN coaches c ON c.id = s.coach_id
-    LEFT JOIN programs p ON p.id = s.program_id WHERE s.deleted_at IS NULL` + sportClause(activeSport(req), 'p');
+    LEFT JOIN programs p ON p.id = s.program_id WHERE s.deleted_at IS NULL` + swimmerSportClause(activeSport(req), 's');
   const params = [];
   if (status) { sql += ' AND s.status = ?'; params.push(status); }
   if (program) { sql += ' AND s.program_id = ?'; params.push(program); }
@@ -363,7 +365,13 @@ router.post('/swimmers/new', uploadAndStore('avatar'), async function (req, res)
       vals[18] = b.registration_date || today();
       vals[19] = b.status || 'نشط';
       const info = await tx.run(`INSERT INTO swimmers (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`, membership, ...vals.slice(1));
-      await syncSwimmerGroups(tx, info.lastInsertRowid, b.group_id);
+      /* رياضة اللاعب: تفضيل برنامج اللاعب، ثم التبويب النشط وقت التسجيل (إن وُجد) */
+      let sportId = 0;
+      const prog = b.program_id ? await tx.get('SELECT sport_id FROM programs WHERE id = ?', Number(b.program_id)) : null;
+      if (prog && prog.sport_id) sportId = Number(prog.sport_id);
+      else if (req.activeSportId) sportId = Number(req.activeSportId);
+      if (sportId) await tx.run('UPDATE swimmers SET sport_id = ? WHERE id = ?', sportId, Number(info.lastInsertRowid));
+      await syncSwimmerGroups(tx, Number(info.lastInsertRowid), b.group_id);
       await tx.commit();
       audit(req.currentUser.id, req.currentUser.full_name, 'add', 'swimmers', info.lastInsertRowid, 'تسجيل لاعب جديد: ' + String(b.full_name || '').trim(), req);
       setFlash(res, { type: 'success', message: 'تم تسجيل اللاعب بنجاح' });
@@ -394,7 +402,7 @@ router.post('/swimmers/:id/edit', uploadAndStore('avatar'), async function (req,
   const id = Number(req.params.id);
   const b = req.body;
   const old = await db.prepare('SELECT avatar, guardian_id FROM swimmers WHERE id = ?').get(id);
-  const guardianId = await resolveGuardian(b);
+  const guardianId = await resolveGuardian(db, b);
   let avatar = old ? old.avatar : null;
   if (req.file) {
     if (old && old.avatar) removeUploaded(old.avatar);
@@ -404,7 +412,10 @@ router.post('/swimmers/:id/edit', uploadAndStore('avatar'), async function (req,
   const sets = cols.map(c => `${c} = ?`).join(', ');
   const vals = cols.map(c => swimmerVal(c, b, avatar, guardianId));
   await db.prepare(`UPDATE swimmers SET ${sets} WHERE id = ?`).run(...vals, id);
-  await syncSwimmerGroups(id, b.group_id);
+  /* مواكبة رياضة اللاعب عند تغيير البرنامج: رياضة البرنامج الجديد لها الأولوية */
+  const prog = b.program_id ? await db.prepare('SELECT sport_id FROM programs WHERE id = ?').get(Number(b.program_id)) : null;
+  if (prog && prog.sport_id) await db.prepare('UPDATE swimmers SET sport_id = ? WHERE id = ?').run(Number(prog.sport_id), id);
+  await syncSwimmerGroups(db, id, b.group_id);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'swimmers', id, 'تعديل ملف: ' + b.full_name, req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/swimmers/' + id);
