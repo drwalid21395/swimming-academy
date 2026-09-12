@@ -6,7 +6,7 @@ const { setFlash } = require('../lib/auth-cookie');
 const { nextMembership, isUniqueViolation } = require('../lib/membership');
 const crud = require('../lib/crud');
 const { uploadAndStore, removeUploaded } = require('../lib/upload');
-const { activeSport, sportClause, progClause, swimmerClause, swimmerSportClause, groupClause, sessionClause } = require('../lib/sport-context');
+const { activeSport, effectiveSport, sportClause, progClause, swimmerClause, swimmerSportClause, groupClause, sessionClause } = require('../lib/sport-context');
 const pdfmake = require('../lib/pdf');
 const router = express.Router();
 
@@ -73,7 +73,7 @@ function cvLink(cv, allowed) {
 crud(router, '/coaches', {
   table: 'coaches', module: 'coaches', entity: 'coaches',
   title: 'الكباتن والمدربون', singular: 'مدرب', plural: 'المدربون', icon: 'fa-user-tie',
-  orderBy: 'full_name',
+  orderBy: 'full_name', sportField: 'sport_id',
   upload: { field: 'cv' },
   imageFields: ['avatar'],
   columns: [
@@ -369,7 +369,7 @@ router.post('/swimmers/new', uploadAndStore('avatar'), async function (req, res)
       let sportId = 0;
       const prog = b.program_id ? await tx.get('SELECT sport_id FROM programs WHERE id = ?', Number(b.program_id)) : null;
       if (prog && prog.sport_id) sportId = Number(prog.sport_id);
-      else if (req.activeSportId) sportId = Number(req.activeSportId);
+      else sportId = effectiveSport(req);
       if (sportId) await tx.run('UPDATE swimmers SET sport_id = ? WHERE id = ?', sportId, Number(info.lastInsertRowid));
       await syncSwimmerGroups(tx, Number(info.lastInsertRowid), b.group_id);
       await tx.commit();

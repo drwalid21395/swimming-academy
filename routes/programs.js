@@ -3,7 +3,7 @@ const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, dayAr, parseJSON, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
-const { activeSport, sportClause, progClause, groupClause } = require('../lib/sport-context');
+const { activeSport, effectiveSport, sportClause, progClause, groupClause } = require('../lib/sport-context');
 const crud = require('../lib/crud');
 const router = express.Router();
 
@@ -64,7 +64,7 @@ router.post('/levels/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'levels')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
   const info = await db.prepare('INSERT INTO levels (name, order_no, color, description, sport_id) VALUES (?,?,?,?,?)')
-    .run((b.name || '').trim(), Number(b.order_no || 1), b.color || '#0284c7', b.description || '', Number(b.sport_id) || activeSport(req) || 1);
+    .run((b.name || '').trim(), Number(b.order_no || 1), b.color || '#0284c7', b.description || '', Number(b.sport_id) || effectiveSport(req) || 1);
   await saveSkills(info.lastInsertRowid, b);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'levels', info.lastInsertRowid, 'مستوى جديد: ' + b.name, req);
   setFlash(res, { type: 'success', message: 'تم حفظ المستوى ومهاراته' });
@@ -82,7 +82,7 @@ router.post('/levels/:id/edit', async function (req, res) {
   const id = Number(req.params.id);
   const b = req.body;
   await db.prepare('UPDATE levels SET name=?, order_no=?, color=?, description=?, sport_id=? WHERE id=?')
-    .run((b.name || '').trim(), Number(b.order_no || 1), b.color || '#0284c7', b.description || '', Number(b.sport_id) || activeSport(req) || 1, id);
+    .run((b.name || '').trim(), Number(b.order_no || 1), b.color || '#0284c7', b.description || '', Number(b.sport_id) || effectiveSport(req) || 1, id);
   await saveSkills(id, b);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'levels', id, 'تعديل مستوى: ' + b.name, req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
@@ -231,6 +231,9 @@ router.post('/programs/new', async function (req, res) {
   const b = req.body;
   const cols = PROGRAM_COLS.concat(['schedule']);
   const vals = programVals(b).concat([collectProgramSchedule(b)]);
+  /* ربط البرنامج برياضة التبويب النشط (أو رياضة الأكاديمية الوحيدة) */
+  const es = effectiveSport(req);
+  if (es > 0) { cols.push('sport_id'); vals.push(es); }
   const info = await db.prepare(`INSERT INTO programs (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...vals);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'programs', info.lastInsertRowid, 'برنامج جديد: ' + b.name, req);
   setFlash(res, { type: 'success', message: 'تم إنشاء البرنامج بنجاح' });
@@ -246,8 +249,13 @@ router.get('/programs/:id/edit', async function (req, res) {
 router.post('/programs/:id/edit', async function (req, res) {
   const id = Number(req.params.id);
   const b = req.body;
-  const sets = PROGRAM_COLS.map(c => `${c} = ?`).join(', ');
-  await db.prepare(`UPDATE programs SET ${sets}, schedule = ? WHERE id = ?`).run(...programVals(b), collectProgramSchedule(b), id);
+  const sets = PROGRAM_COLS.map(c => `${c} = ?`);
+  const args = programVals(b);
+  /* برنامج قديم بلا رياضة: تُملأ رياضته عند التعديل (دون مساس بالمعيّنة) */
+  const cur = id > 0 ? await db.prepare('SELECT sport_id FROM programs WHERE id = ?').get(id) : null;
+  const es = effectiveSport(req);
+  if (es > 0 && cur && (!cur.sport_id || Number(cur.sport_id) === 0)) { sets.push('sport_id = ?'); args.push(es); }
+  await db.prepare(`UPDATE programs SET ${sets.join(', ')}, schedule = ? WHERE id = ?`).run(...args, collectProgramSchedule(b), id);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'programs', id, 'تعديل: ' + b.name, req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/programs');
@@ -408,8 +416,10 @@ function collectSchedule(b) {
 }
 
 async function renderGroupEdit(req, res, o) {
-  const programs = await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL ORDER BY name').all();
-  const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all();
+  /* قوائم النموذج ضمن التبويب: نعرض برامج وكباتن رياضة التبويب النشط فقط */
+  const sidg = activeSport(req);
+  const programs = await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(sidg, 'programs') + ' ORDER BY name').all();
+  const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(sidg, 'coaches') + ' ORDER BY full_name').all();
   const pools = await db.prepare('SELECT * FROM pools ORDER BY name').all();
   const branches = await db.prepare('SELECT * FROM branches ORDER BY name').all();
   const days = [

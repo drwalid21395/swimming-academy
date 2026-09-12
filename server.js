@@ -209,6 +209,7 @@ app.use(async function (req, res, next) {
       try {
         const sports = (await enabledSportsForAcademy(acadId)).filter(r => r.is_enabled);
         res.locals.adminSports = sports;
+        req.enabledSports = sports;
         /* أكاديمية برياضة واحدة فقط: لا نطبّق فلتر الرياضة إطلاقاً،
            حتى لا تختفي السجلات الجديدة المسجّلة بدون برنامج من القوائم. */
         if (sports.length <= 1) {
