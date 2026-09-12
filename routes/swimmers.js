@@ -146,9 +146,14 @@ crud(router, '/coaches', {
   crud(router, '/staff', {
     table: 'staff', module: 'staff', entity: 'staff',
     title: 'الموظفون', singular: 'موظف', plural: 'الموظفون', icon: 'fa-user-gear',
-    orderBy: 'full_name',
+    orderBy: 'full_name', sportField: 'sport_id',
     upload: { field: 'cv' },
     imageFields: ['avatar'],
+    beforeRender: async function (rows, req) {
+      const sid = (req && req.activeSportId) || 0;
+      if (!sid) return rows;
+      return rows.filter(r => Number(r.sport_id) === sid);
+    },
     columns: [
       { key: 'full_name', label: 'الموظف', html: row => `<div class="avatar-cell">${row.avatar ? `<span class="avatar-sm avatar-img" style="overflow:hidden"><img src="${row.avatar}" alt="" style="width:100%;height:100%;object-fit:cover"></span>` : `<span class="avatar-sm">${(row.full_name || 'م').trim().charAt(0)}</span>`}<div><div class="cell-title">${row.full_name}</div><div class="cell-sub">${row.job_title || ''}${row.job_nature ? ' · ' + row.job_nature : ''}</div></div></div>` },
       { key: 'job_title', label: 'المسمى الوظيفي', html: row => `<span class="badge badge-primary">${row.job_title || '—'}</span>` },

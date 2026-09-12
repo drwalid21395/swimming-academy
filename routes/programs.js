@@ -292,7 +292,7 @@ router.get('/groups', async function (req, res) {
   else rows = await db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name, pool.name AS pool_name, b.name AS branch_name,
     (SELECT COUNT(*) FROM swimmers s WHERE s.group_id = g.id AND s.deleted_at IS NULL) AS members FROM groups g
     LEFT JOIN programs p ON p.id = g.program_id LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools pool ON pool.id = g.pool_id
-    LEFT JOIN branches b ON b.id = g.branch_id WHERE g.deleted_at IS NULL` + pScope + ` ORDER BY g.id`).all();
+    LEFT JOIN branches b ON b.id = g.branch_id WHERE g.deleted_at IS NULL` + groupClause(sid, 'g') + ` ORDER BY g.id`).all();
   const page = {
     title: 'المجموعات التدريبية', subtitle: 'تنظيم اللاعبين في مجموعات حسب البرنامج', icon: 'fa-people-group', module: 'groups', active: 'groups',
     columns: [
@@ -337,8 +337,15 @@ router.get('/groups/new', async function (req, res) {
 router.post('/groups/new', async function (req, res) {
   const b = req.body;
   const schedule = collectSchedule(b);
-  const info = await db.prepare('INSERT INTO groups (name, program_id, coach_id, pool_id, branch_id, capacity, schedule, sessions_count, status, notes) VALUES (?,?,?,?,?,?,?,?,?,?)')
-    .run(b.name, b.program_id || null, b.coach_id || null, b.pool_id || null, b.branch_id || null, b.capacity || 12, JSON.stringify(schedule), b.sessions_count || 8, b.status || 'نشطة', b.notes || '');
+  /* ربط المجموعة برياضة برنامجها المختار، وإلا برياضة التبويب النشط */
+  let gsport = 0;
+  if (b.program_id) {
+    const pr = (await db.prepare('SELECT sport_id FROM programs WHERE id = ?').get(b.program_id)) || {};
+    gsport = Number(pr.sport_id) || 0;
+  }
+  if (!gsport) gsport = effectiveSport(req);
+  const info = await db.prepare('INSERT INTO groups (name, program_id, coach_id, pool_id, branch_id, capacity, schedule, sessions_count, status, notes, sport_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+    .run(b.name, b.program_id || null, b.coach_id || null, b.pool_id || null, b.branch_id || null, b.capacity || 12, JSON.stringify(schedule), b.sessions_count || 8, b.status || 'نشطة', b.notes || '', gsport || null);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'groups', info.lastInsertRowid, 'مجموعة جديدة: ' + b.name, req);
   setFlash(res, { type: 'success', message: 'تم إنشاء المجموعة — يمكنك الآن إضافة الأعضاء' });
   res.redirect('/groups/' + info.lastInsertRowid + '/edit');
@@ -356,8 +363,16 @@ router.post('/groups/:id/edit', async function (req, res) {
   const id = Number(req.params.id);
   const b = req.body;
   const schedule = collectSchedule(b);
-  await db.prepare('UPDATE groups SET name=?, program_id=?, coach_id=?, pool_id=?, branch_id=?, capacity=?, schedule=?, sessions_count=?, status=?, notes=? WHERE id=?')
-    .run(b.name, b.program_id || null, b.coach_id || null, b.pool_id || null, b.branch_id || null, b.capacity || 12, JSON.stringify(schedule), b.sessions_count || 8, b.status || 'نشطة', b.notes || '', id);
+  /* تحديث رياضة المجموعة من برنامجها المختار، وإبقاؤها بدون برنامج كما هي، ثم رياضة التبويب كحل أخير */
+  const cur = (await db.prepare('SELECT sport_id FROM groups WHERE id = ?').get(id)) || {};
+  let gsport = cur.sport_id ? Number(cur.sport_id) : 0;
+  if (b.program_id) {
+    const pr = (await db.prepare('SELECT sport_id FROM programs WHERE id = ?').get(b.program_id)) || {};
+    if (pr.sport_id) gsport = Number(pr.sport_id);
+  }
+  if (!gsport) gsport = effectiveSport(req);
+  await db.prepare('UPDATE groups SET name=?, program_id=?, coach_id=?, pool_id=?, branch_id=?, capacity=?, schedule=?, sessions_count=?, status=?, notes=?, sport_id=? WHERE id=?')
+    .run(b.name, b.program_id || null, b.coach_id || null, b.pool_id || null, b.branch_id || null, b.capacity || 12, JSON.stringify(schedule), b.sessions_count || 8, b.status || 'نشطة', b.notes || '', gsport || null, id);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'groups', id, 'تعديل: ' + b.name, req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/groups/' + id + '/edit');
