@@ -3,7 +3,7 @@ const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, fmtDateTime, dayAr, today, pct, parseJSON, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
-const { activeSport, sportClause, progClause, groupClause, sessionClause } = require('../lib/sport-context');
+const { activeSport, sportClause, groupClause, sessionClause } = require('../lib/sport-context');
 const router = express.Router();
 
 const SES_STATUS = [
@@ -58,7 +58,7 @@ router.get('/sessions', async function (req, res) {
     LEFT JOIN groups g ON g.id = se.group_id
     LEFT JOIN coaches c ON c.id = se.coach_id
     LEFT JOIN pools p ON p.id = se.pool_id
-    WHERE 1=1 AND se.deleted_at IS NULL` + progClause(activeSport(req), 'g');
+    WHERE 1=1 AND se.deleted_at IS NULL` + groupClause(activeSport(req), 'g');
   const params = [];
   if (group) { sql += ' AND se.group_id = ?'; params.push(group); }
   if (coach) { sql += ' AND se.coach_id = ?'; params.push(coach); }
