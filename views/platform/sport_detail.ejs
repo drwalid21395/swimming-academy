@@ -12,17 +12,37 @@
     </div>
   </div>
 
+  <% if (!sport.is_active) { %>
+    <div class="pf-card" style="border-color:#f59e0b;background:#fffbeb">
+      <div class="pf-card-body" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <i class="fas fa-triangle-exclamation" style="color:#d97706;font-size:22px"></i>
+        <div style="flex:1;min-width:240px">
+          <div style="font-weight:800;color:#92400e">هذه اللعبة موقوفة في الكتالوج العام</div>
+          <div style="color:#b45309;font-size:13px">لن تظهر في أي أكاديمية حتى تُنشَّط. اضغط «تنشيط اللعبة الآن» ليتم تفعيلها للجميع (عند تفعيلها لأي أكاديمية يتم تنشيطها تلقائياً).</div>
+        </div>
+        <form method="POST" action="/platform/sports/<%= sport.id %>/edit">
+          <input type="hidden" name="name" value="<%= sport.name %>">
+          <input type="hidden" name="icon" value="<%= sport.icon %>">
+          <input type="hidden" name="description" value="<%= sport.description || '' %>">
+          <input type="hidden" name="sort_order" value="<%= sport.sort_order %>">
+          <input type="hidden" name="is_active" value="1">
+          <button type="submit" class="pf-btn pf-btn-primary"><i class="fas fa-circle-check"></i> تنشيط اللعبة الآن</button>
+        </form>
+      </div>
+    </div>
+  <% } %>
+
   <div class="pf-card">
     <div class="pf-card-head">
       <h3><i class="fas fa-building"></i> تفعيل اللعبة للأكاديميات</h3>
-      <span class="pf-badge pf-badge-blue"><%= academies.filter(a => a.is_enabled).length %> مفعّلة</span>
+      <span class="pf-badge pf-badge-blue"><%= academies.filter(a => a.is_enabled && sport.is_active).length %> مفعّلة</span>
     </div>
     <div class="pf-card-body flat">
       <div class="pf-table">
         <table>
           <thead><tr><th>الأكاديمية</th><th>الحالة</th><th>التحكم</th><th>صلاحيات المستخدمين</th></tr></thead>
           <tbody>
-            <% academies.forEach(function (a) { %>
+            <% academies.forEach(function (a) { var eff = !!(a.is_enabled && sport.is_active); %>
               <tr>
                 <td>
                   <div class="pf-entity">
@@ -31,12 +51,12 @@
                   </div>
                 </td>
                 <td>
-                  <span class="pf-badge <%= a.is_enabled ? 'pf-badge-green' : 'pf-badge-gray' %>"><%= a.is_enabled ? 'مفعّلة' : 'موقوفة' %></span>
+                  <span class="pf-badge <%= eff ? 'pf-badge-green' : 'pf-badge-gray' %>"><%= eff ? 'مفعّلة' : 'موقوفة' %></span>
                 </td>
                 <td>
                   <div class="pf-toggle">
-                    <button onclick="toggleSport(<%= a.id %>, <%= a.is_enabled ? 0 : 1 %>)" class="pf-btn <%= a.is_enabled ? 'pf-btn-danger' : 'pf-btn-primary' %>">
-                      <i class="fas <%= a.is_enabled ? 'fa-circle-minus' : 'fa-circle-check' %>"></i> <%= a.is_enabled ? 'إيقاف' : 'تفعيل' %>
+                    <button onclick="toggleSport(<%= a.id %>, <%= eff ? 0 : 1 %>)" class="pf-btn <%= eff ? 'pf-btn-danger' : 'pf-btn-primary' %>">
+                      <i class="fas <%= eff ? 'fa-circle-minus' : 'fa-circle-check' %>"></i> <%= eff ? 'إيقاف' : 'تفعيل' %>
                     </button>
                     <form method="POST" id="toggle-<%= a.id %>" action="/platform/sports/<%= sport.id %>/toggle">
                       <input type="hidden" name="academy_id" value="<%= a.id %>">
