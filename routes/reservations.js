@@ -78,10 +78,11 @@ async function convertReservation(req, res, r) {
       /* إنشاء ولي الأمر */
       let guardianId = null;
       const gPhone = String(r.guardian_phone || r.phone || '').trim();
-      if (gPhone) {
+      const guardianName = String(r.guardian_name || '').trim() || String(r.swimmer_name || '') + ' - ولي الأمر';
+      if (gPhone || guardianName) {
         const g = await tx.run(`INSERT INTO guardians (full_name, phone, whatsapp, relation, notes)
           VALUES (?,?,?,?,?)`,
-          String(r.swimmer_name || '') + ' - ولي الأمر', gPhone, String(r.whatsapp || '').trim() || null, 'ولي أمر',
+          guardianName, gPhone || null, String(r.whatsapp || '').trim() || null, r.guardian_relation || 'ولي أمر',
           'حول من حجز رقم ' + r.id + (r.notes ? ': ' + r.notes : ''));
         guardianId = g.lastInsertRowid;
       }
@@ -190,6 +191,7 @@ router.get('/reports/reservations.xls', async function (req, res) {
       + '<td>' + cell(r.phone) + '</td>'
       + '<td>' + cell(r.whatsapp) + '</td>'
       + '<td>' + cell(r.initial_level) + '</td>'
+      + '<td>' + cell(r.guardian_name) + '</td>'
       + '<td>' + cell(r.guardian_phone) + '</td>'
       + '<td>' + cell(r.swimmer_number) + '</td>'
       + '<td class="big">' + cell(r.notes) + '</td>'
@@ -210,7 +212,7 @@ router.get('/reports/reservations.xls', async function (req, res) {
     </style></head><body dir="rtl"><table dir="rtl" style="width:1100px">
       <thead><tr>
         <th>م</th><th>اسم اللاعب</th><th>اللعبة</th><th>البرنامج</th><th>تاريخ الميلاد</th><th>السن</th><th>النوع</th>
-        <th>الهاتف</th><th>الواتساب</th><th>المستوى المبدئي</th><th>رقم ولي الأمر</th><th>رقم اللاعب</th>
+        <th>الهاتف</th><th>الواتساب</th><th>المستوى المبدئي</th><th>اسم ولي الأمر</th><th>رقم ولي الأمر</th><th>رقم اللاعب</th>
         <th>الملاحظات</th><th>تاريخ الحجز</th><th>وقت الحجز</th><th>الحالة</th>
       </tr></thead><tbody>${body}</tbody></table></body></html>`;
   res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');

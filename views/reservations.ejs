@@ -63,7 +63,10 @@
               <td><%- r.phone ? '<span dir="ltr">' + r.phone + '</span>' : '—' %></td>
               <td><%- r.whatsapp ? '<span dir="ltr">' + r.whatsapp + '</span>' : '—' %></td>
               <td><%= r.initial_level || '—' %></td>
-              <td><%- r.guardian_phone ? '<span dir="ltr">' + r.guardian_phone + '</span>' : '—' %></td>
+              <td>
+                <% if (r.guardian_name) { %><div><b><%= r.guardian_name %></b></div><% } %>
+                <%- r.guardian_phone ? '<span dir="ltr">' + r.guardian_phone + '</span>' : (!r.guardian_name ? '—' : '') %>
+              </td>
               <td><%= r.swimmer_number || '—' %></td>
               <td><div class="font-13 text-soft" style="max-width:180px;white-space:normal"><%= r.notes || '—' %></div></td>
               <td><div class="font-13"><%= fmtDateTime(r.created_at) %></div></td>

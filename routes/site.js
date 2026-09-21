@@ -225,7 +225,8 @@ async function submitReserve(req, res, acad, base) {
     program_id: b.program_id || '', sport_id: b.sport_id || '', swimmer_name: String(b.swimmer_name || '').trim(),
     birth_date: b.birth_date || '', gender: b.gender || 'ذكر',
     phone: String(b.phone || '').trim(), whatsapp: String(b.whatsapp || '').trim(),
-    initial_level: String(b.initial_level || '').trim(), guardian_phone: String(b.guardian_phone || '').trim(),
+    initial_level: String(b.initial_level || '').trim(), guardian_name: String(b.guardian_name || '').trim(),
+    guardian_phone: String(b.guardian_phone || '').trim(), guardian_relation: String(b.guardian_relation || '').trim(),
     swimmer_number: String(b.swimmer_number || '').trim(), notes: String(b.notes || '').trim()
   };
   if (!values.swimmer_name) {
@@ -253,11 +254,12 @@ async function submitReserve(req, res, acad, base) {
     programName = (prog && prog.name) || (b.program_name ? String(b.program_name).trim() : '');
     age = calcAge(values.birth_date);
     const info = await db.prepare(`INSERT INTO reservations
-       (program_id, sport_id, program_name, swimmer_name, birth_date, age, gender, phone, whatsapp, initial_level, guardian_phone, swimmer_number, notes)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+       (program_id, sport_id, program_name, swimmer_name, birth_date, age, gender, phone, whatsapp, initial_level, guardian_name, guardian_phone, guardian_relation, swimmer_number, notes)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
        .run(Number(b.program_id) || null, sportId, programName, values.swimmer_name, values.birth_date || null, age,
         values.gender, values.phone || null, values.whatsapp || null, values.initial_level || null,
-        values.guardian_phone || null, values.swimmer_number || null, values.notes || null);
+         values.guardian_name || null, values.guardian_phone || null, values.guardian_relation || null,
+         values.swimmer_number || null, values.notes || null);
 
     /* أسماء المسؤولين وأقرب ميعاد تدريب لرسالة الواتساب */
     try {
@@ -286,6 +288,8 @@ async function submitReserve(req, res, acad, base) {
       'واتساب: ' + (values.whatsapp || '—'),
       'المستوى المبدئي: ' + (values.initial_level || '—'),
       'رقم ولي الأمر: ' + (values.guardian_phone || '—'),
+      'اسم ولي الأمر: ' + (values.guardian_name || '—'),
+      values.guardian_relation ? 'صلة القرابة: ' + values.guardian_relation : '',
       'رقم اللاعب: ' + (values.swimmer_number || '—'),
       values.notes ? 'ملاحظات: ' + values.notes : ''
     ].filter(Boolean).join(' | ');
@@ -328,6 +332,9 @@ async function submitReserve(req, res, acad, base) {
     age: age,
     phone: values.phone,
     whatsapp: values.whatsapp,
+    guardian_name: values.guardian_name,
+    guardian_phone: values.guardian_phone,
+    guardian_relation: values.guardian_relation,
     initial_level: values.initial_level,
     notes: values.notes
   };

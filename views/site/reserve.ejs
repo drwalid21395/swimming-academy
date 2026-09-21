@@ -49,6 +49,9 @@
             <% if (confirmed.birth_date) { %><div><span style="color:var(--text-muted)">تاريخ الميلاد:</span> <b><%= confirmed.birth_date %></b></div><% } %>
             <% if (confirmed.age !== null && confirmed.age !== undefined && confirmed.age !== '') { %><div><span style="color:var(--text-muted)">السن:</span> <b><%= confirmed.age %> سنة</b></div><% } %>
             <% if (confirmed.phone) { %><div><span style="color:var(--text-muted)">الهاتف:</span> <b dir="ltr"><%= confirmed.phone %></b></div><% } %>
+            <% if (confirmed.guardian_name) { %><div><span style="color:var(--text-muted)">ولي الأمر:</span> <b><%= confirmed.guardian_name %></b></div><% } %>
+            <% if (confirmed.guardian_phone) { %><div><span style="color:var(--text-muted)">هاتف ولي الأمر:</span> <b dir="ltr"><%= confirmed.guardian_phone %></b></div><% } %>
+            <% if (confirmed.guardian_relation) { %><div><span style="color:var(--text-muted)">صلة القرابة:</span> <b><%= confirmed.guardian_relation %></b></div><% } %>
             <% if (confirmed.initial_level) { %><div><span style="color:var(--text-muted)">المستوى المبدئي:</span> <b><%= confirmed.initial_level %></b></div><% } %>
             <% if (confirmed.notes) { %><div style="grid-column:1/-1"><span style="color:var(--text-muted)">ملاحظات:</span> <b><%= confirmed.notes %></b></div><% } %>
           </div>
@@ -123,8 +126,16 @@
             </select>
           </div>
           <div class="form-group">
+            <label>اسم ولي الأمر <small>(اختياري)</small></label>
+            <input type="text" name="guardian_name" placeholder="اسم ولي الأمر أو المسؤول" value="<%= v.guardian_name || '' %>">
+          </div>
+          <div class="form-group">
             <label>رقم ولي الأمر / المسؤول</label>
             <input type="tel" name="guardian_phone" placeholder="01xxxxxxxxx" dir="ltr" value="<%= v.guardian_phone || '' %>">
+          </div>
+          <div class="form-group">
+            <label>صلة القرابة <small>(اختياري)</small></label>
+            <input type="text" name="guardian_relation" placeholder="أب، أم، ولي أمر..." value="<%= v.guardian_relation || '' %>">
           </div>
           <div class="form-group">
             <label>رقم اللاعب <small>(إن وجد — اختياري)</small></label>
