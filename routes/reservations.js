@@ -80,10 +80,12 @@ async function convertReservation(req, res, r) {
       const gPhone = String(r.guardian_phone || r.phone || '').trim();
       const guardianName = String(r.guardian_name || '').trim() || String(r.swimmer_name || '') + ' - ولي الأمر';
       if (gPhone || guardianName) {
-        const g = await tx.run(`INSERT INTO guardians (full_name, phone, whatsapp, relation, notes)
-          VALUES (?,?,?,?,?)`,
-          guardianName, gPhone || null, String(r.whatsapp || '').trim() || null, r.guardian_relation || 'ولي أمر',
-          'حول من حجز رقم ' + r.id + (r.notes ? ': ' + r.notes : ''));
+        const g = await tx.run(`INSERT INTO guardians (full_name, phone, whatsapp, email, address, national_id, relation, notes)
+          VALUES (?,?,?,?,?,?,?,?)`,
+          guardianName, gPhone || null, String(r.guardian_whatsapp || '').trim() || null,
+          String(r.guardian_email || '').trim() || null, String(r.guardian_address || '').trim() || null,
+          String(r.guardian_national_id || '').trim() || null, r.guardian_relation || 'أب',
+          String(r.guardian_notes || '').trim() || ('حول من حجز رقم ' + r.id + (r.notes ? ': ' + r.notes : '')));
         guardianId = g.lastInsertRowid;
       }
 

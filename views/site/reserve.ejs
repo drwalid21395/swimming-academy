@@ -11,6 +11,7 @@
   .form-group.full { grid-column: 1 / -1; }
   .form-group label { font-size: 13px; font-weight: 700; color: var(--text); }
   .form-group label small { font-weight: 400; color: var(--text-muted); }
+  .reserve-section-title { grid-column: 1 / -1; margin-top: 8px; padding: 10px 12px; border-bottom: 2px solid var(--primary-soft); color: var(--primary); font-size: 15px; font-weight: 800; }
   .form-group input, .form-group select, .form-group textarea {
     border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 12px; font-size: 14px;
     background: var(--card,#fff); color: var(--text); width: 100%; box-sizing: border-box;
@@ -68,6 +69,7 @@
       <% const v = values || {}; %>
       <form method="POST" action="<%= (data.base || '/site') %>/reserve">
         <div class="reserve-grid">
+          <div class="reserve-section-title">بيانات الحجز</div>
           <div class="form-group full">
             <label>اللعبة <span class="text-danger">*</span></label>
             <select name="sport_id" id="sportSelect" required>
@@ -89,6 +91,7 @@
             </select>
             <input type="hidden" name="program_name" id="programNameInput" value="">
           </div>
+          <div class="reserve-section-title">بيانات اللاعب</div>
           <div class="form-group">
             <label>اسم اللاعب <span class="text-danger">*</span></label>
             <input type="text" name="swimmer_name" required placeholder="الاسم الثلاثي" value="<%= v.swimmer_name || '' %>">
@@ -125,9 +128,10 @@
               <% }); %>
             </select>
           </div>
+          <div class="reserve-section-title">بيانات ولي الأمر</div>
           <div class="form-group">
-            <label>اسم ولي الأمر <small>(اختياري)</small></label>
-            <input type="text" name="guardian_name" placeholder="اسم ولي الأمر أو المسؤول" value="<%= v.guardian_name || '' %>">
+            <label>اسم ولي الأمر <span class="text-danger">*</span></label>
+            <input type="text" name="guardian_name" required placeholder="اسم ولي الأمر أو المسؤول" value="<%= v.guardian_name || '' %>">
           </div>
           <div class="form-group">
             <label>رقم ولي الأمر / المسؤول</label>
@@ -135,12 +139,33 @@
           </div>
           <div class="form-group">
             <label>صلة القرابة <small>(اختياري)</small></label>
-            <input type="text" name="guardian_relation" placeholder="أب، أم، ولي أمر..." value="<%= v.guardian_relation || '' %>">
+            <select name="guardian_relation">
+              <% ['أب', 'أم', 'عم', 'خال', 'أخ', 'أخت', 'جد', 'جدة', 'أخرى'].forEach(function (relation) { %>
+                <option value="<%= relation %>" <%= (v.guardian_relation || 'أب') === relation ? 'selected' : '' %>><%= relation %></option>
+              <% }); %>
+            </select>
           </div>
           <div class="form-group">
-            <label>رقم اللاعب <small>(إن وجد — اختياري)</small></label>
-            <input type="text" name="swimmer_number" placeholder="مثال: SW-0001" value="<%= v.swimmer_number || '' %>">
+            <label>رقم واتساب ولي الأمر</label>
+            <input type="tel" name="guardian_whatsapp" placeholder="01xxxxxxxxx" dir="ltr" value="<%= v.guardian_whatsapp || '' %>">
           </div>
+          <div class="form-group">
+            <label>البريد الإلكتروني</label>
+            <input type="email" name="guardian_email" placeholder="guardian@example.com" dir="ltr" value="<%= v.guardian_email || '' %>">
+          </div>
+          <div class="form-group">
+            <label>العنوان</label>
+            <input type="text" name="guardian_address" placeholder="عنوان ولي الأمر" value="<%= v.guardian_address || '' %>">
+          </div>
+          <div class="form-group">
+            <label>الرقم القومي</label>
+            <input type="text" name="guardian_national_id" placeholder="الرقم القومي" dir="ltr" value="<%= v.guardian_national_id || '' %>">
+          </div>
+          <div class="form-group full">
+            <label>ملاحظات ولي الأمر</label>
+            <textarea name="guardian_notes" rows="2" placeholder="ملاحظات خاصة بولي الأمر..."><%= v.guardian_notes || '' %></textarea>
+          </div>
+          <div class="reserve-section-title">ملاحظات اللاعب</div>
           <div class="form-group full">
             <label>ملاحظات <small>(اختياري)</small></label>
             <textarea name="notes" rows="3" placeholder="أي تفاصيل إضافية تحب مشاركتها..."><%= v.notes || '' %></textarea>

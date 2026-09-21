@@ -227,10 +227,15 @@ async function submitReserve(req, res, acad, base) {
     phone: String(b.phone || '').trim(), whatsapp: String(b.whatsapp || '').trim(),
     initial_level: String(b.initial_level || '').trim(), guardian_name: String(b.guardian_name || '').trim(),
     guardian_phone: String(b.guardian_phone || '').trim(), guardian_relation: String(b.guardian_relation || '').trim(),
-    swimmer_number: String(b.swimmer_number || '').trim(), notes: String(b.notes || '').trim()
+    guardian_whatsapp: String(b.guardian_whatsapp || '').trim(), guardian_email: String(b.guardian_email || '').trim(),
+    guardian_address: String(b.guardian_address || '').trim(), guardian_national_id: String(b.guardian_national_id || '').trim(),
+    guardian_notes: String(b.guardian_notes || '').trim(), notes: String(b.notes || '').trim()
   };
   if (!values.swimmer_name) {
     return renderPage(req, res, acad, base, 'reserve', { message: 'يرجى إدخال اسم اللاعب لحجز مكانه', values });
+  }
+  if (!values.guardian_name) {
+    return renderPage(req, res, acad, base, 'reserve', { message: 'يرجى إدخال اسم ولي الأمر', values });
   }
   let programName = '';
   let sportId = Number(values.sport_id) || 0;
@@ -254,12 +259,13 @@ async function submitReserve(req, res, acad, base) {
     programName = (prog && prog.name) || (b.program_name ? String(b.program_name).trim() : '');
     age = calcAge(values.birth_date);
     const info = await db.prepare(`INSERT INTO reservations
-       (program_id, sport_id, program_name, swimmer_name, birth_date, age, gender, phone, whatsapp, initial_level, guardian_name, guardian_phone, guardian_relation, swimmer_number, notes)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+       (program_id, sport_id, program_name, swimmer_name, birth_date, age, gender, phone, whatsapp, initial_level, guardian_name, guardian_phone, guardian_relation, guardian_whatsapp, guardian_email, guardian_address, guardian_national_id, guardian_notes, notes)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
        .run(Number(b.program_id) || null, sportId, programName, values.swimmer_name, values.birth_date || null, age,
         values.gender, values.phone || null, values.whatsapp || null, values.initial_level || null,
          values.guardian_name || null, values.guardian_phone || null, values.guardian_relation || null,
-         values.swimmer_number || null, values.notes || null);
+         values.guardian_whatsapp || null, values.guardian_email || null, values.guardian_address || null,
+         values.guardian_national_id || null, values.guardian_notes || null, values.notes || null);
 
     /* أسماء المسؤولين وأقرب ميعاد تدريب لرسالة الواتساب */
     try {
