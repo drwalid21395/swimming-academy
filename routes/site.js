@@ -222,7 +222,7 @@ router.post('/contact', async function (req, res) {
 async function submitReserve(req, res, acad, base) {
   const b = req.body;
   const values = {
-    program_id: b.program_id || '', swimmer_name: String(b.swimmer_name || '').trim(),
+    program_id: b.program_id || '', sport_id: b.sport_id || '', swimmer_name: String(b.swimmer_name || '').trim(),
     birth_date: b.birth_date || '', gender: b.gender || 'ذكر',
     phone: String(b.phone || '').trim(), whatsapp: String(b.whatsapp || '').trim(),
     initial_level: String(b.initial_level || '').trim(), guardian_phone: String(b.guardian_phone || '').trim(),
@@ -232,16 +232,30 @@ async function submitReserve(req, res, acad, base) {
     return renderPage(req, res, acad, base, 'reserve', { message: 'يرجى إدخال اسم اللاعب لحجز مكانه', values });
   }
   let programName = '';
+  let sportId = Number(values.sport_id) || 0;
+  let sportName = '';
   let age = null;
   let adminName = '', techDirector = '', nearestSession = '';
+  let validationMessage = '';
   await withAcademy(acad.id, async () => {
-    const prog = await db.prepare('SELECT name FROM programs WHERE id = ? AND deleted_at IS NULL').get(Number(b.program_id) || 0);
+    const enabledSports = (await enabledSportsForAcademy(acad.id)).filter(s => s.is_enabled);
+    const selectedSport = enabledSports.find(s => Number(s.id) === sportId);
+    const prog = await db.prepare('SELECT id, name, sport_id FROM programs WHERE id = ? AND deleted_at IS NULL').get(Number(b.program_id) || 0);
+    if (!selectedSport) {
+      validationMessage = 'يرجى اختيار اللعبة';
+      return;
+    }
+    if (!prog || Number(prog.sport_id) !== sportId) {
+      validationMessage = 'يرجى اختيار برنامج تابع للعبة المحددة';
+      return;
+    }
+    sportName = selectedSport.name;
     programName = (prog && prog.name) || (b.program_name ? String(b.program_name).trim() : '');
     age = calcAge(values.birth_date);
     const info = await db.prepare(`INSERT INTO reservations
-      (program_id, program_name, swimmer_name, birth_date, age, gender, phone, whatsapp, initial_level, guardian_phone, swimmer_number, notes)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(Number(b.program_id) || null, programName, values.swimmer_name, values.birth_date || null, age,
+       (program_id, sport_id, program_name, swimmer_name, birth_date, age, gender, phone, whatsapp, initial_level, guardian_phone, swimmer_number, notes)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+       .run(Number(b.program_id) || null, sportId, programName, values.swimmer_name, values.birth_date || null, age,
         values.gender, values.phone || null, values.whatsapp || null, values.initial_level || null,
         values.guardian_phone || null, values.swimmer_number || null, values.notes || null);
 
@@ -263,6 +277,7 @@ async function submitReserve(req, res, acad, base) {
     } catch (e) { }
 
     const detail = [
+      'اللعبة: ' + sportName,
       'البرنامج: ' + (programName || '—'),
       'الاسم: ' + values.swimmer_name,
       values.birth_date ? 'تاريخ الميلاد: ' + values.birth_date : '',
@@ -286,6 +301,8 @@ async function submitReserve(req, res, acad, base) {
     } catch (e) { /* الإشعار يعرض حتى لو تعذر إسناد مستلمين */ }
   });
 
+  if (validationMessage) return renderPage(req, res, acad, base, 'reserve', { message: validationMessage, values });
+
   /* رسالة متابعة واتساب لأولياء الأمور: دعوة لإتمام الاشتراك (الكابتن + المجموعة + دفع القيمة) */
   const waPhone = values.whatsapp || values.phone || '';
   if (waPhone) {
@@ -306,6 +323,7 @@ async function submitReserve(req, res, acad, base) {
   const confirmed = {
     swimmer_name: values.swimmer_name,
     program_name: programName,
+    sport_name: sportName,
     birth_date: values.birth_date,
     age: age,
     phone: values.phone,

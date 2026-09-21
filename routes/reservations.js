@@ -4,7 +4,7 @@ const { db } = require('../lib/db');
 const { audit, fmtDateTime, today, canView, canDel, canEdit, canExport } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
 const { nextMembership, isUniqueViolation } = require('../lib/membership');
-const { activeSport, progClause } = require('../lib/sport-context');
+const { activeSport } = require('../lib/sport-context');
 const router = express.Router();
 
 const RESERVE_STATUS = ['جديدة', 'تم التواصل', 'تم الحجز', 'تم التحويل للاعب', 'ملغي'];
@@ -21,19 +21,26 @@ function statusBadge(st) {
   return `<span class="badge ${m[0]}"><i class="fas ${m[1]}"></i> ${st}</span>`;
 }
 
+function reservationSportClause(req, alias) {
+  const sportId = Number(activeSport(req)) || 0;
+  if (!Number.isSafeInteger(sportId) || sportId < 1) return '';
+  const a = alias || 'r';
+  return ` AND (${a}.sport_id = ${sportId} OR (${a}.sport_id IS NULL AND ${a}.program_id IN (SELECT id FROM programs WHERE deleted_at IS NULL AND sport_id = ${sportId})))`;
+}
+
 router.get('/reservations', async function (req, res) {
   if (!canView(req.currentUser, 'reservations')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const status = String(req.query.status || '').trim();
   const from = String(req.query.from || '').trim();
   const to = String(req.query.to || '').trim();
 
-  let where = 'WHERE 1=1' + progClause(activeSport(req), 'r');
+  let where = 'WHERE 1=1' + reservationSportClause(req, 'r');
   const args = [];
   if (status) { where += ' AND r.status = ?'; args.push(status); }
   if (from) { where += ' AND date(r.created_at) >= ?'; args.push(from); }
   if (to) { where += ' AND date(r.created_at) <= ?'; args.push(to); }
 
-  const rows = await db.prepare(`SELECT r.* FROM reservations r ${where} ORDER BY r.created_at DESC, r.id DESC`).all(...args);
+  const rows = await db.prepare(`SELECT r.*, sp.name AS sport_name FROM reservations r LEFT JOIN sports sp ON sp.id = r.sport_id ${where} ORDER BY r.created_at DESC, r.id DESC`).all(...args);
 
   const page = {
     title: 'حجوزات الموقع',
@@ -51,6 +58,7 @@ async function convertReservation(req, res, r) {
 
   /* المستوى المبدئي من الحجز */
   let levelId = r.level_id || null;
+  let sportId = Number(r.sport_id) || 0;
 
   let lastErr;
   for (let attempt = 0; attempt <= 5; attempt++) {
@@ -58,8 +66,12 @@ async function convertReservation(req, res, r) {
     let tx;
     try {
       tx = await db.transaction();
+      if (!sportId && r.program_id) {
+        const program = await tx.get('SELECT sport_id FROM programs WHERE id = ?', r.program_id);
+        sportId = Number(program && program.sport_id) || 0;
+      }
       if (!levelId && r.initial_level) {
-        const lvl = await tx.get('SELECT id FROM levels WHERE name = ?', r.initial_level);
+        const lvl = await tx.get('SELECT id FROM levels WHERE name = ? AND (sport_id = ? OR sport_id IS NULL)', r.initial_level, sportId);
         if (lvl) levelId = lvl.id;
       }
 
@@ -75,10 +87,10 @@ async function convertReservation(req, res, r) {
       }
 
       /* إنشاء اللاعب */
-      const sw = await tx.run(`INSERT INTO swimmers (membership_no, full_name, birth_date, gender, phone, guardian_id, level_id, program_id, registration_date, status, notes)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      const sw = await tx.run(`INSERT INTO swimmers (membership_no, full_name, birth_date, gender, phone, guardian_id, level_id, program_id, sport_id, registration_date, status, notes)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
         membership_no, r.swimmer_name, r.birth_date || null, r.gender || 'ذكر', String(r.phone || '').trim() || null,
-        guardianId, levelId, r.program_id || null, today(), 'نشط',
+        guardianId, levelId, r.program_id || null, sportId || null, today(), 'نشط',
         'حول من حجز رقم ' + r.id + (r.notes ? ': ' + r.notes : ''));
       const swimmerId = sw.lastInsertRowid;
 
@@ -152,12 +164,12 @@ router.get('/reports/reservations.xls', async function (req, res) {
   const from = String(req.query.from || '').trim();
   const to = String(req.query.to || '').trim();
 
-  let where = 'WHERE 1=1';
+  let where = 'WHERE 1=1' + reservationSportClause(req, 'r');
   const args = [];
   if (status) { where += ' AND r.status = ?'; args.push(status); }
   if (from) { where += ' AND date(r.created_at) >= ?'; args.push(from); }
   if (to) { where += ' AND date(r.created_at) <= ?'; args.push(to); }
-  const rows = await db.prepare(`SELECT r.* FROM reservations r ${where} ORDER BY r.created_at DESC, r.id DESC`).all(...args);
+  const rows = await db.prepare(`SELECT r.*, sp.name AS sport_name FROM reservations r LEFT JOIN sports sp ON sp.id = r.sport_id ${where} ORDER BY r.created_at DESC, r.id DESC`).all(...args);
 
   const cell = (v) => {
     if (v === null || v === undefined || v === '') return '—';
@@ -170,6 +182,7 @@ router.get('/reports/reservations.xls', async function (req, res) {
     return '<tr>'
       + '<td>' + (i + 1) + '</td>'
       + '<td class="b">' + cell(r.swimmer_name) + '</td>'
+      + '<td>' + cell(r.sport_name) + '</td>'
       + '<td>' + cell(r.program_name) + '</td>'
       + '<td>' + cell(r.birth_date) + '</td>'
       + '<td>' + (r.age !== null && r.age !== undefined ? r.age : '—') + '</td>'
@@ -196,7 +209,7 @@ router.get('/reports/reservations.xls', async function (req, res) {
       td.big { white-space: normal; word-wrap: break-word; }
     </style></head><body dir="rtl"><table dir="rtl" style="width:1100px">
       <thead><tr>
-        <th>م</th><th>اسم اللاعب</th><th>البرنامج</th><th>تاريخ الميلاد</th><th>السن</th><th>النوع</th>
+        <th>م</th><th>اسم اللاعب</th><th>اللعبة</th><th>البرنامج</th><th>تاريخ الميلاد</th><th>السن</th><th>النوع</th>
         <th>الهاتف</th><th>الواتساب</th><th>المستوى المبدئي</th><th>رقم ولي الأمر</th><th>رقم اللاعب</th>
         <th>الملاحظات</th><th>تاريخ الحجز</th><th>وقت الحجز</th><th>الحالة</th>
       </tr></thead><tbody>${body}</tbody></table></body></html>`;

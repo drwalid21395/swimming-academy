@@ -30,6 +30,7 @@
       <thead>
         <tr>
           <th>اللاعب</th>
+          <th>اللعبة</th>
           <th>البرنامج</th>
           <th>السن</th>
           <th>الهاتف</th>
@@ -56,6 +57,7 @@
                   </div>
                 </div>
               </td>
+              <td><span class="badge badge-info"><%= r.sport_name || '—' %></span></td>
               <td><b><%= r.program_name || '—' %></b></td>
               <td><%= r.age !== null && r.age !== undefined ? r.age + ' سنة' : '—' %></td>
               <td><%- r.phone ? '<span dir="ltr">' + r.phone + '</span>' : '—' %></td>
@@ -95,7 +97,7 @@
             </tr>
           <% }); %>
         <% } else { %>
-          <tr><td colspan="12"><div class="empty-state"><i class="fas fa-calendar-xmark"></i><p>لا توجد حجوزات — تظهر هنا تلقائياً بمجرد حجز زائر من الموقع</p></div></td></tr>
+          <tr><td colspan="13"><div class="empty-state"><i class="fas fa-calendar-xmark"></i><p>لا توجد حجوزات — تظهر هنا تلقائياً بمجرد حجز زائر من الموقع</p></div></td></tr>
         <% } %>
       </tbody>
     </table>
