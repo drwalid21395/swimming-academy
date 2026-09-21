@@ -4,7 +4,7 @@ const { db } = require('../lib/db');
 const { audit, money, fmtDate, today, daysAhead, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
 const { buildRenewalMessage, buildReceiptMessage, sendReminder, waLinkFor, logMessage } = require('../lib/whatsapp');
 const { setFlash } = require('../lib/auth-cookie');
-const { activeSport, sportClause, progClause, groupClause, swimmerClause } = require('../lib/sport-context');
+const { activeSport, sportClause, progClause, groupClause, swimmerClause, swimmerSportClause } = require('../lib/sport-context');
 const router = express.Router();
 
 function sportOptionsFor(req, res) {
@@ -12,7 +12,7 @@ function sportOptionsFor(req, res) {
   return list.map(sp => ({ value: Number(sp.id), label: sp.name }));
 }
 async function swimmerOptions(sid) {
-  return (await db.prepare('SELECT id, full_name, membership_no FROM swimmers WHERE deleted_at IS NULL' + progClause(sid, 'swimmers') + ' ORDER BY full_name').all())
+  return (await db.prepare('SELECT id, full_name, membership_no FROM swimmers WHERE deleted_at IS NULL' + swimmerSportClause(sid, 'swimmers') + ' ORDER BY full_name').all())
     .map(s => ({ value: s.id, label: s.full_name + ' (' + s.membership_no + ')' }));
 }
 async function programOptions(sid) {
@@ -20,6 +20,39 @@ async function programOptions(sid) {
 }
 async function groupOptions(sid) {
   return (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL' + groupClause(sid) + ' ORDER BY name').all()).map(g => ({ value: g.id, label: g.name }));
+}
+
+async function subscriptionSport(req, swimmerId) {
+  const selected = activeSport(req);
+  if (selected) return selected;
+  if (!swimmerId) return 0;
+  const swimmer = await db.prepare(`SELECT COALESCE(s.sport_id, p.sport_id, 0) AS sport_id
+    FROM swimmers s LEFT JOIN programs p ON p.id = s.program_id WHERE s.id = ? AND s.deleted_at IS NULL`).get(Number(swimmerId));
+  return Number(swimmer && swimmer.sport_id) || 0;
+}
+
+async function validateSubscriptionContext(req, b) {
+  const swimmer = await db.prepare(`SELECT s.id, s.program_id, s.group_id, COALESCE(s.sport_id, p.sport_id, 0) AS sport_id
+    FROM swimmers s LEFT JOIN programs p ON p.id = s.program_id WHERE s.id = ? AND s.deleted_at IS NULL`).get(Number(b.swimmer_id));
+  if (!swimmer) return { error: 'يرجى اختيار لاعب صحيح' };
+
+  const activeId = activeSport(req);
+  const sportId = Number(swimmer.sport_id) || activeId || 0;
+  if (activeId && sportId && activeId !== sportId) return { error: 'اللاعب المحدد لا يتبع اللعبة النشطة' };
+
+  const programId = Number(b.program_id) || Number(swimmer.program_id) || 0;
+  if (!programId) return { error: 'يرجى اختيار برنامج للاعب' };
+  const program = await db.prepare('SELECT id, sport_id FROM programs WHERE id = ? AND deleted_at IS NULL').get(programId);
+  if (!program || (sportId && Number(program.sport_id) !== sportId)) return { error: 'البرنامج المحدد لا يتبع لعبة اللاعب' };
+
+  const groupId = Number(b.group_id) || 0;
+  if (groupId) {
+    const group = await db.prepare(`SELECT g.id, g.program_id, COALESCE(g.sport_id, p.sport_id, 0) AS sport_id
+      FROM groups g LEFT JOIN programs p ON p.id = g.program_id WHERE g.id = ? AND g.deleted_at IS NULL`).get(groupId);
+    const groupSportId = Number(group && group.sport_id) || 0;
+    if (!group || (sportId && groupSportId && groupSportId !== sportId)) return { error: 'المجموعة المحددة لا تتبع لعبة اللاعب' };
+  }
+  return { swimmer, sportId, programId, groupId };
 }
 
 /* حساب الإجمالي بعد الخصم والضريبة */
@@ -68,7 +101,7 @@ router.get('/subscriptions', async function (req, res) {
 });
 
 const subFields = async function (values, req) {
-  const sid = activeSport(req);
+  const sid = await subscriptionSport(req, values.swimmer_id);
   return [
     { key: 'swimmer_id', label: 'اللاعب', type: 'select', options: await swimmerOptions(sid), required: true, section: 'بيانات الاشتراك', sectionIcon: 'fa-file-contract' },
     { key: 'program_id', label: 'البرنامج', type: 'select', options: await programOptions(sid) },
@@ -107,6 +140,13 @@ router.get('/subscriptions/new', async function (req, res) {
 router.post('/subscriptions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
+  const context = await validateSubscriptionContext(req, b);
+  if (context.error) {
+    setFlash(res, { type: 'error', message: context.error });
+    return res.redirect('/subscriptions/new' + (b.swimmer_id ? '?swimmer_id=' + encodeURIComponent(b.swimmer_id) : ''));
+  }
+  b.program_id = context.programId;
+  b.group_id = context.groupId || '';
   const total = b.total !== '' && b.total != null ? Number(b.total) : computeTotal(b.price, b.discount, b.tax);
   const paid = Number(b.paid_amount || 0);
   const remaining = Math.round((total - paid) * 100) / 100;
@@ -121,9 +161,8 @@ router.post('/subscriptions/new', async function (req, res) {
       .run(info.lastInsertRowid, b.swimmer_id, paid, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), req.currentUser.id, 'دفعة الاشتراك');
   }
   /* تسجيل الاشتراك في الإيرادات دائماً (إنشاء أو تجديد) — بالمبلغ المدفوع فعلياً */
-  const swSport = await db.prepare('SELECT p.sport_id sp FROM swimmers w JOIN programs p ON p.id = w.program_id WHERE w.id = ?').get(b.swimmer_id);
   await db.prepare(`INSERT INTO revenues (category, date, description, amount, payment_method, payer, status, sport_id, created_by) VALUES ('اشتراكات', ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(b.paid_date || today(), 'اشتراك: ' + swimmerName + (b.receipt_no ? ' - إيصال ' + b.receipt_no : ''), paid, b.payment_method || 'نقدي', swimmerName, paid > 0 ? 'معتمد' : 'مسجل', (swSport && swSport.sp) || 0, req.currentUser.id);
+    .run(b.paid_date || today(), 'اشتراك: ' + swimmerName + (b.receipt_no ? ' - إيصال ' + b.receipt_no : ''), paid, b.payment_method || 'نقدي', swimmerName, paid > 0 ? 'معتمد' : 'مسجل', context.sportId, req.currentUser.id);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'subscriptions', info.lastInsertRowid, 'اشتراك جديد', req);
   /* إتمام الاشتراك: نعرض لولي الأمر إيصالاً بتفاصيل الاشتراك عبر واتساب، مع تأكيد قبل الإرسال.
      نقرأ رقم ولي الأمر، وإن وُجد نُظهر شاشة تأكيد للمعاينة قبل أي إرسال. */
@@ -249,6 +288,13 @@ router.post('/subscriptions/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
   const b = req.body;
+  const context = await validateSubscriptionContext(req, b);
+  if (context.error) {
+    setFlash(res, { type: 'error', message: context.error });
+    return res.redirect('/subscriptions/' + id + '/edit');
+  }
+  b.program_id = context.programId;
+  b.group_id = context.groupId || '';
   const total = b.total !== '' && b.total != null ? Number(b.total) : computeTotal(b.price, b.discount, b.tax);
   const paid = Number(b.paid_amount || 0);
   const remaining = Math.round((total - paid) * 100) / 100;
