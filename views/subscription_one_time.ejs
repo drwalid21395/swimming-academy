@@ -1,0 +1,47 @@
+<%- include('partials/layout_top', { title: title, active: active }) %>
+<style>
+  .one-time-card { max-width: 900px; margin: 0 auto; }
+  .one-time-note { padding: 12px 14px; border-radius: 10px; background: var(--primary-soft); color: var(--primary-dark); margin-bottom: 18px; }
+  .one-time-section { grid-column: 1 / -1; color: var(--primary); font-weight: 800; border-bottom: 2px solid var(--primary-soft); padding: 8px 0; margin-top: 6px; }
+</style>
+<div class="page-head">
+  <div><div class="page-title"><i class="fas fa-bolt"></i> اشتراك لمرة واحدة</div><div class="page-sub">تسجيل سريع بعدد حصص وسعر حصة محددين</div></div>
+  <div class="spacer"></div><a href="/subscriptions" class="btn btn-outline"><i class="fas fa-arrow-right"></i> العودة للاشتراكات</a>
+</div>
+<div class="card one-time-card"><div class="card-body">
+  <% if (message) { %><div class="alert alert-danger" style="margin-bottom:18px"><i class="fas fa-circle-exclamation"></i> <%= message %></div><% } %>
+  <div class="one-time-note"><i class="fas fa-circle-info"></i> يمكنك اختيار لاعب موجود أو إنشاء ملف مختصر للاعب جديد. سيتم ربط الاشتراك باللعبة المحددة.</div>
+  <form method="POST" action="/subscriptions/one-time" novalidate>
+    <div class="form-grid">
+      <div class="one-time-section">بيانات اللعبة واللاعب</div>
+      <div class="form-group"><label>اللعبة <span class="req">*</span></label><select class="form-control" name="sport_id" id="oneSport" required><option value="">— اختر اللعبة —</option><% sports.forEach(function (s) { %><option value="<%= s.id %>" <%= String(values.sport_id || activeSportId || '') === String(s.id) ? 'selected' : '' %>><%= s.name %></option><% }); %></select></div>
+      <div class="form-group"><label>لاعب موجود</label><select class="form-control" name="swimmer_id" id="oneSwimmer"><option value="">— لاعب جديد —</option><% players.forEach(function (p) { %><option value="<%= p.id %>" data-sport="<%= p.sport_id %>" <%= String(values.swimmer_id || '') === String(p.id) ? 'selected' : '' %>><%= p.full_name %> (<%= p.membership_no %>)</option><% }); %></select></div>
+      <div class="form-group"><label>اسم اللاعب الجديد</label><input class="form-control" name="swimmer_name" value="<%= values.swimmer_name || '' %>" placeholder="يُستخدم إذا لم تختر لاعباً"></div>
+      <div class="form-group"><label>هاتف اللاعب</label><input class="form-control" name="swimmer_phone" value="<%= values.swimmer_phone || '' %>" dir="ltr"></div>
+      <div class="one-time-section">بيانات ولي الأمر المختصرة</div>
+      <div class="form-group"><label>اسم ولي الأمر</label><input class="form-control" name="guardian_name" value="<%= values.guardian_name || '' %>"></div>
+      <div class="form-group"><label>رقم ولي الأمر</label><input class="form-control" name="guardian_phone" value="<%= values.guardian_phone || '' %>" dir="ltr"></div>
+      <div class="one-time-section">تفاصيل الاشتراك</div>
+      <div class="form-group"><label>عدد الحصص <span class="req">*</span></label><input class="form-control" type="number" name="sessions_total" id="oneSessions" min="1" step="1" required value="<%= values.sessions_total || '' %>"></div>
+      <div class="form-group"><label>سعر الحصة <span class="req">*</span></label><input class="form-control" type="number" name="price_per_session" id="onePrice" min="0.01" step="0.01" required value="<%= values.price_per_session || '' %>"></div>
+      <div class="form-group"><label>الإجمالي</label><input class="form-control" type="number" name="total" id="oneTotal" readonly value="<%= values.total || '' %>"></div>
+      <div class="form-group"><label>المدفوع</label><input class="form-control" type="number" name="paid_amount" id="onePaid" min="0" step="0.01" value="<%= values.paid_amount || '' %>"></div>
+      <div class="form-group"><label>المتبقي</label><input class="form-control" type="number" id="oneRemaining" readonly value="<%= values.remaining || '' %>"></div>
+      <div class="form-group"><label>طريقة الدفع</label><select class="form-control" name="payment_method"><% ['نقدي','تحويل بنكي','بطاقة','محفظة إلكترونية','شيك'].forEach(function (v) { %><option value="<%= v %>"><%= v %></option><% }); %></select></div>
+      <div class="form-group"><label>رقم الإيصال</label><input class="form-control" name="receipt_no" value="<%= values.receipt_no || '' %>"></div>
+      <div class="form-group full"><label>ملاحظات</label><textarea class="form-control" name="notes" rows="3"><%= values.notes || '' %></textarea></div>
+    </div>
+    <div class="form-actions"><button class="btn btn-success btn-lg" type="submit"><i class="fas fa-check"></i> حفظ الاشتراك</button><a href="/subscriptions" class="btn btn-outline btn-lg">إلغاء</a></div>
+  </form>
+</div></div>
+<script>
+(function () {
+  var sport = document.getElementById('oneSport'), swimmer = document.getElementById('oneSwimmer');
+  var sessions = document.getElementById('oneSessions'), price = document.getElementById('onePrice'), total = document.getElementById('oneTotal'), paid = document.getElementById('onePaid'), remaining = document.getElementById('oneRemaining');
+  function n(el) { return Number(el && el.value || 0) || 0; }
+  function filterPlayers() { Array.from(swimmer.options).forEach(function (o, i) { if (i) o.hidden = !sport.value || o.dataset.sport !== sport.value; }); if (swimmer.selectedOptions[0] && swimmer.selectedOptions[0].hidden) swimmer.value = ''; }
+  function calc() { var t = n(sessions) * n(price); total.value = t ? t.toFixed(2) : ''; remaining.value = t ? Math.max(0, t - n(paid)).toFixed(2) : ''; }
+  sport.addEventListener('change', filterPlayers); [sessions, price, paid].forEach(function (e) { e.addEventListener('input', calc); }); filterPlayers(); calc();
+})();
+</script>
+<%- include('partials/layout_bottom') %>

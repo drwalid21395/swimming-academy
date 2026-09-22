@@ -4,6 +4,7 @@ const { db } = require('../lib/db');
 const { audit, money, fmtDate, today, daysAhead, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
 const { buildRenewalMessage, buildReceiptMessage, sendReminder, waLinkFor, logMessage } = require('../lib/whatsapp');
 const { setFlash } = require('../lib/auth-cookie');
+const { nextMembership } = require('../lib/membership');
 const { activeSport, sportClause, progClause, groupClause, swimmerClause, swimmerSportClause } = require('../lib/sport-context');
 const router = express.Router();
 
@@ -20,6 +21,13 @@ async function programOptions(sid) {
 }
 async function groupOptions(sid) {
   return (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL' + groupClause(sid) + ' ORDER BY name').all()).map(g => ({ value: g.id, label: g.name }));
+}
+
+function subscriptionSportClause(sid, alias) {
+  const id = Number(sid) || 0;
+  if (!id) return '';
+  const a = alias || 'sub';
+  return ` AND (${a}.sport_id = ${id} OR (${a}.sport_id IS NULL AND ${a}.program_id IN (SELECT id FROM programs WHERE deleted_at IS NULL AND sport_id = ${id})))`;
 }
 
 async function subscriptionSport(req, swimmerId) {
@@ -82,14 +90,15 @@ function subscriptionAmounts(b) {
 /* ============================================================== */
 router.get('/subscriptions', async function (req, res) {
   if (!canView(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT sub.*, s.full_name AS swimmer_name, s.membership_no, p.name AS program_name, g.name AS group_name, gu.whatsapp AS guardian_whatsapp FROM subscriptions sub
-    LEFT JOIN swimmers s ON s.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id LEFT JOIN guardians gu ON gu.id = s.guardian_id WHERE 1=1` + progClause(activeSport(req), 'sub') + ` ORDER BY sub.created_at DESC`).all();
+  const rows = await db.prepare(`SELECT sub.*, s.full_name AS swimmer_name, s.membership_no, p.name AS program_name, g.name AS group_name, sp.name AS sport_name, gu.whatsapp AS guardian_whatsapp FROM subscriptions sub
+    LEFT JOIN swimmers s ON s.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id LEFT JOIN sports sp ON sp.id = COALESCE(sub.sport_id, p.sport_id, s.sport_id) LEFT JOIN guardians gu ON gu.id = s.guardian_id WHERE 1=1` + subscriptionSportClause(activeSport(req), 'sub') + ` ORDER BY sub.created_at DESC`).all();
   const page = {
     title: 'الاشتراكات', subtitle: 'اشتراكات اللاعبين في البرامج', icon: 'fa-file-contract', module: 'subscriptions', active: 'subscriptions',
     columns: [
       { key: 'swimmer_name', label: 'اللاعب', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#0ea5e9,#14b8a6)">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div></div></div>` },
       { key: 'program_name', label: 'البرنامج' },
-      { key: 'subscription_type', label: 'النوع', html: row => row.subscription_type === 'per_session' ? `<span class="badge badge-info">بالحصة · ${money(row.price_per_session)}</span>` : '<span class="badge badge-gray">عادي</span>' },
+      { key: 'sport_name', label: 'اللعبة' },
+      { key: 'subscription_type', label: 'النوع', html: row => row.subscription_type === 'one_time' ? '<span class="badge badge-success">لمرة واحدة</span>' : row.subscription_type === 'per_session' ? `<span class="badge badge-info">بالحصة · ${money(row.price_per_session)}</span>` : '<span class="badge badge-gray">عادي</span>' },
       { key: 'start_date', label: 'الفترة', html: row => `${fmtDate(row.start_date)}<div class="cell-sub">إلى ${fmtDate(row.end_date)}</div>` },
       { key: 'sessions_used', label: 'الحصص', html: row => `<span class="badge badge-info">${row.sessions_used} / ${row.sessions_total}</span>` },
       { key: 'total', label: 'الإجمالي', html: row => `<span class="fw-700 text-primary">${money(row.total)}</span>` },
@@ -103,6 +112,7 @@ router.get('/subscriptions', async function (req, res) {
       { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'programs') + ' ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) }
     ],
     canAdd: canAdd(req.currentUser, 'subscriptions'), addUrl: canAdd(req.currentUser, 'subscriptions') ? '/subscriptions/new' : null, addLabel: 'اشتراك جديد',
+    headerActions: canAdd(req.currentUser, 'subscriptions') ? [{ href: '/subscriptions/one-time', label: 'اشتراك لمرة واحدة', icon: 'fa-bolt', cls: 'btn-success' }] : [],
     actions: () => row => {
       const acts = [
         { label: 'التفاصيل', icon: 'fa-eye', href: '/subscriptions/' + row.id },
@@ -155,6 +165,75 @@ router.get('/subscriptions/new', async function (req, res) {
   }
   res.render('form', { form: { title: 'اشتراك جديد', subtitle: 'تسجيل اشتراك لاعب', icon: 'fa-plus', active: 'subscriptions', action: '/subscriptions/new', fields: await subFields({ total: 0, paid_amount: 0, ...prefill }, req), values: prefill, submitLabel: 'حفظ الاشتراك', cancelUrl: '/subscriptions', csrf: '' } });
 });
+
+router.get('/subscriptions/one-time', async function (req, res) {
+  if (!canAdd(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const sid = activeSport(req);
+  const players = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, COALESCE(s.sport_id, p.sport_id, 0) AS sport_id
+    FROM swimmers s LEFT JOIN programs p ON p.id = s.program_id WHERE s.deleted_at IS NULL` + swimmerSportClause(sid, 's') + ` ORDER BY s.full_name`).all();
+  res.render('subscription_one_time', { title: 'اشتراك لمرة واحدة', active: 'subscriptions', sports: (req.enabledSports || []).filter(s => s.is_enabled), players, activeSportId: sid, values: {}, message: '' });
+});
+
+router.post('/subscriptions/one-time', async function (req, res) {
+  if (!canAdd(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const b = req.body;
+  const sid = Number(b.sport_id) || 0;
+  const sports = (req.enabledSports || []).filter(s => s.is_enabled);
+  const invalid = (message) => res.status(400).render('subscription_one_time', { title: 'اشتراك لمرة واحدة', active: 'subscriptions', sports, players: [], activeSportId: activeSport(req), values: b, message });
+  if (!sports.some(s => Number(s.id) === sid) || (activeSport(req) && activeSport(req) !== sid)) return invalid('اللعبة المحددة غير صالحة أو لا تطابق اللعبة النشطة');
+  const sessions = Number(b.sessions_total || 0);
+  const unitPrice = Number(b.price_per_session || 0);
+  const paid = Number(b.paid_amount || 0);
+  if (!Number.isFinite(sessions) || sessions < 1) return invalid('يجب إدخال عدد حصص أكبر من صفر');
+  if (!Number.isFinite(unitPrice) || unitPrice <= 0) return invalid('يجب إدخال سعر الحصة بشكل صحيح');
+  if (!Number.isFinite(paid) || paid < 0) return invalid('المبلغ المدفوع غير صالح');
+  const total = Math.round(unitPrice * sessions * 100) / 100;
+  const remaining = Math.round((total - paid) * 100) / 100;
+  if (paid > total) return invalid('المبلغ المدفوع لا يمكن أن يتجاوز الإجمالي');
+
+  let tx;
+  try {
+    tx = await db.transaction();
+    let swimmerId = Number(b.swimmer_id) || 0;
+    let guardianId = null;
+    let swimmer;
+    if (swimmerId) {
+      swimmer = await tx.get(`SELECT s.*, p.sport_id AS program_sport_id, COALESCE(s.sport_id, p.sport_id, 0) AS actual_sport_id
+        FROM swimmers s LEFT JOIN programs p ON p.id = s.program_id WHERE s.id = ? AND s.deleted_at IS NULL`, swimmerId);
+      if (!swimmer || Number(swimmer.actual_sport_id) !== sid) throw new Error('اللاعب لا يتبع اللعبة المحددة');
+      if (swimmer.program_id && Number(swimmer.program_sport_id) !== sid) throw new Error('برنامج اللاعب لا يتبع اللعبة المحددة');
+      guardianId = swimmer.guardian_id || null;
+    } else {
+      const name = String(b.swimmer_name || '').trim();
+      if (!name) throw new Error('يرجى اختيار لاعب أو كتابة اسم اللاعب الجديد');
+      if (String(b.guardian_name || '').trim() || String(b.guardian_phone || '').trim()) {
+        const g = await tx.run(`INSERT INTO guardians (full_name, phone, relation, notes) VALUES (?,?,?,?)`,
+          String(b.guardian_name || '').trim() || name + ' - ولي الأمر', String(b.guardian_phone || '').trim() || null, 'أب', 'أُنشئ من اشتراك لمرة واحدة');
+        guardianId = g.lastInsertRowid;
+      }
+      const membership = await nextMembership();
+      const sw = await tx.run(`INSERT INTO swimmers (membership_no, full_name, phone, guardian_id, sport_id, registration_date, status, notes)
+        VALUES (?,?,?,?,?,?,?,?)`, membership, name, String(b.swimmer_phone || '').trim() || null, guardianId, sid, today(), 'نشط', 'لاعب أُنشئ من اشتراك لمرة واحدة');
+      swimmerId = sw.lastInsertRowid;
+      swimmer = { full_name: name };
+    }
+    const info = await tx.run(`INSERT INTO subscriptions (swimmer_id, program_id, group_id, sport_id, start_date, end_date, sessions_total, sessions_used, subscription_type, price_per_session, price, total, paid_amount, remaining, payment_method, receipt_no, paid_date, status, notes, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, swimmerId, swimmer.program_id || null, null, sid, today(), today(), sessions, 0, 'one_time', unitPrice, total, total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', today(), 'نشط', b.notes || '', req.currentUser.id);
+    await tx.run('INSERT INTO subscription_history (subscription_id, swimmer_id, action, details, user_name) VALUES (?,?,?,?,?)', info.lastInsertRowid, swimmerId, 'إنشاء', 'اشتراك لمرة واحدة بإجمالي ' + money(total), req.currentUser.full_name);
+    if (paid > 0) await tx.run('INSERT INTO payments (subscription_id, swimmer_id, amount, method, receipt_no, paid_date, staff_id, note) VALUES (?,?,?,?,?,?,?,?)', info.lastInsertRowid, swimmerId, paid, b.payment_method || 'نقدي', b.receipt_no || '', today(), req.currentUser.id, 'دفعة اشتراك لمرة واحدة');
+    await tx.run(`INSERT INTO revenues (category, date, description, amount, payment_method, payer, status, sport_id, created_by) VALUES ('اشتراكات', ?, ?, ?, ?, ?, ?, ?, ?)`, today(), 'اشتراك لمرة واحدة: ' + swimmer.full_name, paid, b.payment_method || 'نقدي', swimmer.full_name, paid > 0 ? 'معتمد' : 'مسجل', sid, req.currentUser.id);
+    await tx.commit();
+    audit(req.currentUser.id, req.currentUser.full_name, 'add', 'subscriptions', info.lastInsertRowid, 'اشتراك لمرة واحدة', req);
+    const guard = await db.prepare('SELECT COALESCE(whatsapp, phone) AS phone FROM guardians WHERE id = ?').get(guardianId || 0);
+    if (guard && guard.phone) return res.redirect('/subscriptions/' + info.lastInsertRowid + '/receipt?confirm=1');
+    setFlash(res, { type: 'success', message: 'تم تسجيل الاشتراك لمرة واحدة' });
+    return res.redirect('/subscriptions/' + info.lastInsertRowid);
+  } catch (e) {
+    if (tx && tx.rollback) await tx.rollback().catch(() => {});
+    return invalid(e.message || 'تعذر تسجيل الاشتراك');
+  }
+});
+
 router.post('/subscriptions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
@@ -173,9 +252,9 @@ router.post('/subscriptions/new', async function (req, res) {
   const remaining = Math.round((total - paid) * 100) / 100;
   const subInfo = await db.prepare('SELECT full_name, membership_no FROM swimmers WHERE id = ?').get(b.swimmer_id);
   const swimmerName = (subInfo && subInfo.full_name) || ('لاعب #' + b.swimmer_id);
-  const info = await db.prepare(`INSERT INTO subscriptions (swimmer_id, program_id, group_id, start_date, end_date, sessions_total, sessions_used, subscription_type, price_per_session, price, discount, tax, total, paid_amount, remaining, payment_method, receipt_no, paid_date, is_installment, status, notes, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(b.swimmer_id, b.program_id || null, b.group_id || null, b.start_date || today(), b.end_date || null, amounts.sessionsTotal, 0, amounts.type, amounts.unitPrice, amounts.price, Number(b.discount || 0), Number(b.tax || 0), total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), b.is_installment === '1' ? 1 : 0, b.status || 'نشط', b.notes || '', req.currentUser.id);
+  const info = await db.prepare(`INSERT INTO subscriptions (swimmer_id, program_id, group_id, sport_id, start_date, end_date, sessions_total, sessions_used, subscription_type, price_per_session, price, discount, tax, total, paid_amount, remaining, payment_method, receipt_no, paid_date, is_installment, status, notes, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(b.swimmer_id, b.program_id || null, b.group_id || null, context.sportId, b.start_date || today(), b.end_date || null, amounts.sessionsTotal, 0, amounts.type, amounts.unitPrice, amounts.price, Number(b.discount || 0), Number(b.tax || 0), total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), b.is_installment === '1' ? 1 : 0, b.status || 'نشط', b.notes || '', req.currentUser.id);
   await db.prepare('INSERT INTO subscription_history (subscription_id, swimmer_id, action, details, user_name) VALUES (?,?,?,?,?)').run(info.lastInsertRowid, b.swimmer_id, 'إنشاء', 'اشتراك جديد بإجمالي ' + money(total), req.currentUser.full_name);
   if (paid > 0) {
     await db.prepare('INSERT INTO payments (subscription_id, swimmer_id, amount, method, receipt_no, paid_date, staff_id, note) VALUES (?,?,?,?,?,?,?,?)')
@@ -324,8 +403,8 @@ router.post('/subscriptions/:id/edit', async function (req, res) {
   const total = amounts.total;
   const paid = Number(b.paid_amount || 0);
   const remaining = Math.round((total - paid) * 100) / 100;
-  await db.prepare(`UPDATE subscriptions SET swimmer_id=?, program_id=?, group_id=?, start_date=?, end_date=?, sessions_total=?, subscription_type=?, price_per_session=?, price=?, discount=?, tax=?, total=?, paid_amount=?, remaining=?, payment_method=?, receipt_no=?, paid_date=?, is_installment=?, status=?, notes=? WHERE id=?`)
-    .run(b.swimmer_id, b.program_id || null, b.group_id || null, b.start_date || today(), b.end_date || null, amounts.sessionsTotal, amounts.type, amounts.unitPrice, amounts.price, Number(b.discount || 0), Number(b.tax || 0), total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), b.is_installment === '1' ? 1 : 0, b.status || 'نشط', b.notes || '', id);
+  await db.prepare(`UPDATE subscriptions SET swimmer_id=?, program_id=?, group_id=?, sport_id=?, start_date=?, end_date=?, sessions_total=?, subscription_type=?, price_per_session=?, price=?, discount=?, tax=?, total=?, paid_amount=?, remaining=?, payment_method=?, receipt_no=?, paid_date=?, is_installment=?, status=?, notes=? WHERE id=?`)
+    .run(b.swimmer_id, b.program_id || null, b.group_id || null, context.sportId, b.start_date || today(), b.end_date || null, amounts.sessionsTotal, amounts.type, amounts.unitPrice, amounts.price, Number(b.discount || 0), Number(b.tax || 0), total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), b.is_installment === '1' ? 1 : 0, b.status || 'نشط', b.notes || '', id);
   await db.prepare('INSERT INTO subscription_history (subscription_id, swimmer_id, action, details, user_name) VALUES (?,?,?,?,?)').run(id, b.swimmer_id, 'تعديل', 'تحديث بيانات الاشتراك', req.currentUser.full_name);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'subscriptions', id, 'تعديل اشتراك', req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });

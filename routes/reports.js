@@ -2,8 +2,15 @@
 const express = require('express');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, today, daysAgo, pct, canView, canExport, dayAr } = require('../lib/helpers');
-const { activeSport, progClause, swimmerClause, sessionClause, groupClause } = require('../lib/sport-context');
+const { activeSport, swimmerClause, sessionClause, groupClause } = require('../lib/sport-context');
 const router = express.Router();
+
+function subscriptionSportClause(sid, alias) {
+  const id = Number(sid) || 0;
+  if (!id) return '';
+  const a = alias || 'subscriptions';
+  return ` AND (${a}.sport_id = ${id} OR (${a}.sport_id IS NULL AND ${a}.program_id IN (SELECT id FROM programs WHERE deleted_at IS NULL AND sport_id = ${id})))`;
+}
 
 router.get('/reports', async function (req, res) {
   if (!canView(req.currentUser, 'reports')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -12,8 +19,8 @@ router.get('/reports', async function (req, res) {
   const counts = {
     swimmers: (await db.prepare('SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL' + wc).get()).c,
     active: (await db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status='نشط'" + wc).get()).c,
-    subsActive: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status='نشط'" + progClause(sid, 'subscriptions')).get()).c,
-    subsDue: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0" + progClause(sid, 'subscriptions')).get()).c,
+    subsActive: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status='نشط'" + subscriptionSportClause(sid, 'subscriptions')).get()).c,
+    subsDue: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0" + subscriptionSportClause(sid, 'subscriptions')).get()).c,
     sessions: (await db.prepare('SELECT COUNT(*) c FROM sessions WHERE deleted_at IS NULL' + sessionClause(sid)).get()).c,
     upcomingComps: (await db.prepare("SELECT COUNT(*) c FROM competitions WHERE status IN ('قادمة','جارية')").get()).c
   };
@@ -92,7 +99,7 @@ router.get('/reports/attendance/daily', async function (req, res) {
 router.get('/reports/subscriptions', async function (req, res) {
   if (!canView(req.currentUser, 'reports')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const rows = await db.prepare(`SELECT sub.*, s.full_name AS swimmer_name, s.membership_no, p.name AS program_name, g.name AS group_name FROM subscriptions sub
-    LEFT JOIN swimmers s ON s.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id WHERE 1=1` + progClause(activeSport(req), 'sub') + ` ORDER BY sub.status, sub.created_at DESC`).all();
+    LEFT JOIN swimmers s ON s.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id WHERE 1=1` + subscriptionSportClause(activeSport(req), 'sub') + ` ORDER BY sub.status, sub.created_at DESC`).all();
   const activeCount = rows.filter(r => r.status === 'نشط').length;
   const dueCount = rows.filter(r => r.remaining > 0).length;
   const dueTotal = rows.reduce((t, r) => t + Number(r.remaining || 0), 0);
