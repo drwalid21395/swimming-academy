@@ -4,6 +4,24 @@ const { db } = require('../lib/db');
 const { audit, money, fmtDate, fmtDateTime, dayAr, today, pct, parseJSON, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
 const { activeSport, sportClause, groupClause, sessionClause } = require('../lib/sport-context');
+
+function attendanceCounts(status) {
+  return status === 'present' || status === 'late';
+}
+
+async function syncSubscriptionUsage(swimmerId, groupId, beforeStatus, afterStatus) {
+  const before = attendanceCounts(beforeStatus);
+  const after = attendanceCounts(afterStatus);
+  if (before === after) return;
+  const sub = await db.prepare(`SELECT sub.id FROM subscriptions sub
+    LEFT JOIN groups g ON g.id = ?
+    WHERE sub.swimmer_id = ? AND sub.status = 'نشط'
+      AND (sub.group_id = ? OR (sub.group_id IS NULL AND sub.program_id = g.program_id))
+    ORDER BY sub.id DESC LIMIT 1`).get(Number(groupId) || 0, Number(swimmerId), Number(groupId) || 0);
+  if (!sub) return;
+  await db.prepare(`UPDATE subscriptions SET sessions_used = MIN(sessions_total, MAX(0, sessions_used + ?)) WHERE id = ?`)
+    .run(after ? 1 : -1, sub.id);
+}
 const router = express.Router();
 
 const SES_STATUS = [
@@ -233,9 +251,14 @@ router.post('/attendance/save', async function (req, res) {
   if (!canEdit(req.currentUser, 'attendance') && !canAdd(req.currentUser, 'attendance')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
   const { session_id, swimmer_id, status, reason, coach_note } = req.body;
   if (!session_id || !swimmer_id) return res.status(400).json({ ok: false, error: 'بيانات ناقصة' });
+  const session = await db.prepare('SELECT group_id FROM sessions WHERE id = ?').get(session_id);
+  if (!session) return res.status(400).json({ ok: false, error: 'الحصة غير موجودة' });
+  const previous = await db.prepare('SELECT status FROM attendance WHERE session_id = ? AND swimmer_id = ?').get(session_id, swimmer_id);
+  const nextStatus = status || 'present';
   await db.prepare(`INSERT INTO attendance (session_id, swimmer_id, status, reason, coach_note) VALUES (?,?,?,?,?)
     ON CONFLICT(session_id, swimmer_id) DO UPDATE SET status=excluded.status, reason=excluded.reason, coach_note=excluded.coach_note`)
-    .run(session_id, swimmer_id, status || 'present', reason || '', coach_note || '');
+    .run(session_id, swimmer_id, nextStatus, reason || '', coach_note || '');
+  await syncSubscriptionUsage(swimmer_id, session.group_id, previous && previous.status, nextStatus);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'attendance', session_id, 'تحديث حضور لاعب #' + swimmer_id, req);
   res.json({ ok: true });
 });
@@ -248,9 +271,13 @@ router.post('/attendance/mark-all', async function (req, res) {
   if (!s) return res.status(400).json({ ok: false, error: 'الحصة غير موجودة' });
   await syncGroup(s.group_id);
   const members = await db.prepare('SELECT swimmer_id FROM swimmer_group WHERE group_id = ?').all(s.group_id);
-  const st = await db.prepare(`INSERT INTO attendance (session_id, swimmer_id, status) VALUES (?,?,?)
-    ON CONFLICT(session_id, swimmer_id) DO UPDATE SET status=excluded.status`);
-  for (const m of members) st.run(session_id, m.swimmer_id, status || 'present');
+  const nextStatus = status || 'present';
+  for (const m of members) {
+    const previous = await db.prepare('SELECT status FROM attendance WHERE session_id = ? AND swimmer_id = ?').get(session_id, m.swimmer_id);
+    await db.prepare(`INSERT INTO attendance (session_id, swimmer_id, status) VALUES (?,?,?)
+      ON CONFLICT(session_id, swimmer_id) DO UPDATE SET status=excluded.status`).run(session_id, m.swimmer_id, nextStatus);
+    await syncSubscriptionUsage(m.swimmer_id, s.group_id, previous && previous.status, nextStatus);
+  }
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'attendance', session_id, 'حضور جماعي: ' + status, req);
   res.json({ ok: true, count: members.length });
 });
@@ -270,13 +297,16 @@ router.post('/attendance/group-save', async function (req, res) {
   }
   await syncGroup(gid);
   const statuses = req.body.statuses || {};
-  const st = await db.prepare(`INSERT INTO attendance (session_id, swimmer_id, status, reason, coach_note) VALUES (?,?,?,?,?)
-    ON CONFLICT(session_id, swimmer_id) DO UPDATE SET status=excluded.status, reason=excluded.reason, coach_note=excluded.coach_note`);
   let n = 0;
   for (const sid of Object.keys(statuses)) {
     const id = Number(sid);
     if (!id) continue;
-    st.run(session.id, id, statuses[sid] || 'present', '', '');
+    const nextStatus = statuses[sid] || 'present';
+    const previous = await db.prepare('SELECT status FROM attendance WHERE session_id = ? AND swimmer_id = ?').get(session.id, id);
+    await db.prepare(`INSERT INTO attendance (session_id, swimmer_id, status, reason, coach_note) VALUES (?,?,?,?,?)
+      ON CONFLICT(session_id, swimmer_id) DO UPDATE SET status=excluded.status, reason=excluded.reason, coach_note=excluded.coach_note`)
+      .run(session.id, id, nextStatus, '', '');
+    await syncSubscriptionUsage(id, gid, previous && previous.status, nextStatus);
     n++;
   }
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'attendance', session.id, 'حضور مجموعة #' + gid + ' (' + n + ' لاعب)', req);

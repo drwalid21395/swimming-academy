@@ -62,6 +62,21 @@ function computeTotal(price, discount, tax) {
   return Math.round((base + taxAmt) * 100) / 100;
 }
 
+function subscriptionAmounts(b) {
+  const type = b.subscription_type === 'per_session' ? 'per_session' : 'normal';
+  const sessionsTotal = Number(b.sessions_total || 0);
+  if (!Number.isFinite(sessionsTotal) || sessionsTotal < 1) return { error: 'يجب إدخال عدد حصص صحيح أكبر من صفر' };
+  const unitPrice = type === 'per_session' ? Number(b.price_per_session || 0) : 0;
+  if (type === 'per_session' && (!Number.isFinite(unitPrice) || unitPrice <= 0)) return { error: 'يجب إدخال سعر صحيح للحصة' };
+  const price = type === 'per_session' ? unitPrice * sessionsTotal : Number(b.price || 0);
+  if (!Number.isFinite(price) || price < 0) return { error: 'قيمة الاشتراك غير صالحة' };
+  const total = type === 'per_session' || b.total === '' || b.total == null
+    ? computeTotal(price, b.discount, b.tax)
+    : Number(b.total);
+  if (!Number.isFinite(total) || total < 0) return { error: 'الإجمالي غير صالح' };
+  return { type, sessionsTotal, unitPrice, price, total };
+}
+
 /* ============================================================== */
 /*                          الاشتراكات                            */
 /* ============================================================== */
@@ -74,6 +89,7 @@ router.get('/subscriptions', async function (req, res) {
     columns: [
       { key: 'swimmer_name', label: 'اللاعب', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#0ea5e9,#14b8a6)">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div></div></div>` },
       { key: 'program_name', label: 'البرنامج' },
+      { key: 'subscription_type', label: 'النوع', html: row => row.subscription_type === 'per_session' ? `<span class="badge badge-info">بالحصة · ${money(row.price_per_session)}</span>` : '<span class="badge badge-gray">عادي</span>' },
       { key: 'start_date', label: 'الفترة', html: row => `${fmtDate(row.start_date)}<div class="cell-sub">إلى ${fmtDate(row.end_date)}</div>` },
       { key: 'sessions_used', label: 'الحصص', html: row => `<span class="badge badge-info">${row.sessions_used} / ${row.sessions_total}</span>` },
       { key: 'total', label: 'الإجمالي', html: row => `<span class="fw-700 text-primary">${money(row.total)}</span>` },
@@ -103,12 +119,14 @@ router.get('/subscriptions', async function (req, res) {
 const subFields = async function (values, req) {
   const sid = await subscriptionSport(req, values.swimmer_id);
   return [
-    { key: 'swimmer_id', label: 'اللاعب', type: 'select', options: await swimmerOptions(sid), required: true, section: 'بيانات الاشتراك', sectionIcon: 'fa-file-contract' },
-    { key: 'program_id', label: 'البرنامج', type: 'select', options: await programOptions(sid) },
-    { key: 'group_id', label: 'المجموعة', type: 'select', options: await groupOptions(sid) },
-    { key: 'start_date', label: 'تاريخ البداية', type: 'date' },
-    { key: 'end_date', label: 'تاريخ النهاية', type: 'date' },
-    { key: 'sessions_total', label: 'إجمالي الحصص', type: 'number', number: true },
+      { key: 'swimmer_id', label: 'اللاعب', type: 'select', options: await swimmerOptions(sid), required: true, section: 'بيانات الاشتراك', sectionIcon: 'fa-file-contract' },
+      { key: 'program_id', label: 'البرنامج', type: 'select', options: await programOptions(sid) },
+      { key: 'group_id', label: 'المجموعة', type: 'select', options: await groupOptions(sid) },
+    { key: 'subscription_type', label: 'نوع الاشتراك', type: 'select', value: 'normal', options: [{ value: 'normal', label: 'اشتراك عادي' }, { value: 'per_session', label: 'اشتراك بالحصة' }] },
+      { key: 'start_date', label: 'تاريخ البداية', type: 'date' },
+      { key: 'end_date', label: 'تاريخ النهاية', type: 'date' },
+      { key: 'sessions_total', label: 'إجمالي الحصص', type: 'number', number: true, required: true },
+      { key: 'price_per_session', label: 'سعر الحصة (ج.م)', type: 'number', number: true, hint: 'يظهر عند اختيار اشتراك بالحصة' },
     { key: 'price', label: 'سعر الاشتراك (ج.م)', type: 'number', number: true, section: 'المبلغ', sectionIcon: 'fa-sack-dollar' },
     { key: 'discount', label: 'الخصم (ج.م)', type: 'number', number: true },
     { key: 'tax', label: 'الضريبة (% أو مبلغ)', type: 'number', number: true, hint: 'أدخل نسبة مثل 14 أو مبلغاً مباشراً' },
@@ -147,14 +165,17 @@ router.post('/subscriptions/new', async function (req, res) {
   }
   b.program_id = context.programId;
   b.group_id = context.groupId || '';
-  const total = b.total !== '' && b.total != null ? Number(b.total) : computeTotal(b.price, b.discount, b.tax);
+  const amounts = subscriptionAmounts(b);
+  if (amounts.error) { setFlash(res, { type: 'error', message: amounts.error }); return res.redirect('/subscriptions/new'); }
+  b.subscription_type = amounts.type;
+  const total = amounts.total;
   const paid = Number(b.paid_amount || 0);
   const remaining = Math.round((total - paid) * 100) / 100;
   const subInfo = await db.prepare('SELECT full_name, membership_no FROM swimmers WHERE id = ?').get(b.swimmer_id);
   const swimmerName = (subInfo && subInfo.full_name) || ('لاعب #' + b.swimmer_id);
-  const info = await db.prepare(`INSERT INTO subscriptions (swimmer_id, program_id, group_id, start_date, end_date, sessions_total, sessions_used, price, discount, tax, total, paid_amount, remaining, payment_method, receipt_no, paid_date, is_installment, status, notes, created_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(b.swimmer_id, b.program_id || null, b.group_id || null, b.start_date || today(), b.end_date || null, Number(b.sessions_total || 8), 0, Number(b.price || 0), Number(b.discount || 0), Number(b.tax || 0), total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), b.is_installment === '1' ? 1 : 0, b.status || 'نشط', b.notes || '', req.currentUser.id);
+  const info = await db.prepare(`INSERT INTO subscriptions (swimmer_id, program_id, group_id, start_date, end_date, sessions_total, sessions_used, subscription_type, price_per_session, price, discount, tax, total, paid_amount, remaining, payment_method, receipt_no, paid_date, is_installment, status, notes, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(b.swimmer_id, b.program_id || null, b.group_id || null, b.start_date || today(), b.end_date || null, amounts.sessionsTotal, 0, amounts.type, amounts.unitPrice, amounts.price, Number(b.discount || 0), Number(b.tax || 0), total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), b.is_installment === '1' ? 1 : 0, b.status || 'نشط', b.notes || '', req.currentUser.id);
   await db.prepare('INSERT INTO subscription_history (subscription_id, swimmer_id, action, details, user_name) VALUES (?,?,?,?,?)').run(info.lastInsertRowid, b.swimmer_id, 'إنشاء', 'اشتراك جديد بإجمالي ' + money(total), req.currentUser.full_name);
   if (paid > 0) {
     await db.prepare('INSERT INTO payments (subscription_id, swimmer_id, amount, method, receipt_no, paid_date, staff_id, note) VALUES (?,?,?,?,?,?,?,?)')
@@ -233,8 +254,10 @@ async function receiptPayload(id) {
     groupName: s.group_name,
     startDate: s.start_date ? fmtDate(s.start_date) : '',
     endDate: s.end_date ? fmtDate(s.end_date) : '',
-    sessionsTotal: s.sessions_total,
-    sessionsUsed: s.sessions_used,
+      sessionsTotal: s.sessions_total,
+      sessionsUsed: s.sessions_used,
+      subscriptionType: s.subscription_type,
+      pricePerSession: s.price_per_session,
     price: Number(s.price || 0),
     discount: Number(s.discount || 0),
     tax: Number(s.tax || 0),
@@ -295,11 +318,14 @@ router.post('/subscriptions/:id/edit', async function (req, res) {
   }
   b.program_id = context.programId;
   b.group_id = context.groupId || '';
-  const total = b.total !== '' && b.total != null ? Number(b.total) : computeTotal(b.price, b.discount, b.tax);
+  const amounts = subscriptionAmounts(b);
+  if (amounts.error) { setFlash(res, { type: 'error', message: amounts.error }); return res.redirect('/subscriptions/' + id + '/edit'); }
+  b.subscription_type = amounts.type;
+  const total = amounts.total;
   const paid = Number(b.paid_amount || 0);
   const remaining = Math.round((total - paid) * 100) / 100;
-  await db.prepare(`UPDATE subscriptions SET swimmer_id=?, program_id=?, group_id=?, start_date=?, end_date=?, sessions_total=?, price=?, discount=?, tax=?, total=?, paid_amount=?, remaining=?, payment_method=?, receipt_no=?, paid_date=?, is_installment=?, status=?, notes=? WHERE id=?`)
-    .run(b.swimmer_id, b.program_id || null, b.group_id || null, b.start_date || today(), b.end_date || null, Number(b.sessions_total || 8), Number(b.price || 0), Number(b.discount || 0), Number(b.tax || 0), total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), b.is_installment === '1' ? 1 : 0, b.status || 'نشط', b.notes || '', id);
+  await db.prepare(`UPDATE subscriptions SET swimmer_id=?, program_id=?, group_id=?, start_date=?, end_date=?, sessions_total=?, subscription_type=?, price_per_session=?, price=?, discount=?, tax=?, total=?, paid_amount=?, remaining=?, payment_method=?, receipt_no=?, paid_date=?, is_installment=?, status=?, notes=? WHERE id=?`)
+    .run(b.swimmer_id, b.program_id || null, b.group_id || null, b.start_date || today(), b.end_date || null, amounts.sessionsTotal, amounts.type, amounts.unitPrice, amounts.price, Number(b.discount || 0), Number(b.tax || 0), total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), b.is_installment === '1' ? 1 : 0, b.status || 'نشط', b.notes || '', id);
   await db.prepare('INSERT INTO subscription_history (subscription_id, swimmer_id, action, details, user_name) VALUES (?,?,?,?,?)').run(id, b.swimmer_id, 'تعديل', 'تحديث بيانات الاشتراك', req.currentUser.full_name);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'subscriptions', id, 'تعديل اشتراك', req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });

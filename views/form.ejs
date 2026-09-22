@@ -211,5 +211,35 @@ document.addEventListener('DOMContentLoaded', function () {
     sync();
   });
 });
+
+/* حساب اشتراك بالحصة دون التأثير على نماذج الاشتراكات القديمة */
+(function () {
+  var type = document.getElementById('f_subscription_type');
+  if (!type) return;
+  var unit = document.getElementById('f_price_per_session');
+  var sessions = document.getElementById('f_sessions_total');
+  var price = document.getElementById('f_price');
+  var discount = document.getElementById('f_discount');
+  var tax = document.getElementById('f_tax');
+  var total = document.getElementById('f_total');
+  function number(el) { return Number(el && el.value || 0) || 0; }
+  function sync() {
+    var perSession = type.value === 'per_session';
+    if (unit) unit.closest('.form-group').style.display = perSession ? '' : 'none';
+    if (price) {
+      price.readOnly = perSession;
+      var label = price.closest('.form-group').querySelector('label');
+      if (label) label.childNodes[0].textContent = perSession ? 'إجمالي السعر قبل الخصم والضريبة' : 'سعر الاشتراك (ج.م)';
+    }
+    if (perSession && price && total) {
+      var base = number(unit) * number(sessions);
+      var taxValue = number(tax) > 1 ? number(tax) : base * number(tax) / 100;
+      price.value = base.toFixed(2);
+      total.value = Math.max(0, base - number(discount) + taxValue).toFixed(2);
+    }
+  }
+  [type, unit, sessions, discount, tax].forEach(function (el) { if (el) el.addEventListener('input', sync); if (el) el.addEventListener('change', sync); });
+  sync();
+})();
 </script>
 <%- include('partials/layout_bottom') %>

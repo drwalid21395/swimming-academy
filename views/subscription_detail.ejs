@@ -29,9 +29,12 @@
         <div class="detail-item"><div class="dl">اللاعب</div><div class="dv"><a href="/swimmers/<%= s.swimmer_id %>" class="link"><%= s.swimmer_name %></a> (<%= s.membership_no %>)</div></div>
         <div class="detail-item"><div class="dl">البرنامج</div><div class="dv"><%= s.program_name || '—' %></div></div>
         <div class="detail-item"><div class="dl">المجموعة</div><div class="dv"><%= s.group_name || '—' %></div></div>
+        <div class="detail-item"><div class="dl">نوع الاشتراك</div><div class="dv"><%= s.subscription_type === 'per_session' ? 'بالحصة' : 'عادي' %></div></div>
         <div class="detail-item"><div class="dl">ولي الأمر</div><div class="dv"><%= s.guardian_name || '—' %><% if (s.guardian_whatsapp) { %> · <span dir="ltr" class="text-soft font-11"><i class="fab fa-whatsapp" style="color:#25d366"></i> <%= s.guardian_whatsapp %></span><% } %></div></div>
         <div class="detail-item"><div class="dl">الفترة</div><div class="dv"><%= fmtDate(s.start_date) %> — <%= fmtDate(s.end_date) %></div></div>
         <div class="detail-item"><div class="dl">السعر</div><div class="dv"><%= money(s.price) %></div></div>
+        <% if (s.subscription_type === 'per_session') { %><div class="detail-item"><div class="dl">سعر الحصة</div><div class="dv"><%= money(s.price_per_session) %></div></div><% } %>
+        <div class="detail-item"><div class="dl">الحصص</div><div class="dv"><%= s.sessions_total %> إجمالي · <%= s.sessions_used %> منفذة · <%= Math.max(0, s.sessions_total - s.sessions_used) %> متبقية</div></div>
         <div class="detail-item"><div class="dl">الخصم</div><div class="dv"><%= money(s.discount) %></div></div>
         <div class="detail-item"><div class="dl">الضريبة</div><div class="dv"><%= s.tax ? money(s.tax) : '—' %></div></div>
         <div class="detail-item"><div class="dl">طريقة الدفع</div><div class="dv"><%= s.payment_method %></div></div>
