@@ -9,6 +9,8 @@ const { withAcademy } = require('./lib/tenant-context');
 const { securityHeaders, stripServerHeader, csrfProtect } = require('./lib/security');
 const { readSport, setSport } = require('./lib/sport-context');
 const { enabledSportsForAcademy } = require('./lib/sports');
+const { cached } = require('./lib/cache');
+const perf = require('./lib/perf');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -40,7 +42,8 @@ app.use(securityHeaders);
 app.use(csrfProtect);
 
 /* الملفات الثابتة + المرفقات المخزنة داخل قاعدة البيانات */
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: IS_PROD ? '1d' : 0 }));
+app.use(perf.middleware);
 app.get('/uploads/:name', async function (req, res) {
   try {
     if (req.query.dl === '1') {
@@ -67,7 +70,7 @@ async function currentUser(req) {
   try {
     const u = await db.prepare('SELECT * FROM users WHERE id = ?').get(Number(uid));
     if (!u || u.status !== 'active') return null;
-    const role = await db.prepare('SELECT * FROM roles WHERE id = ?').get(u.role_id);
+    const role = await cached('role:' + Number(u.role_id), () => db.prepare('SELECT * FROM roles WHERE id = ?').get(u.role_id), 30000);
     u.role_name = role ? role.name : u.user_type;
     let perms = {};
     try { perms = JSON.parse((role && role.permissions) || '{}'); } catch (e) { perms = {}; }
@@ -129,7 +132,10 @@ app.use(async function (req, res, next) {
   try {
     await ready();
     res.set('Cache-Control', 'no-store');
-    const settingsRows = await db.all('SELECT * FROM settings');
+    const [settingsRows, user] = await Promise.all([
+      cached('global-settings', () => db.all('SELECT * FROM settings'), 30000),
+      currentUser(req)
+    ]);
     const settings = {};
     settingsRows.forEach(r => { settings[r.key] = r.value; });
     res.locals.siteName = settings.site_name || 'أكاديمية السباحة';
@@ -155,7 +161,6 @@ app.use(async function (req, res, next) {
       return `<span class="badge ${m[0]}"><i class="fas ${m[1]}"></i> ${st}</span>`;
     };
     res.locals.flash = takeFlash(req, res);
-    const user = await currentUser(req);
     res.locals.user = user;
     res.locals.isAuth = !!user;
     res.locals.isSuper = !!(user && user.is_super);
@@ -163,23 +168,22 @@ app.use(async function (req, res, next) {
     /* سياق الأكاديمية: الأكاديمية الأساسية، أو المستهدف عند الدخول بالنيابة */
     let academy = null;
     let subInfo = null;
+    let unreadCount = 0;
     if (user) {
       const acadId = user.impersonatingAcademyId || user.academy_id;
-      academy = await getAcademy(acadId);
-      if (academy) {
-        const sub = await getActiveSubscription(academy.id);
-        subInfo = subscriptionStatus(sub);
-      }
+      academy = await cached('academy:' + acadId, () => getAcademy(acadId), 30000);
+      const unreadPromise = cached('unread:' + user.id, () => db.prepare('SELECT COUNT(*) c FROM notification_recipients r JOIN notifications n ON n.id = r.notification_id WHERE r.user_id = ? AND r.is_read = 0').get(user.id), 10000);
+      const subPromise = cached('academy-sub:' + (academy && academy.id), () => getActiveSubscription(academy && academy.id), 15000);
+      const [sub, ur] = await Promise.all([subPromise, unreadPromise]);
+      subInfo = subscriptionStatus(sub);
+      unreadCount = ur.c;
     }
     res.locals.academy = academy;
     res.locals.academyId = academy ? academy.id : (user ? user.academy_id : null);
     res.locals.impersonating = user && user.impersonatingAcademy;
     res.locals.subInfo = subInfo;
     res.locals.academyRestricted = academy ? academyRestricted(academy, subInfo) : false;
-    if (user) {
-      const ur = await db.prepare('SELECT COUNT(*) c FROM notification_recipients r JOIN notifications n ON n.id = r.notification_id WHERE r.user_id = ? AND r.is_read = 0').get(user.id);
-      res.locals.unreadCount = ur.c;
-    }
+    res.locals.unreadCount = unreadCount;
     req.currentUser = user;
     next();
   } catch (err) { next(err); }

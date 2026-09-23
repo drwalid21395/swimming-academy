@@ -1,6 +1,7 @@
 /** المصادقة والحساب الشخصي والبحث السريع */
 const express = require('express');
 const { db } = require('../lib/db');
+const { cached } = require('../lib/cache');
 const { hashPassword, verifyPassword, audit, money, fmtDate, calcAge } = require('../lib/helpers');
 const { setAuth, clearAuth, setFlash } = require('../lib/auth-cookie');
 const { scopedRateLimit } = require('../lib/security');
@@ -26,7 +27,7 @@ const loginUserLimit = scopedRateLimit({
 /* اللون الرئيسي: لون الأكاديمية الأساسية (primary) ثم لون المنصة */
 async function loginPrimaryColor() {
   const s = {};
-  try { (await db.prepare('SELECT * FROM settings').all()).forEach(r => { s[r.key] = r.value; }); } catch (e) { }
+  try { (await cached('global-settings', () => db.prepare('SELECT * FROM settings').all(), 30000)).forEach(r => { s[r.key] = r.value; }); } catch (e) { }
   let primaryColor = s.platform_primary_color || '';
   try {
     const acad = await db.prepare("SELECT settings FROM academies WHERE code = 'primary' LIMIT 1").get();
