@@ -255,18 +255,20 @@ const swimmerFields = async function (values, req) {
 router.get('/swimmers', async function (req, res) {
   const { status, program, level, coach_id, q } = req.query;
   let sql = `SELECT s.*, g.full_name AS guardian_name, l.name AS level_name, gr.name AS group_name, c.full_name AS coach_name, p.name AS program_name,
-    COALESCE((SELECT sub.sessions_used FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1),0) AS used,
-    COALESCE((SELECT sub.sessions_total FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1),0) AS stotal,
-    COALESCE((SELECT sub.paid_amount FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1),0) AS sub_paid,
-    COALESCE((SELECT sub.remaining FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1),0) AS sub_remaining,
-    (SELECT sub.start_date FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1) AS sub_start,
-    (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1) AS sub_end
+    COALESCE(active_sub.sessions_used,0) AS used,
+    COALESCE(active_sub.sessions_total,0) AS stotal,
+    COALESCE(active_sub.paid_amount,0) AS sub_paid,
+    COALESCE(active_sub.remaining,0) AS sub_remaining,
+    active_sub.start_date AS sub_start,
+    active_sub.end_date AS sub_end
     FROM swimmers s
     LEFT JOIN guardians g ON g.id = s.guardian_id
     LEFT JOIN levels l ON l.id = s.level_id
     LEFT JOIN groups gr ON gr.id = s.group_id
     LEFT JOIN coaches c ON c.id = s.coach_id
-    LEFT JOIN programs p ON p.id = s.program_id WHERE s.deleted_at IS NULL` + swimmerSportClause(activeSport(req), 's');
+    LEFT JOIN programs p ON p.id = s.program_id
+    LEFT JOIN subscriptions active_sub ON active_sub.id = (SELECT sub2.id FROM subscriptions sub2 WHERE sub2.swimmer_id = s.id AND sub2.status='نشط' ORDER BY sub2.id DESC LIMIT 1)
+    WHERE s.deleted_at IS NULL` + swimmerSportClause(activeSport(req), 's');
   const params = [];
   if (status) { sql += ' AND s.status = ?'; params.push(status); }
   if (program) { sql += ' AND s.program_id = ?'; params.push(program); }
