@@ -6,7 +6,6 @@ const { withAcademy } = require('../lib/tenant-context');
 const { sendReminder, logMessage, buildReserveFollowUpMessage } = require('../lib/whatsapp');
 const { enabledSportsForAcademy, academySportRow, getSport } = require('../lib/sports');
 const { setSport } = require('../lib/sport-context');
-const { cached } = require('../lib/cache');
 const router = express.Router();
 
 const DEFAULT_COLOR = '#0284c7';
@@ -23,7 +22,7 @@ async function resolveAcademy(code) {
 
 async function siteData(acad, base) {
   const global = {};
-  try { (await cached('global-settings', () => db.prepare('SELECT * FROM settings').all(), 30000)).forEach(r => { global[r.key] = r.value; }); } catch (e) { }
+  try { (await db.prepare('SELECT * FROM settings').all()).forEach(r => { global[r.key] = r.value; }); } catch (e) { }
   let homeImages = [];
   try { homeImages = JSON.parse(global.home_images || '[]'); } catch (e) { homeImages = []; }
   const acadSet = {};

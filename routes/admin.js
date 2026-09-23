@@ -8,7 +8,6 @@ const { setFlash } = require('../lib/auth-cookie');
 const { upload, uploadAndStore, uploadSinglePlusArray, removeUploaded } = require('../lib/upload');
 const { getAcademy, getActiveSubscription, subscriptionStatus, featureEnabled, maybeNotifyAcademySubscription } = require('../lib/tenant');
 const { listActiveSports, getSport, academySportRow, enabledSportsForAcademy } = require('../lib/sports');
-const { invalidate } = require('../lib/cache');
 const router = express.Router();
 
 async function getArr(key, fallback) {
@@ -276,7 +275,6 @@ router.post('/settings/logo', uploadAndStore('logo'), async function (req, res) 
   const old = await db.prepare('SELECT logo FROM academies WHERE id = ?').get(acadId);
   if (old && old.logo) removeUploaded(old.logo);
   await db.prepare("UPDATE academies SET logo = ?, updated_at=datetime('now','localtime') WHERE id = ?").run(publicPath, acadId);
-  invalidate('academy:' + acadId);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'settings', acadId, 'تحديث شعار الأكاديمية', req);
   setFlash(res, { type: 'success', message: 'تم تحديث شعار الأكاديمية' });
   res.redirect('/settings');
@@ -295,7 +293,6 @@ router.post('/settings/color', async function (req, res) {
   try { s = JSON.parse(a.settings || '{}'); } catch (e) { s = {}; }
   s.primary_color = color;
   await db.prepare("UPDATE academies SET settings = ?, updated_at=datetime('now','localtime') WHERE id = ?").run(JSON.stringify(s), acadId);
-  invalidate('academy:' + acadId);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'academy', acadId, 'تغيير اللون الرئيسي لهوية الأكاديمية', req);
   setFlash(res, { type: 'success', message: 'تم تحديث اللون الرئيسي للأكاديمية' });
   res.redirect('/settings');
@@ -311,7 +308,6 @@ router.post('/settings/color', async function (req, res) {
   const old = await db.prepare('SELECT logo FROM academies WHERE id = ?').get(acadId);
   if (old && old.logo) removeUploaded(old.logo);
   await db.prepare("UPDATE academies SET logo = ?, updated_at=datetime('now','localtime') WHERE id = ?").run(publicPath, acadId);
-  invalidate('academy:' + acadId);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'academy', acadId, 'تحديث صورة الأكاديمية', req);
   setFlash(res, { type: 'success', message: 'تم تحديث صورة الأكاديمية' });
   res.redirect(back);
@@ -320,7 +316,6 @@ router.post('/settings', async function (req, res) {
   if (!canEdit(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const st = await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)');
   for (const def of SETTING_DEFS) st.run(def.key, req.body[def.key] || '');
-  invalidate('global-settings');
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'settings', 0, 'تحديث إعدادات النظام', req);
   setFlash(res, { type: 'success', message: 'تم حفظ الإعدادات' });
   res.redirect('/settings');
@@ -562,7 +557,6 @@ router.post('/sports/:id/website', uploadSinglePlusArray('banner', 'sport_images
   for (const id of pick(b.announcements)) await updA.run(sportId, id);
 
   await db.prepare('UPDATE academy_sports SET website = ? WHERE id = ?').run(JSON.stringify(website), link.id);
-  invalidate('academy-sports:' + (req.currentUser.impersonatingAcademyId || req.currentUser.academy_id));
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'sports', sportId, 'تحديث محتوى موقع لعبة: ' + ((await getSport(sportId) || {}).name || sportId), req);
   setFlash(res, { type: 'success', message: 'تم حفظ محتوى اللعبة' });
   res.redirect('/sports/' + sportId + '/website');
