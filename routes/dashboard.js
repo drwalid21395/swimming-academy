@@ -99,37 +99,33 @@ router.get('/', async function (req, res) {
     attAbsentSeries.push(row ? Number(row.absent) : 0);
   }
 
-  /* اللاعبون حسب البرنامج */
-  const byProgram = await db.prepare(`SELECT p.name, COUNT(s.id) c FROM programs p LEFT JOIN swimmers s ON s.program_id = p.id AND s.deleted_at IS NULL WHERE p.deleted_at IS NULL` + sportClause(sid, 'p') + ` GROUP BY p.id ORDER BY c DESC LIMIT 8`).all();
-
-  /* تنبيهات */
+  /* بطاقات التنبيهات والجداول مستقلة؛ تشغيلها معاً يقلل رحلات Turso. */
   const alerts = [];
   const expiringScope = progClause(sid, 'sub');
-  const expiring = await db.prepare(`SELECT s.full_name, sub.end_date, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE s.deleted_at IS NULL AND sub.status = 'نشط' AND sub.end_date IS NOT NULL AND date(sub.end_date) BETWEEN date(?) AND date(?, '+7 day')` + expiringScope).all(now, now);
+  const [byProgram, expiring, overdue, missingDocs, upcomingComp, todaySessions, latestAssess] = await Promise.all([
+    db.prepare(`SELECT p.name, COUNT(s.id) c FROM programs p LEFT JOIN swimmers s ON s.program_id = p.id AND s.deleted_at IS NULL WHERE p.deleted_at IS NULL` + sportClause(sid, 'p') + ` GROUP BY p.id ORDER BY c DESC LIMIT 8`).all(),
+    db.prepare(`SELECT s.full_name, sub.end_date, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE s.deleted_at IS NULL AND sub.status = 'نشط' AND sub.end_date IS NOT NULL AND date(sub.end_date) BETWEEN date(?) AND date(?, '+7 day')` + expiringScope).all(now, now),
+    db.prepare(`SELECT s.full_name, sub.remaining, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE s.deleted_at IS NULL AND sub.status = 'نشط' AND sub.remaining > 0` + expiringScope).all(),
+    db.prepare(`SELECT s.full_name, s.id FROM swimmers s WHERE s.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.owner_type='swimmer' AND d.owner_id=s.id AND d.doc_type='إقرار صحي') AND s.status = 'نشط'` + swimmerClause(sid) + ` LIMIT 4`).all(),
+    db.prepare("SELECT * FROM competitions WHERE status = 'قادمة' ORDER BY date LIMIT 2").all(),
+    db.prepare(`SELECT s.*, g.name AS group_name, c.full_name AS coach_name, p.name AS pool_name FROM sessions s
+      JOIN groups g ON g.id = s.group_id LEFT JOIN coaches c ON c.id = s.coach_id LEFT JOIN pools p ON p.id = s.pool_id
+      WHERE s.deleted_at IS NULL AND s.date = ?` + sessionClause(sid, 's') + ` ORDER BY s.start_time`).all(now),
+    db.prepare(`SELECT a.*, s.full_name AS swimmer_name, c.full_name AS coach_name, l.name AS level_name FROM assessments a
+      JOIN swimmers s ON s.id = a.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = a.coach_id LEFT JOIN levels l ON l.id = a.level_id WHERE 1=1` + progClause(sid, 'a') + ` ORDER BY a.date DESC LIMIT 6`).all()
+  ]);
   expiring.forEach(function (x) {
     alerts.push({ type: 'warn', icon: 'fa-clock', title: 'اشتراك على وشك الانتهاء: ' + x.full_name, sub: 'ينتهي في ' + fmtDate(x.end_date), link: '/subscriptions/' + x.id });
   });
-  const overdue = await db.prepare(`SELECT s.full_name, sub.remaining, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE s.deleted_at IS NULL AND sub.status = 'نشط' AND sub.remaining > 0` + expiringScope).all();
   overdue.forEach(function (x) {
     alerts.push({ type: 'danger', icon: 'fa-money-bill-wave', title: 'مبلغ مستحق: ' + x.full_name, sub: 'باقي ' + money(x.remaining), link: '/subscriptions/' + x.id });
   });
-  const missingDocs = await db.prepare(`SELECT s.full_name, s.id FROM swimmers s WHERE s.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.owner_type='swimmer' AND d.owner_id=s.id AND d.doc_type='إقرار صحي') AND s.status = 'نشط'` + swimmerClause(sid) + ` LIMIT 4`).all();
   missingDocs.forEach(function (x) {
     alerts.push({ type: 'info', icon: 'fa-folder-minus', title: 'مستند ناقص: ' + x.full_name, sub: 'الإقرار الصحي غير موجود', link: '/documents' });
   });
-  const upcomingComp = await db.prepare("SELECT * FROM competitions WHERE status = 'قادمة' ORDER BY date LIMIT 2").all();
   upcomingComp.forEach(function (x) {
     alerts.push({ type: 'info', icon: 'fa-trophy', title: 'بطولة قادمة: ' + x.name, sub: fmtDate(x.date) + ' — ' + x.place, link: '/competitions' });
   });
-
-  /* حصص اليوم */
-  const todaySessions = await db.prepare(`SELECT s.*, g.name AS group_name, c.full_name AS coach_name, p.name AS pool_name FROM sessions s
-    JOIN groups g ON g.id = s.group_id LEFT JOIN coaches c ON c.id = s.coach_id LEFT JOIN pools p ON p.id = s.pool_id
-    WHERE s.deleted_at IS NULL AND s.date = ?` + sessionClause(sid, 's') + ` ORDER BY s.start_time`).all(now);
-
-  /* أحدث التقييمات */
-  const latestAssess = await db.prepare(`SELECT a.*, s.full_name AS swimmer_name, c.full_name AS coach_name, l.name AS level_name FROM assessments a
-    JOIN swimmers s ON s.id = a.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = a.coach_id LEFT JOIN levels l ON l.id = a.level_id WHERE 1=1` + progClause(sid, 'a') + ` ORDER BY a.date DESC LIMIT 6`).all();
 
   res.render('dashboard', {
     title: 'لوحة التحكم',
