@@ -264,6 +264,7 @@ app.use('/', require('./routes/schools'));
 app.use('/', require('./routes/reports'));
 app.use('/', require('./routes/attendance'));
 app.use('/site', require('./routes/site'));
+app.use('/api/cron', require('./routes/cron'));
 app.use('/', require('./routes/platform'));
 
 app.use(function (req, res) {

@@ -2,7 +2,6 @@
 const express = require('express');
 const { db } = require('../lib/db');
 const { money, fmtDate, fmtDateTime, dayAr, calcAge, pct, daysAhead, daysAgo, today } = require('../lib/helpers');
-const { maybeSendExpiryReminders } = require('../lib/whatsapp');
 const { maybeNotifyAcademySubscription } = require('../lib/tenant');
 const { activeSport, sportClause, progClause, swimmerClause, groupClause, sessionClause } = require('../lib/sport-context');
 const router = express.Router();
@@ -19,9 +18,6 @@ async function swimmerSummary(sid) {
 router.get('/', async function (req, res) {
   const user = req.currentUser;
   if (user.user_type === 'guardian' || user.user_type === 'swimmer') return res.redirect('/my-portal');
-
-  /* إرسال تلقائي لتذكيرات تجديد الاشتراكات المنتهية (مرة واحدة لكل اشتراك) */
-  try { await maybeSendExpiryReminders(user); } catch (e) { console.error('خطأ في إرسال تذكيرات الواتساب:', e.message); }
 
   /* إشعار نظام تلقائي عند اقتراب/انتهاء مدة اشتراك الأكاديمية نفسها */
   try { await maybeNotifyAcademySubscription(user.impersonatingAcademyId || user.academy_id); } catch (e) { console.error('خطأ في إشعار اشتراك الأكاديمية:', e.message); }
