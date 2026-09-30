@@ -8,11 +8,13 @@ const router = express.Router();
 
 async function swimmerSummary(sid) {
   const wc = swimmerClause(sid);
-  const total = (await db.prepare('SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL' + wc).get()).c;
-  const active = (await db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status = 'نشط'" + wc).get()).c;
-  const stopped = (await db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status IN ('متوقف مؤقتاً','مجمد','منسحب')" + wc).get()).c;
-  const expired = (await db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status IN ('منتهي','خريج')" + wc).get()).c;
-  return { total, active, stopped, expired };
+  const [total, active, stopped, expired] = await Promise.all([
+    db.prepare('SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL' + wc).get(),
+    db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status = 'نشط'" + wc).get(),
+    db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status IN ('متوقف مؤقتاً','مجمد','منسحب')" + wc).get(),
+    db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status IN ('منتهي','خريج')" + wc).get()
+  ]);
+  return { total: total.c, active: active.c, stopped: stopped.c, expired: expired.c };
 }
 
 router.get('/', async function (req, res) {
@@ -27,60 +29,74 @@ router.get('/', async function (req, res) {
   const now = today();
 
   const subsScope = progClause(sid, 'subscriptions');
-  const subs = {
-    active: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'نشط'" + subsScope).get()).c,
-    expired: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status IN ('منتهي','مكتمل','ملغي')" + subsScope).get()).c,
-    expiringSoon: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'نشط' AND end_date IS NOT NULL AND date(end_date) BETWEEN date(?) AND date(?, '+7 day')" + subsScope).get(now, now)).c,
-    frozen: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'مجمد'" + subsScope).get()).c
-  };
+  const [subActive, subExpired, subExpiringSoon, subFrozen] = await Promise.all([
+    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'نشط'" + subsScope).get(),
+    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status IN ('منتهي','مكتمل','ملغي')" + subsScope).get(),
+    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'نشط' AND end_date IS NOT NULL AND date(end_date) BETWEEN date(?) AND date(?, '+7 day')" + subsScope).get(now, now),
+    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'مجمد'" + subsScope).get()
+  ]);
+  const subs = { active: subActive.c, expired: subExpired.c, expiringSoon: subExpiringSoon.c, frozen: subFrozen.c };
 
   const sScope = sessionClause(sid, 'se');
-  const sessions = {
-    executed: (await db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'completed' AND deleted_at IS NULL" + sScope).get()).c,
-    scheduledToday: (await db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'scheduled' AND date = ? AND deleted_at IS NULL" + sScope).get(now)).c,
-    upcoming: (await db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'scheduled' AND date >= ? AND deleted_at IS NULL" + sScope).get(now)).c,
-    cancelled: (await db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'cancelled' AND deleted_at IS NULL" + sScope).get()).c
-  };
+  const [sessionExecuted, sessionToday, sessionUpcoming, sessionCancelled] = await Promise.all([
+    db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'completed' AND deleted_at IS NULL" + sScope).get(),
+    db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'scheduled' AND date = ? AND deleted_at IS NULL" + sScope).get(now),
+    db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'scheduled' AND date >= ? AND deleted_at IS NULL" + sScope).get(now),
+    db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'cancelled' AND deleted_at IS NULL" + sScope).get()
+  ]);
+  const sessions = { executed: sessionExecuted.c, scheduledToday: sessionToday.c, upcoming: sessionUpcoming.c, cancelled: sessionCancelled.c };
 
   const attScope = sessionClause(sid, 's');
-  const attendanceToday = {
-    present: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'present'` + attScope).get(now)).c,
-    absent: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'absent'` + attScope).get(now)).c,
-    excused: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'excused'` + attScope).get(now)).c
-  };
+  const [attPresent, attAbsent, attExcused] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'present'` + attScope).get(now),
+    db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'absent'` + attScope).get(now),
+    db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'excused'` + attScope).get(now)
+  ]);
+  const attendanceToday = { present: attPresent.c, absent: attAbsent.c, excused: attExcused.c };
 
-  const coachesCount = (await db.prepare("SELECT COUNT(*) c FROM coaches WHERE status = 'active' AND deleted_at IS NULL" + sportClause(sid, 'coaches')).get()).c;
-  const teamsCount = (await db.prepare('SELECT COUNT(*) c FROM teams').get()).c;
-  const groupsCount = (await db.prepare('SELECT COUNT(*) c FROM groups WHERE deleted_at IS NULL' + groupClause(sid)).get()).c;
-  const branchesCount = (await db.prepare('SELECT COUNT(*) c FROM branches').get()).c;
+  const [coachesRow, teamsRow, groupsRow, branchesRow] = await Promise.all([
+    db.prepare("SELECT COUNT(*) c FROM coaches WHERE status = 'active' AND deleted_at IS NULL" + sportClause(sid, 'coaches')).get(),
+    db.prepare('SELECT COUNT(*) c FROM teams').get(),
+    db.prepare('SELECT COUNT(*) c FROM groups WHERE deleted_at IS NULL' + groupClause(sid)).get(),
+    db.prepare('SELECT COUNT(*) c FROM branches').get()
+  ]);
+  const coachesCount = coachesRow.c, teamsCount = teamsRow.c, groupsCount = groupsRow.c, branchesCount = branchesRow.c;
 
   const subsDueScope = progClause(sid, 'subscriptions');
-  const finance = {
-    revenues: (await db.prepare('SELECT COALESCE(SUM(amount),0) s FROM revenues').get()).s,
-    expenses: (await db.prepare('SELECT COALESCE(SUM(amount),0) s FROM expenses').get()).s,
-    due: (await db.prepare("SELECT COALESCE(SUM(remaining),0) s FROM subscriptions WHERE status = 'نشط'" + subsDueScope).get()).s,
-    unpaidCount: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0 AND status = 'نشط'" + subsDueScope).get()).c
-  };
+  const [revenueRow, expenseRow, dueRow, unpaidRow] = await Promise.all([
+    db.prepare('SELECT COALESCE(SUM(amount),0) s FROM revenues').get(),
+    db.prepare('SELECT COALESCE(SUM(amount),0) s FROM expenses').get(),
+    db.prepare("SELECT COALESCE(SUM(remaining),0) s FROM subscriptions WHERE status = 'نشط'" + subsDueScope).get(),
+    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0 AND status = 'نشط'" + subsDueScope).get()
+  ]);
+  const finance = { revenues: revenueRow.s, expenses: expenseRow.s, due: dueRow.s, unpaidCount: unpaidRow.c };
 
   /* إيرادات ومصروفات آخر 12 أسبوع */
-  const weeklyRevenue = [];
-  const weeklyExpense = [];
+  const weeklyRevenue = [], weeklyExpense = [];
   const weekLabels = [];
+  const [weeklyRevenues, weeklyExpenses] = await Promise.all([
+    db.prepare('SELECT date, COALESCE(SUM(amount),0) s FROM revenues WHERE date BETWEEN ? AND ? GROUP BY date').all(daysAgo(83), now),
+    db.prepare('SELECT date, COALESCE(SUM(amount),0) s FROM expenses WHERE date BETWEEN ? AND ? GROUP BY date').all(daysAgo(83), now)
+  ]);
   for (let w = 11; w >= 0; w--) {
     const from = daysAgo(w * 7 + 6);
     const to = daysAgo(w * 7);
     weekLabels.push(shortDate(from));
-    weeklyRevenue.push((await db.prepare('SELECT COALESCE(SUM(amount),0) s FROM revenues WHERE date BETWEEN ? AND ?').get(from, to)).s);
-    weeklyExpense.push((await db.prepare('SELECT COALESCE(SUM(amount),0) s FROM expenses WHERE date BETWEEN ? AND ?').get(from, to)).s);
+    weeklyRevenue.push(weeklyRevenues.filter(r => r.date >= from && r.date <= to).reduce((sum, r) => sum + Number(r.s), 0));
+    weeklyExpense.push(weeklyExpenses.filter(r => r.date >= from && r.date <= to).reduce((sum, r) => sum + Number(r.s), 0));
   }
 
   /* الحضور آخر 14 يوم */
-  const attLabels = [], attPresent = [], attAbsent = [];
+  const attLabels = [], attPresentSeries = [], attAbsentSeries = [];
+  const [attendanceRows] = await Promise.all([
+    db.prepare(`SELECT s.date, SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) present, SUM(CASE WHEN a.status IN ('absent','excused') THEN 1 ELSE 0 END) absent FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date BETWEEN ? AND ?` + attScope + ' GROUP BY s.date').all(daysAgo(13), now)
+  ]);
   for (let d = 13; d >= 0; d--) {
     const day = daysAgo(d);
     attLabels.push(shortDate(day));
-    attPresent.push((await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='present'` + sessionClause(sid, 's')).get(day)).c);
-    attAbsent.push((await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status IN ('absent','excused')` + sessionClause(sid, 's')).get(day)).c);
+    const row = attendanceRows.find(r => r.date === day);
+    attPresentSeries.push(row ? Number(row.present) : 0);
+    attAbsentSeries.push(row ? Number(row.absent) : 0);
   }
 
   /* اللاعبون حسب البرنامج */
@@ -120,13 +136,13 @@ router.get('/', async function (req, res) {
     active: 'dashboard',
     stats: { S, subs, sessions, attendanceToday, coachesCount, teamsCount, groupsCount, branchesCount, finance },
     weekly: { labels: weekLabels, revenue: weeklyRevenue, expense: weeklyExpense },
-    attendance: { labels: attLabels, present: attPresent, absent: attAbsent },
+    attendance: { labels: attLabels, present: attPresentSeries, absent: attAbsentSeries },
     byProgram,
     alerts,
     todaySessions,
     latestAssess,
     today: now,
-    inlineScript: renderCharts('chartRevenue', 'chartAttendance', 'chartPrograms', JSON.stringify(weeklyRevenue), JSON.stringify(weeklyExpense), JSON.stringify(weekLabels), JSON.stringify(attPresent), JSON.stringify(attAbsent), JSON.stringify(attLabels), JSON.stringify(byProgram))
+    inlineScript: renderCharts('chartRevenue', 'chartAttendance', 'chartPrograms', JSON.stringify(weeklyRevenue), JSON.stringify(weeklyExpense), JSON.stringify(weekLabels), JSON.stringify(attPresentSeries), JSON.stringify(attAbsentSeries), JSON.stringify(attLabels), JSON.stringify(byProgram))
   });
 });
 
