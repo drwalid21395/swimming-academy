@@ -51,6 +51,49 @@ router.get('/reservations', async function (req, res) {
   res.render('reservations', { page, fmtDateTime });
 });
 
+/* عرض تفاصيل حجز واحد عند الضغط على اللاعب */
+router.get('/reservations/:id', async function (req, res) {
+  if (!canView(req.currentUser, 'reservations')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) return res.redirect('/reservations');
+  const r = await db.prepare(`SELECT r.*, sp.name AS sport_name FROM reservations r LEFT JOIN sports sp ON sp.id = r.sport_id WHERE r.id = ?`).get(id);
+  if (!r) return res.redirect('/reservations');
+  const p = r.phone ? '<span dir="ltr">' + r.phone + '</span>' : '—';
+  const w = r.whatsapp ? '<span dir="ltr">' + r.whatsapp + '</span>' : '—';
+  const gp = r.guardian_phone ? '<span dir="ltr">' + r.guardian_phone + '</span>' : '—';
+  const gwa = r.guardian_whatsapp ? '<span dir="ltr">' + r.guardian_whatsapp + '</span>' : '—';
+  const fields = [
+    { label: 'اسم اللاعب', value: r.swimmer_name + (r.gender === 'أنثى' ? ' <span class="text-muted">(أنثى)</span>' : '') },
+    { label: 'اللعبة', value: r.sport_name || '—' },
+    { label: 'البرنامج', value: r.program_name || '—' },
+    { label: 'تاريخ الميلاد', value: r.birth_date || '—' },
+    { label: 'السن', value: r.age !== null && r.age !== undefined ? r.age + ' سنة' : '—' },
+    { label: 'المستوى المبدئي', value: r.initial_level || '—' },
+    { label: 'رقم اللاعب', value: r.swimmer_number || '—' },
+    { label: 'الهاتف', value: p },
+    { label: 'الواتساب', value: w },
+    { label: 'ولي الأمر', value: r.guardian_name || '—' },
+    { label: 'صلته باللاعب', value: r.guardian_relation || '—' },
+    { label: 'هاتف ولي الأمر', value: gp },
+    { label: 'واتساب ولي الأمر', value: gwa },
+    { label: 'بريد ولي الأمر', value: r.guardian_email || '—' },
+    { label: 'عنوان ولي الأمر', value: r.guardian_address || '—' },
+    { label: 'الرقم القومي لولي الأمر', value: r.guardian_national_id || '—' },
+    { label: 'ملاحظات ولي الأمر', value: r.guardian_notes || '—' },
+    { label: 'تاريخ الحجز', value: fmtDateTime(r.created_at) },
+    { label: 'الحالة', value: statusBadge(r.status) },
+    { label: 'ملاحظات', value: r.notes || '—' }
+  ];
+  res.render('detail', {
+    page: {
+      title: 'تفاصيل الحجز — ' + r.swimmer_name,
+      subtitle: 'طلب حجز لمنطقة ' + (r.sport_name || 'الموقع التعريفي'),
+      icon: 'fa-calendar-check', active: 'reservations', fields,
+      backUrl: '/reservations', canEdit: false
+    }
+  });
+});
+
 /* تحويل الحجز إلى لاعب: إنشاء ولي أمر + لاعب وربطهم، ثم تسكين المجموعة من صفحة اللاعب
    يُنفَّذ في معاملة واحدة: أي فشل يلغي كل شيء ولا يترك حجزاً «تم تحويله» بدون لاعب. */
 async function convertReservation(req, res, r) {

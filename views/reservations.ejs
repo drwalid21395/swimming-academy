@@ -52,7 +52,7 @@
                 <div class="avatar-cell">
                   <div class="avatar-sm" style="background:linear-gradient(135deg,var(--primary),var(--primary-light));color:#fff"><%= (r.swimmer_name || 'ح').trim().charAt(0) %></div>
                   <div>
-                    <div class="cell-title"><%= r.swimmer_name %><% if (r.gender === 'أنثى') { %> <span class="font-12 text-muted">(أنثى)</span><% } %></div>
+                    <div class="cell-title"><a href="/reservations/<%= r.id %>" title="عرض التفاصيل"><%= r.swimmer_name %></a><% if (r.gender === 'أنثى') { %> <span class="font-12 text-muted">(أنثى)</span><% } %></div>
                     <% if (r.birth_date) { %><div class="cell-sub"><%= r.birth_date %></div><% } %>
                   </div>
                 </div>
