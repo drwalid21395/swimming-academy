@@ -50,6 +50,9 @@ crud(router, '/guardians', {
   search: ['full_name', 'phone'],
   view: true,
   viewTitle: row => 'وليّ أمر — ' + row.full_name,
+  bulkActions: user => canDel(user, 'guardians') ? [
+    { value: 'delete', label: 'حذف المحددين', icon: 'fa-trash', confirm: 'هل أنت متأكد من حذف أولياء الأمور المحددين؟ سيتم الاحتفاظ بسجلاتهم.' }
+  ] : [],
   softDelete: true
 });
 
