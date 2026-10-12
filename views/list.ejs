@@ -1,4 +1,5 @@
 <%- include('partials/layout_top', { title: page.title, active: page.active || page.module }) %>
+<% var bulk = !!(page.bulkActions && page.bulkActions.length && page.rows && page.rows.length); %>
 <div class="page-head">
   <div>
     <div class="page-title"><i class="fas <%= page.icon || 'fa-list' %>"></i> <%= page.title %></div>
@@ -22,11 +23,27 @@
   </div>
 </div>
 
+<% if (bulk) { %>
+<div class="bulk-bar" data-bulk-url="<%= page.bulkUrl %>">
+  <span class="bulk-count"><i class="fas fa-check-double"></i> تم تحديد <b data-bulk-count>0</b> من <%= page.rows.length %></span>
+  <div class="spacer"></div>
+  <select class="form-control" data-bulk-action style="min-width:220px">
+    <option value="">— اختر إجراءً جماعياً —</option>
+    <% page.bulkActions.forEach(function (a) { %>
+      <option value="<%= a.value %>"<%= a.confirm ? ' data-confirm="' + a.confirm + '"' : '' %>><%= a.label %></option>
+    <% }); %>
+  </select>
+  <button type="button" class="btn btn-danger" data-bulk-apply disabled><i class="fas fa-circle-play"></i> تنفيذ</button>
+  <button type="button" class="btn btn-outline" data-bulk-clear disabled><i class="fas fa-xmark"></i> إلغاء التحديد</button>
+</div>
+<% } %>
+
 <div class="card">
   <div class="table-wrap">
     <table class="data-table">
       <thead>
         <tr>
+          <% if (bulk) { %><th class="bulk-col"><input type="checkbox" class="bulk-all" title="تحديد الكل" aria-label="تحديد الكل"></th><% } %>
           <% page.columns.forEach(function (col) { %><th class="sortable" title="اضغط للترتيب"><%= col.label %><span class="sort-ind"></span></th><% }); %>
           <% if (page.actions) { %><th>إجراءات</th><% } %>
         </tr>
@@ -34,7 +51,8 @@
       <tbody>
         <% if (page.rows && page.rows.length) { %>
           <% page.rows.forEach(function (row) { %>
-            <tr <%- page.filters ? page.filters.map(function (f) { return 'data-' + f.name + '="' + (row[f.name] ?? '') + '"'; }).join(' ') : '' %>>
+            <tr data-id="<%= row.id %>" <%- page.filters ? page.filters.map(function (f) { return 'data-' + f.name + '="' + (row[f.name] ?? '') + '"'; }).join(' ') : '' %>>
+              <% if (bulk) { %><td class="bulk-col"><input type="checkbox" class="bulk-check" value="<%= row.id %>" aria-label="تحديد السجل"></td><% } %>
               <% page.columns.forEach(function (col) { %>
                 <td><% if (col.html) { %><%- col.html(row, user) %><% } else { %><%= row[col.key] !== null && row[col.key] !== undefined ? row[col.key] : '—' %><% } %></td>
               <% }); %>
@@ -59,7 +77,7 @@
             </tr>
           <% }); %>
         <% } else { %>
-          <tr><td colspan="<%= page.columns.length + (page.actions ? 1 : 0) %>">
+          <tr><td colspan="<%= page.columns.length + (page.actions ? 1 : 0) + (bulk ? 1 : 0) %>">
             <div class="empty-state"><i class="fas fa-folder-open"></i><p>لا توجد بيانات لعرضها</p></div>
           </td></tr>
         <% } %>

@@ -173,6 +173,78 @@
       });
     });
 
+    /* ---------- التحديد المتعدد وتنفيذ الأوامر الجماعية ---------- */
+    const bulkBar = document.querySelector('.bulk-bar[data-bulk-url]');
+    const bulkTable = bulkBar ? document.querySelector('.data-table') : null;
+    if (bulkBar && bulkTable) {
+      const allBox = bulkTable.querySelector('.bulk-all');
+      const allChecks = function () {
+        return Array.prototype.slice.call(bulkTable.querySelectorAll('tbody .bulk-check'));
+      };
+      const visibleChecks = function () {
+        return allChecks().filter(function (c) { const tr = c.closest('tr'); return tr && tr.style.display !== 'none'; });
+      };
+      const countEl = bulkBar.querySelector('[data-bulk-count]');
+      const applyBtn = bulkBar.querySelector('[data-bulk-apply]');
+      const clearBtn = bulkBar.querySelector('[data-bulk-clear]');
+      const actionSel = bulkBar.querySelector('[data-bulk-action]');
+      const selectedIds = function () {
+        return allChecks().filter(function (c) { return c.checked; }).map(function (c) { return c.value; });
+      };
+      const refreshBulk = function () {
+        const vis = visibleChecks();
+        const sel = selectedIds();
+        if (countEl) countEl.textContent = sel.length;
+        if (applyBtn) applyBtn.disabled = sel.length === 0;
+        if (clearBtn) clearBtn.disabled = sel.length === 0;
+        if (allBox) {
+          allBox.checked = vis.length > 0 && vis.every(function (c) { return c.checked; });
+          allBox.indeterminate = !allBox.checked && vis.some(function (c) { return c.checked; });
+        }
+        allChecks().forEach(function (c) {
+          const tr = c.closest('tr');
+          if (tr) tr.classList.toggle('row-selected', c.checked);
+        });
+      };
+      if (allBox) allBox.addEventListener('change', function () {
+        visibleChecks().forEach(function (c) { c.checked = allBox.checked; });
+        refreshBulk();
+      });
+      bulkTable.addEventListener('change', function (e) {
+        if (e.target && e.target.classList.contains('bulk-check')) refreshBulk();
+      });
+      if (clearBtn) clearBtn.addEventListener('click', function () {
+        allChecks().forEach(function (c) { c.checked = false; });
+        if (actionSel) actionSel.value = '';
+        refreshBulk();
+      });
+      if (applyBtn) applyBtn.addEventListener('click', function () {
+        const ids = selectedIds();
+        if (!ids.length) { showToast('حدّد سجلاً واحداً على الأقل', 'warning'); return; }
+        const act = actionSel ? actionSel.value : '';
+        if (!act) { showToast('اختر الإجراء المطلوب تنفيذه', 'warning'); return; }
+        const opt = actionSel ? actionSel.options[actionSel.selectedIndex] : null;
+        const msg = (opt && opt.getAttribute('data-confirm')) || ('تنفيذ الإجراء على ' + ids.length + ' سجل؟');
+        showConfirm(msg, function () {
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.action = bulkBar.getAttribute('data-bulk-url');
+          form.style.display = 'none';
+          const actInput = document.createElement('input');
+          actInput.type = 'hidden'; actInput.name = 'action'; actInput.value = act;
+          form.appendChild(actInput);
+          ids.forEach(function (id) {
+            const i = document.createElement('input');
+            i.type = 'hidden'; i.name = 'ids'; i.value = id;
+            form.appendChild(i);
+          });
+          document.body.appendChild(form);
+          form.submit();
+        });
+      });
+      refreshBulk();
+    }
+
     /* ---------- طباعة ---------- */
     document.querySelectorAll('[data-print]').forEach(function (el) {
       el.addEventListener('click', function () { window.print(); });

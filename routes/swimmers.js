@@ -1,7 +1,7 @@
 /** اللاعبون (ملف شامل) + أولياء الأمور + المدربون + الموظفون */
 const express = require('express');
 const { db } = require('../lib/db');
-const { audit, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON, today, canView, canExport, canDel } = require('../lib/helpers');
+const { audit, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON, today, canView, canExport, canDel, canEdit } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
 const { nextMembership, isUniqueViolation } = require('../lib/membership');
 const crud = require('../lib/crud');
@@ -304,6 +304,17 @@ router.get('/swimmers', async function (req, res) {
     canAdd: true,
     addUrl: '/swimmers/new',
     addLabel: 'تسجيل لاعب جديد',
+    bulkUrl: '/swimmers/bulk',
+    bulkActions: [
+      ...(canEdit(req.currentUser, 'swimmers') ? [
+        { value: 'set_status:نشط', label: 'تعيين كـ نشط', icon: 'fa-circle-check' },
+        { value: 'set_status:متوقف مؤقتاً', label: 'تعيين كـ متوقف مؤقتاً', icon: 'fa-circle-pause' },
+        { value: 'set_status:منسحب', label: 'تعيين كـ منسحب', icon: 'fa-circle-xmark' }
+      ] : []),
+      ...(canDel(req.currentUser, 'swimmers') ? [
+        { value: 'delete', label: 'حذف اللاعبين المحددين', icon: 'fa-trash', confirm: 'هل أنت متأكد من حذف اللاعبين المحددين؟ سيتم الاحتفاظ بسجلاتهم.' }
+      ] : [])
+    ],
     headerActions: canExport(req.currentUser, 'swimmers') ? [
       { href: '/reports/swimmers-print', label: 'ملف اللاعبين PDF', icon: 'fa-file-pdf', cls: 'btn-outline' },
       { href: '/reports/swimmers.xls', label: 'ملف اللاعبين Excel', icon: 'fa-file-excel', cls: 'btn-outline' }
@@ -316,6 +327,37 @@ router.get('/swimmers', async function (req, res) {
     ]
   };
   res.render('list', { page });
+});
+
+/* تنفيذ أوامر جماعية على اللاعبين المحددين */
+router.post('/swimmers/bulk', async function (req, res) {
+  const ids = [].concat(req.body.ids || []).map(Number).filter(n => Number.isSafeInteger(n) && n > 0);
+  const action = String(req.body.action || '');
+  if (!ids.length) { setFlash(res, { type: 'error', message: 'لم يتم تحديد أي لاعب' }); return res.redirect('/swimmers'); }
+  if (!action) { setFlash(res, { type: 'error', message: 'اختر الإجراء المطلوب تنفيذه' }); return res.redirect('/swimmers'); }
+  const ph = ids.map(() => '?').join(',');
+  try {
+    if (action === 'delete') {
+      if (!canDel(req.currentUser, 'swimmers')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+      await db.prepare(`UPDATE swimmers SET deleted_at = datetime('now','localtime') WHERE id IN (${ph}) AND deleted_at IS NULL`).run(...ids);
+      await db.prepare(`DELETE FROM swimmer_group WHERE swimmer_id IN (${ph})`).run(...ids);
+      audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'swimmers', null, 'حذف جماعي لعدد ' + ids.length + ' لاعب', req);
+      setFlash(res, { type: 'success', message: 'تم حذف ' + ids.length + ' لاعب مع الاحتفاظ بسجلاتهم' });
+    } else if (action.indexOf('set_status:') === 0) {
+      if (!canEdit(req.currentUser, 'swimmers')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+      const status = action.slice('set_status:'.length);
+      if (SW_STATUS.indexOf(status) === -1) throw new Error('حالة غير معروفة');
+      await db.prepare(`UPDATE swimmers SET status = ? WHERE id IN (${ph}) AND deleted_at IS NULL`).run(status, ...ids);
+      audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'swimmers', null, 'تغيير جماعي لحالة ' + ids.length + ' لاعب إلى ' + status, req);
+      setFlash(res, { type: 'success', message: 'تم تحديث حالة ' + ids.length + ' لاعب' });
+    } else {
+      throw new Error('إجراء غير معروف');
+    }
+  } catch (e) {
+    console.error('فشل الإجراء الجماعي على اللاعبين:', e.message);
+    setFlash(res, { type: 'error', message: 'تعذّر تنفيذ الإجراء الجماعي: ' + e.message });
+  }
+  res.redirect('/swimmers');
 });
 
 /* نموذج إضافة/تعديل */
