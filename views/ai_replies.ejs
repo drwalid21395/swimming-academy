@@ -1,0 +1,207 @@
+<%- include('partials/layout_top', { title: 'الردود الذكية', active: 'ai_replies' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-robot"></i> الردود الذكية</div>
+    <div class="page-sub">توليد ردود مقترحة على رسائل العملاء بالذكاء الاصطناعي (Google Gemini)</div>
+  </div>
+</div>
+
+<% if (!canEdit) { %>
+  <div class="alert alert-warning" style="max-width:820px"><i class="fas fa-lock"></i> لا تملك صلاحية تعديل إعدادات الردود الذكية.</div>
+<% } %>
+
+<div class="card" style="max-width:820px">
+  <div class="card-body">
+    <div class="section-title-lg"><i class="fas fa-sliders"></i> إعدادات مزود الذكاء الاصطناعي</div>
+    <p style="color:var(--text-soft);margin:0 0 14px;font-size:13px">
+      اختر مزوّداً مجانياً وأدخل مفتاح API خاصاً بك. يُخزَّن المفتاح في النظام ولا يظهر لأحد.
+    </p>
+    <form method="POST" action="/ai-replies/settings" novalidate>
+      <div class="form-grid">
+        <div class="form-group">
+          <label><input type="checkbox" name="ai_enabled" value="1" <%= current.ai_enabled === '1' ? 'checked' : '' %> style="width:auto;display:inline-block;margin-left:6px"> تفعيل الردود الذكية</label>
+        </div>
+        <div class="form-group">
+          <label>مزوّد الذكاء الاصطناعي</label>
+          <select class="form-control" name="ai_provider" id="ai-provider">
+            <% Object.keys(providers).forEach(function (pk) { %>
+              <option value="<%= pk %>" <%= current.ai_provider === pk ? 'selected' : '' %>><%= providers[pk].label %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>النموذج (Model)</label>
+          <input type="text" class="form-control" name="ai_model" value="<%= current.ai_model %>" dir="ltr">
+          <small style="color:var(--text-soft)" id="ai-model-hint"></small>
+        </div>
+        <div class="form-group">
+          <label>مفتاح API</label>
+          <input type="password" class="form-control" name="ai_api_key" value="<%= current.ai_api_key || '' %>" autocomplete="off" placeholder="">
+          <small style="color:var(--text-soft)" id="ai-key-hint"></small>
+        </div>
+        <div class="form-group">
+          <label>أسلوب الرد</label>
+          <select class="form-control" name="ai_tone">
+            <% ['مهني', 'ودود', 'رسمي', 'بسيط'].forEach(function (t) { %>
+              <option <%= current.ai_tone === t ? 'selected' : '' %>><%= t %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>أقصى طول للرد (حرفاً)</label>
+          <input type="number" class="form-control" name="ai_max_length" value="<%= current.ai_max_length %>" min="100" max="1000">
+        </div>
+        <div class="form-group full">
+          <label>تعليمات إضافية للإجابة (اختياري)</label>
+          <textarea class="form-control" name="ai_instructions" rows="3" placeholder="مثال: ذكر أن الحصص من السبت إلى الخميس صباحاً ومساءً، والرد على الأسئلة عن الأسعار بالإحالة للأكاديمية"><%= current.ai_instructions || '' %></textarea>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> حفظ الإعدادات</button>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="max-width:820px">
+  <div class="card-body">
+    <div class="section-title-lg"><i class="fas fa-wand-magic-sparkles"></i> توليد رد مقترح</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>ولي الأمر (اختياري)</label>
+        <select class="form-control" id="ai-guardian">
+          <option value="">— اختر ولي أمر —</option>
+          <% guardians.forEach(function (g) { %>
+            <option value="<%= g.id %>" data-name="<%= g.full_name || '' %>" data-phone="<%= g.whatsapp || g.phone || '' %>"><%= g.full_name %> — <%= g.whatsapp || g.phone || '' %></option>
+          <% }); %>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>رقم الهاتف (سيصل إليه الرد)</label>
+        <input type="text" class="form-control" id="ai-phone" dir="ltr" placeholder="00000000000">
+      </div>
+      <div class="form-group full">
+        <label>رسالة العميل</label>
+        <textarea class="form-control" id="ai-message" rows="4" placeholder="الصق هنا الرسالة التي وصلتك من العميل..."></textarea>
+      </div>
+    </div>
+    <button type="button" class="btn btn-primary" id="ai-draft"><i class="fas fa-wand-magic-sparkles"></i> توليد رد مقترح</button>
+
+    <div id="ai-loading" style="display:none;margin-top:14px;color:var(--text-soft)"><i class="fas fa-spinner fa-spin"></i> جارٍ توليد الرد...</div>
+
+    <div id="ai-out" style="display:<%= (typeof aiOut !== 'undefined' && aiOut) ? 'block' : 'none' %>;margin-top:14px">
+      <label style="font-weight:700">الرد المقترح</label>
+      <div class="card" style="background:var(--bg);border:1px solid var(--card-border)">
+        <div class="card-body">
+          <div id="ai-text" style="white-space:pre-wrap;min-height:80px"><%= (typeof aiOut !== 'undefined' && aiOut) ? aiOut : '' %></div>
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+        <button type="button" class="btn btn-primary" id="ai-send-wa"><i class="fab fa-whatsapp"></i> إرسال عبر واتساب</button>
+        <button type="button" class="btn btn-outline" id="ai-regen"><i class="fas fa-rotate-right"></i> توليد رد آخر</button>
+        <button type="button" class="btn btn-outline" id="ai-copy"><i class="fas fa-copy"></i> نسخ</button>
+      </div>
+      <div id="ai-status" style="margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="max-width:820px">
+  <div class="card-body">
+    <div class="section-title-lg"><i class="fas fa-clock-rotate-left"></i> آخر الرسائل</div>
+    <% if (!lastMsgs.length) { %>
+      <p style="color:var(--text-soft)">لا توجد رسائل سابقة بعد.</p>
+    <% } else { %>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <% lastMsgs.forEach(function (m) { %>
+          <button type="button" class="btn btn-outline btn-sm ai-fill" style="text-align:right;justify-content:flex-start" data-guard="<%= m.guardian_name || '' %>" data-phone="<%= m.phone || '' %>" data-msg="<%= String(m.message || '').replace(/"/g, '&quot;').slice(0, 300) %>">
+            <span style="font-weight:700"><%= m.guardian_name || m.phone || 'مرسل' %></span>
+            <span style="color:var(--text-soft);font-size:12px;padding-right:8px">— <%= String(m.message || '').slice(0, 80) %></span>
+          </button>
+        <% }); %>
+      </div>
+    <% } %>
+  </div>
+</div>
+
+<script>
+(function () {
+  var providers = <%- JSON.stringify(providers) %>;
+  var providerSel = document.getElementById('ai-provider');
+  var modelHint = document.getElementById('ai-model-hint');
+  var keyHint = document.getElementById('ai-key-hint');
+  function applyProvider() {
+    var pk = providerSel.value || 'gemini';
+    var p = providers[pk] || providers.gemini;
+    if (modelHint) modelHint.textContent = 'افتراضي: ' + p.defaultModel;
+    if (keyHint) keyHint.textContent = p.hint;
+  }
+  if (providerSel) { providerSel.addEventListener('change', applyProvider); applyProvider(); }
+  var guardianSel = document.getElementById('ai-guardian');
+  var phone = document.getElementById('ai-phone');
+  var msg = document.getElementById('ai-message');
+  var out = document.getElementById('ai-out');
+  var text = document.getElementById('ai-text');
+  var status = document.getElementById('ai-status');
+  var loading = document.getElementById('ai-loading');
+  function setGuardian() {
+    var o = guardianSel.selectedOptions[0];
+    if (o && o.dataset.phone) phone.value = o.dataset.phone;
+  }
+  guardianSel.addEventListener('change', setGuardian);
+  function fillFromMsg(m) {
+    if (m.dataset.guard) guardianSel.value = '';
+    if (m.dataset.phone) phone.value = m.dataset.phone;
+    if (m.dataset.msg) msg.value = m.dataset.msg;
+  }
+  document.querySelectorAll('.ai-fill').forEach(function (b) {
+    b.addEventListener('click', function () {
+      b.dataset.msg = b.dataset.msg || '';
+      fillFromMsg(b.dataset);
+    });
+  });
+  function draft() {
+    status.textContent = '';
+    var message = msg.value.trim();
+    if (!message) { status.innerHTML = '<span style="color:var(--danger,#dc2626)">أدخل رسالة العميل أولاً</span>'; return; }
+    var o = guardianSel.selectedOptions[0];
+    var body = new URLSearchParams();
+    body.set('message', message);
+    if (o && o.dataset.name) body.set('guardian_name', o.dataset.name);
+    loading.style.display = 'block';
+    out.style.display = 'none';
+    fetch('/ai-replies/draft', { method: 'POST', body: body }).then(function (r) { return r.json(); }).then(function (j) {
+      loading.style.display = 'none';
+      if (j.ok) { text.textContent = j.text; out.style.display = 'block'; }
+      else status.innerHTML = '<span style="color:var(--danger,#dc2626)"><i class="fas fa-triangle-exclamation"></i> ' + j.error + '</span>';
+    }).catch(function () {
+      loading.style.display = 'none';
+      status.innerHTML = '<span style="color:var(--danger,#dc2626)">تعذر الاتصال بالخادم</span>';
+    });
+  }
+  document.getElementById('ai-draft').addEventListener('click', draft);
+  document.getElementById('ai-regen').addEventListener('click', draft);
+  document.getElementById('ai-copy').addEventListener('click', function () {
+    navigator.clipboard.writeText(text.textContent).then(function () {
+      status.innerHTML = '<span style="color:var(--success,#16a34a)">تم نسخ الرد</span>';
+    });
+  });
+  document.getElementById('ai-send-wa').addEventListener('click', function () {
+    if (!text.textContent.trim()) return;
+    if (!phone.value.trim()) { status.innerHTML = '<span style="color:var(--danger,#dc2626)">حدد ولي الأمر أو أدخل رقم الهاتف</span>'; return; }
+    status.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جارٍ الإرسال...';
+    var body = new URLSearchParams();
+    body.set('phone', phone.value.trim());
+    body.set('text', text.textContent.trim());
+    body.set('guardian_name', guardianSel.selectedOptions[0] ? guardianSel.selectedOptions[0].dataset.name : '');
+    fetch('/ai-replies/send', { method: 'POST', body: body }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j.ok && j.mode === 'api') { status.innerHTML = '<span style="color:var(--success,#16a34a)">تم الإرسال عبر واتساب API ✅</span>'; }
+      else if (j.ok && j.url) {
+        status.innerHTML = '<span style="color:var(--warning,#d97706)">لم يُفعّل مفتاح واتساب API — <a href="' + j.url + '" target="_blank" rel="noopener">افتح المحادثة لإرسال الرسالة</a></span>';
+      }
+      else status.innerHTML = '<span style="color:var(--danger,#dc2626)">' + j.error + '</span>';
+    }).catch(function () {
+      status.innerHTML = '<span style="color:var(--danger,#dc2626)">تعذر الإرسال</span>';
+    });
+  });
+})();
+</script>
+<%- include('partials/layout_bottom') %>

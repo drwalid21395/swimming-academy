@@ -260,6 +260,7 @@ app.use('/', require('./routes/finance'));
 app.use('/', require('./routes/correspondence'));
 app.use('/', require('./routes/reservations'));
 app.use('/', require('./routes/admin'));
+app.use('/', require('./routes/ai'));
 app.use('/', require('./routes/schools'));
 app.use('/', require('./routes/reports'));
 app.use('/', require('./routes/attendance'));
