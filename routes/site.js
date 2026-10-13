@@ -156,11 +156,25 @@ async function renderPage(req, res, acad, base, page, params) {
       return res.render('site/sport', { data, sport, website, programs, coaches, announcements, upcoming, money, fmtDate, layout: false });
     }
     if (page === 'reserve') {
-      const programs = sportCtx
+      const values = Object.assign({}, params.values || {});
+      const queryProgram = Number(params.programId) || 0;
+      const querySport = Number(params.sportId) || 0;
+      if (queryProgram && !values.program_id) {
+        const selProg = await db.prepare('SELECT * FROM programs WHERE id = ? AND deleted_at IS NULL').get(queryProgram);
+        if (selProg) {
+          values.program_id = String(selProg.id);
+          if (Number(selProg.sport_id)) values.sport_id = String(selProg.sport_id);
+        }
+      } else if (querySport && !values.sport_id) {
+        values.sport_id = String(querySport);
+      }
+      const sportFilter = Number(values.sport_id) || 0;
+      let programs = sportCtx
         ? await db.prepare("SELECT * FROM programs WHERE sport_id = ? AND deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id").all(sportCtx.id)
         : await db.prepare("SELECT * FROM programs WHERE deleted_at IS NULL AND status NOT IN ('متوقف','منتهي') ORDER BY id").all();
+      if (sportFilter) programs = programs.filter(p => Number(p.sport_id) === sportFilter);
       const levels = await db.prepare('SELECT * FROM levels ORDER BY order_no, id').all();
-      return res.render('site/reserve', { data, programs, levels, money, message: params.message || '', values: params.values || {}, confirmed: params.confirmed || null, layout: false });
+      return res.render('site/reserve', { data, programs, levels, money, message: params.message || '', values, confirmed: params.confirmed || null, layout: false });
     }
     return res.redirect(base);
   });
@@ -177,7 +191,7 @@ router.get('/reserve', async function (req, res) {
   const acad = await resolveAcademy('primary');
   const base = '/site';
   if (!acad) return res.redirect('/login');
-  return renderPage(req, res, acad, base, 'reserve');
+  return renderPage(req, res, acad, base, 'reserve', { programId: req.query.program, sportId: req.query.sport });
 });
 router.get('/news', async function (req, res) {
   const acad = await resolveAcademy('primary');
@@ -364,7 +378,7 @@ router.get('/:code', async function (req, res) {
 router.get('/:code/reserve', async function (req, res) {
   const acad = await resolveAcademy(req.params.code);
   if (!acad) return res.redirect('/site');
-  return renderPage(req, res, acad, '/site/' + acad.code, 'reserve');
+  return renderPage(req, res, acad, '/site/' + acad.code, 'reserve', { programId: req.query.program, sportId: req.query.sport });
 });
 router.get('/:code/news', async function (req, res) {
   const acad = await resolveAcademy(req.params.code);
