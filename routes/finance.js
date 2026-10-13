@@ -113,6 +113,10 @@ router.get('/subscriptions', async function (req, res) {
     ],
     canAdd: canAdd(req.currentUser, 'subscriptions'), addUrl: canAdd(req.currentUser, 'subscriptions') ? '/subscriptions/new' : null, addLabel: 'اشتراك جديد',
     headerActions: canAdd(req.currentUser, 'subscriptions') ? [{ href: '/subscriptions/one-time', label: 'اشتراك لمرة واحدة', icon: 'fa-bolt', cls: 'btn-success' }] : [],
+    bulkUrl: '/subscriptions/bulk',
+    bulkActions: canDel(req.currentUser, 'subscriptions') ? [
+      { value: 'delete', label: 'حذف الاشتراكات المحددة', icon: 'fa-trash', confirm: 'هل أنت متأكد من حذف الاشتراكات المحددة؟ سيتم حذف مدفوعاتها وسجلها نهائياً.' }
+    ] : [],
     actions: () => row => {
       const acts = [
         { label: 'التفاصيل', icon: 'fa-eye', href: '/subscriptions/' + row.id },
@@ -415,6 +419,20 @@ router.post('/subscriptions/:id/delete', async function (req, res) {
   await db.prepare('DELETE FROM payments WHERE subscription_id=?').run(Number(req.params.id));
   await db.prepare('DELETE FROM subscription_history WHERE subscription_id=?').run(Number(req.params.id));
   await db.prepare('DELETE FROM subscriptions WHERE id=?').run(Number(req.params.id));
+  res.redirect('/subscriptions');
+});
+router.post('/subscriptions/bulk', async function (req, res) {
+  if (!canDel(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const ids = [].concat(req.body.ids || []).map(Number).filter(n => Number.isSafeInteger(n) && n > 0);
+  const action = String(req.body.action || '');
+  if (!ids.length) { setFlash(res, { type: 'error', message: 'لم يتم تحديد أي اشتراك' }); return res.redirect('/subscriptions'); }
+  if (action !== 'delete') { setFlash(res, { type: 'error', message: 'إجراء غير معروف' }); return res.redirect('/subscriptions'); }
+  const ph = ids.map(() => '?').join(',');
+  await db.prepare(`DELETE FROM payments WHERE subscription_id IN (${ph})`).run(...ids);
+  await db.prepare(`DELETE FROM subscription_history WHERE subscription_id IN (${ph})`).run(...ids);
+  await db.prepare(`DELETE FROM subscriptions WHERE id IN (${ph})`).run(...ids);
+  audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'subscriptions', null, 'حذف جماعي لعدد ' + ids.length + ' من الاشتراكات', req);
+  setFlash(res, { type: 'success', message: 'تم حذف ' + ids.length + ' اشتراك بنجاح' });
   res.redirect('/subscriptions');
 });
 
