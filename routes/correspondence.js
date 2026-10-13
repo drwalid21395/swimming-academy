@@ -319,6 +319,10 @@ router.get('/notifications', async function (req, res) {
       { name: 'is_broadcast', label: 'الإرسال', options: [{ value: '1', label: 'للكل' }, { value: '0', label: 'محدد' }] }
     ],
     canAdd: canAdd(req.currentUser, 'notifications'), addUrl: canAdd(req.currentUser, 'notifications') ? '/notifications/new' : null, addLabel: 'إشعار جديد',
+    bulkUrl: '/notifications/bulk',
+    bulkActions: canDel(req.currentUser, 'notifications') ? [
+      { value: 'delete', label: 'حذف الإشعارات المحددة', icon: 'fa-trash', confirm: 'هل أنت متأكد من حذف الإشعارات المحددة؟ يتم حذفها نهائياً.' }
+    ] : [],
     actions: () => row => [
       { label: 'حذف', icon: 'fa-trash', href: '/notifications/' + row.id + '/delete', confirm: 'حذف الإشعار؟', cls: 'text-danger' }
     ]
@@ -360,6 +364,19 @@ router.post('/notifications/:id/delete', async function (req, res) {
   const id = Number(req.params.id);
   await db.prepare('DELETE FROM notification_recipients WHERE notification_id=?').run(id);
   await db.prepare('DELETE FROM notifications WHERE id=?').run(id);
+  res.redirect('/notifications');
+});
+router.post('/notifications/bulk', async function (req, res) {
+  if (!canDel(req.currentUser, 'notifications')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const ids = [].concat(req.body.ids || []).map(Number).filter(n => Number.isSafeInteger(n) && n > 0);
+  const action = String(req.body.action || '');
+  if (!ids.length) { setFlash(res, { type: 'error', message: 'لم يتم تحديد أي إشعار' }); return res.redirect('/notifications'); }
+  if (action !== 'delete') { setFlash(res, { type: 'error', message: 'إجراء غير معروف' }); return res.redirect('/notifications'); }
+  const ph = ids.map(() => '?').join(',');
+  await db.prepare(`DELETE FROM notification_recipients WHERE notification_id IN (${ph})`).run(...ids);
+  await db.prepare(`DELETE FROM notifications WHERE id IN (${ph})`).run(...ids);
+  audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'notifications', null, 'حذف جماعي لعدد ' + ids.length + ' من الإشعارات', req);
+  setFlash(res, { type: 'success', message: 'تم حذف ' + ids.length + ' إشعار بنجاح' });
   res.redirect('/notifications');
 });
 
