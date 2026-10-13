@@ -416,9 +416,17 @@ router.post('/subscriptions/:id/edit', async function (req, res) {
 });
 router.post('/subscriptions/:id/delete', async function (req, res) {
   if (!canDel(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  await db.prepare('DELETE FROM payments WHERE subscription_id=?').run(Number(req.params.id));
-  await db.prepare('DELETE FROM subscription_history WHERE subscription_id=?').run(Number(req.params.id));
-  await db.prepare('DELETE FROM subscriptions WHERE id=?').run(Number(req.params.id));
+  const id = Number(req.params.id);
+  try {
+    await db.batch([
+      { sql: 'DELETE FROM payments WHERE subscription_id=?', args: [id] },
+      { sql: 'DELETE FROM subscription_history WHERE subscription_id=?', args: [id] },
+      { sql: 'DELETE FROM subscriptions WHERE id=?', args: [id] }
+    ]);
+  } catch (e) {
+    console.error('خطأ في حذف الاشتراك:', e.message);
+    setFlash(res, { type: 'error', message: 'فشل حذف الاشتراك: ' + e.message });
+  }
   res.redirect('/subscriptions');
 });
 router.post('/subscriptions/bulk', async function (req, res) {
@@ -428,9 +436,17 @@ router.post('/subscriptions/bulk', async function (req, res) {
   if (!ids.length) { setFlash(res, { type: 'error', message: 'لم يتم تحديد أي اشتراك' }); return res.redirect('/subscriptions'); }
   if (action !== 'delete') { setFlash(res, { type: 'error', message: 'إجراء غير معروف' }); return res.redirect('/subscriptions'); }
   const ph = ids.map(() => '?').join(',');
-  await db.prepare(`DELETE FROM payments WHERE subscription_id IN (${ph})`).run(...ids);
-  await db.prepare(`DELETE FROM subscription_history WHERE subscription_id IN (${ph})`).run(...ids);
-  await db.prepare(`DELETE FROM subscriptions WHERE id IN (${ph})`).run(...ids);
+  try {
+    await db.batch([
+      { sql: `DELETE FROM payments WHERE subscription_id IN (${ph})`, args: ids },
+      { sql: `DELETE FROM subscription_history WHERE subscription_id IN (${ph})`, args: ids },
+      { sql: `DELETE FROM subscriptions WHERE id IN (${ph})`, args: ids }
+    ]);
+  } catch (e) {
+    console.error('خطأ في الحذف الجماعي للاشتراكات:', e.message);
+    setFlash(res, { type: 'error', message: 'فشل الحذف الجماعي: ' + e.message });
+    return res.redirect('/subscriptions');
+  }
   audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'subscriptions', null, 'حذف جماعي لعدد ' + ids.length + ' من الاشتراكات', req);
   setFlash(res, { type: 'success', message: 'تم حذف ' + ids.length + ' اشتراك بنجاح' });
   res.redirect('/subscriptions');
