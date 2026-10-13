@@ -421,6 +421,8 @@ router.post('/subscriptions/:id/delete', async function (req, res) {
     await db.batch([
       { sql: 'DELETE FROM payments WHERE subscription_id=?', args: [id] },
       { sql: 'DELETE FROM subscription_history WHERE subscription_id=?', args: [id] },
+      { sql: 'DELETE FROM payment_requests WHERE subscription_id=?', args: [id] },
+      { sql: 'DELETE FROM whatsapp_messages WHERE subscription_id=?', args: [id] },
       { sql: 'DELETE FROM subscriptions WHERE id=?', args: [id] }
     ]);
   } catch (e) {
@@ -440,6 +442,8 @@ router.post('/subscriptions/bulk', async function (req, res) {
     await db.batch([
       { sql: `DELETE FROM payments WHERE subscription_id IN (${ph})`, args: ids },
       { sql: `DELETE FROM subscription_history WHERE subscription_id IN (${ph})`, args: ids },
+      { sql: `DELETE FROM payment_requests WHERE subscription_id IN (${ph})`, args: ids },
+      { sql: `DELETE FROM whatsapp_messages WHERE subscription_id IN (${ph})`, args: ids },
       { sql: `DELETE FROM subscriptions WHERE id IN (${ph})`, args: ids }
     ]);
   } catch (e) {
