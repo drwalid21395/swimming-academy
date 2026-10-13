@@ -143,13 +143,12 @@ router.post('/levels/shared', async function (req, res) {
 /* ============================================================== */
 /*                           البرامج                              */
 /* ============================================================== */
-const programFields = async function (values) {
+const programFields = async function (values, opts) {
   const coaches = (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL').all()).map(c => ({ value: c.id, label: c.full_name }));
   const pools = (await db.prepare('SELECT * FROM pools').all()).map(p => ({ value: p.id, label: p.name }));
   const branches = (await db.prepare('SELECT * FROM branches').all()).map(b => ({ value: b.id, label: b.name }));
-  return [
+  const fields = [
     { key: 'name', label: 'اسم البرنامج', type: 'text', required: true, section: 'البيانات الأساسية', sectionIcon: 'fa-file-lines' },
-    { key: 'type', label: 'نوع البرنامج', type: 'select', required: true, options: (await programTypes()).map(v => ({ value: v, label: v })) },
     { key: 'status', label: 'الحالة', type: 'select', options: PROGRAM_STATUS.map(v => ({ value: v, label: v })) },
     { key: 'description', label: 'وصف البرنامج', type: 'textarea', full: true },
     { key: 'age_from', label: 'السن من', type: 'number', number: true, section: 'الفئة والمستوى', sectionIcon: 'fa-users' },
@@ -169,6 +168,10 @@ const programFields = async function (values) {
     { key: 'success_conditions', label: 'شروط النجاح أو الانتقال', type: 'textarea', full: true },
     { key: 'certificate_name', label: 'الشهادة التي يحصل عليها المتدرب', type: 'text' }
   ];
+  if (!opts || !opts.isNew) {
+    fields.splice(1, 0, { key: 'type', label: 'نوع البرنامج', type: 'select', required: true, options: (await programTypes()).map(v => ({ value: v, label: v })) });
+  }
+  return fields;
 };
 
 const PROGRAM_COLS = ['name','type','description','age_from','age_to','level_required','sessions_count','session_duration_min','weeks_count','price','max_subscribers','schedule_note','coach_id','pool_id','branch_id','tests_required','success_conditions','certificate_name','status'];
@@ -176,6 +179,7 @@ const PROGRAM_FK = ['coach_id', 'pool_id', 'branch_id'];
 function programVals(b) {
   return PROGRAM_COLS.map(function (c) {
     let v = b[c];
+    if (c === 'type' && (v === undefined || v === '')) v = 'تعليم سباحة';
     if (v === '') v = (PROGRAM_FK.indexOf(c) >= 0 ? null : '');
     return v ?? null;
   });
@@ -225,7 +229,7 @@ router.get('/programs', async function (req, res) {
 });
 
 router.get('/programs/new', async function (req, res) {
-  res.render('form', { form: { title: 'برنامج جديد', subtitle: 'إنشاء برنامج أو دورة جديدة', icon: 'fa-plus', active: 'programs', action: '/programs/new', fields: await programFields({}), values: {}, submitLabel: 'إنشاء البرنامج', cancelUrl: '/programs', csrf: '' } });
+  res.render('form', { form: { title: 'برنامج جديد', subtitle: 'إنشاء برنامج أو دورة جديدة', icon: 'fa-plus', active: 'programs', action: '/programs/new', fields: await programFields({}, { isNew: true }), values: {}, submitLabel: 'إنشاء البرنامج', cancelUrl: '/programs', csrf: '' } });
 });
 router.post('/programs/new', async function (req, res) {
   const b = req.body;
