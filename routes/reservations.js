@@ -46,7 +46,11 @@ router.get('/reservations', async function (req, res) {
     title: 'حجوزات الموقع',
     subtitle: 'طلبات حجز الأماكن القادمة من الموقع — تُظهر تفاصيل كل طلب بالكامل',
     icon: 'fa-calendar-check', module: 'reservations', active: 'reservations',
-    rows, status, from, to, statuses: RESERVE_STATUS, today: new Date().toISOString().slice(0, 10)
+    rows, status, from, to, statuses: RESERVE_STATUS, today: new Date().toISOString().slice(0, 10),
+    bulkUrl: '/reservations/bulk',
+    bulkActions: canDel(req.currentUser, 'reservations') ? [
+      { value: 'delete', label: 'حذف الحجوزات المحددة', icon: 'fa-trash', confirm: 'هل أنت متأكد من حذف الحجوزات المحددة؟ يتم حذفها نهائياً.' }
+    ] : []
   };
   res.render('reservations', { page, fmtDateTime });
 });
@@ -200,6 +204,18 @@ router.post('/reservations/:id/delete', async function (req, res) {
   await db.prepare('DELETE FROM reservations WHERE id = ?').run(id);
   audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'reservations', id, 'حذف حجز', req);
   setFlash(res, { type: 'success', message: 'تم حذف الحجز' });
+  res.redirect('/reservations');
+});
+router.post('/reservations/bulk', async function (req, res) {
+  if (!canDel(req.currentUser, 'reservations')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const ids = [].concat(req.body.ids || []).map(Number).filter(n => Number.isSafeInteger(n) && n > 0);
+  const action = String(req.body.action || '');
+  if (!ids.length) { setFlash(res, { type: 'error', message: 'لم يتم تحديد أي حجز' }); return res.redirect('/reservations'); }
+  if (action !== 'delete') { setFlash(res, { type: 'error', message: 'إجراء غير معروف' }); return res.redirect('/reservations'); }
+  const ph = ids.map(() => '?').join(',');
+  await db.prepare(`DELETE FROM reservations WHERE id IN (${ph})`).run(...ids);
+  audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'reservations', null, 'حذف جماعي لعدد ' + ids.length + ' من الحجوزات', req);
+  setFlash(res, { type: 'success', message: 'تم حذف ' + ids.length + ' حجز بنجاح' });
   res.redirect('/reservations');
 });
 
