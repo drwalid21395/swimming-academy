@@ -72,14 +72,15 @@ function computeTotal(price, discount, tax) {
 }
 
 function subscriptionAmounts(b) {
-  const type = b.subscription_type === 'per_session' ? 'per_session' : 'normal';
+  const type = b.subscription_type === 'per_session' ? 'per_session' : (b.subscription_type === 'one_time' ? 'one_time' : 'normal');
   const sessionsTotal = Number(b.sessions_total || 0);
   if (!Number.isFinite(sessionsTotal) || sessionsTotal < 1) return { error: 'يجب إدخال عدد حصص صحيح أكبر من صفر' };
-  const unitPrice = type === 'per_session' ? Number(b.price_per_session || 0) : 0;
-  if (type === 'per_session' && (!Number.isFinite(unitPrice) || unitPrice <= 0)) return { error: 'يجب إدخال سعر صحيح للحصة' };
-  const price = type === 'per_session' ? unitPrice * sessionsTotal : Number(b.price || 0);
+  const pricedBySession = type === 'per_session' || type === 'one_time';
+  const unitPrice = pricedBySession ? Number(b.price_per_session || 0) : 0;
+  if (pricedBySession && (!Number.isFinite(unitPrice) || unitPrice <= 0)) return { error: 'يجب إدخال سعر صحيح للحصة' };
+  const price = pricedBySession ? unitPrice * sessionsTotal : Number(b.price || 0);
   if (!Number.isFinite(price) || price < 0) return { error: 'قيمة الاشتراك غير صالحة' };
-  const total = type === 'per_session' || b.total === '' || b.total == null
+  const total = pricedBySession || b.total === '' || b.total == null
     ? computeTotal(price, b.discount, b.tax)
     : Number(b.total);
   if (!Number.isFinite(total) || total < 0) return { error: 'الإجمالي غير صالح' };
@@ -137,7 +138,7 @@ const subFields = async function (values, req) {
       { key: 'swimmer_id', label: 'اللاعب', type: 'select', options: await swimmerOptions(sid), required: true, section: 'بيانات الاشتراك', sectionIcon: 'fa-file-contract' },
       { key: 'program_id', label: 'البرنامج', type: 'select', options: await programOptions(sid) },
       { key: 'group_id', label: 'المجموعة', type: 'select', options: await groupOptions(sid) },
-    { key: 'subscription_type', label: 'نوع الاشتراك', type: 'select', value: 'normal', options: [{ value: 'normal', label: 'اشتراك عادي' }, { value: 'per_session', label: 'اشتراك بالحصة' }] },
+    { key: 'subscription_type', label: 'نوع الاشتراك', type: 'select', value: 'normal', options: [{ value: 'normal', label: 'اشتراك عادي' }, { value: 'per_session', label: 'اشتراك بالحصة' }, { value: 'one_time', label: 'لمرة واحدة' }] },
       { key: 'start_date', label: 'تاريخ البداية', type: 'date' },
       { key: 'end_date', label: 'تاريخ النهاية', type: 'date' },
       { key: 'sessions_total', label: 'إجمالي الحصص', type: 'number', number: true, required: true },

@@ -222,9 +222,21 @@ document.addEventListener('DOMContentLoaded', function () {
   var discount = document.getElementById('f_discount');
   var tax = document.getElementById('f_tax');
   var total = document.getElementById('f_total');
+  var end = document.getElementById('f_end_date');
+  var status = document.getElementById('f_status');
   function number(el) { return Number(el && el.value || 0) || 0; }
+  /* حالة الاشتراك تتبع تاريخ النهاية تلقائياً (نشط ⟷ منتهي) */
+  function syncStatus() {
+    if (!end || !status || !end.value) return;
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var ed = new Date(end.value + 'T00:00:00');
+    if (isNaN(ed.getTime())) return;
+    var expired = ed < today;
+    if (expired && status.value === 'نشط') status.value = 'منتهي';
+    else if (!expired && status.value === 'منتهي') status.value = 'نشط';
+  }
   function sync() {
-    var perSession = type.value === 'per_session';
+    var perSession = type.value === 'per_session' || type.value === 'one_time';
     if (unit) unit.closest('.form-group').style.display = perSession ? '' : 'none';
     if (price) {
       price.readOnly = perSession;
@@ -239,6 +251,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
   [type, unit, sessions, discount, tax].forEach(function (el) { if (el) el.addEventListener('input', sync); if (el) el.addEventListener('change', sync); });
+  if (end) { end.addEventListener('change', syncStatus); end.addEventListener('blur', syncStatus); }
   sync();
 })();
 </script>
