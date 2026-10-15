@@ -57,6 +57,33 @@
         </div>
       </div>
       <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> حفظ الإعدادات</button>
+
+      <hr style="margin:18px 0;border-color:var(--border)">
+      <div class="section-title-lg"><i class="fas fa-robot"></i> الرد التلقائي على واتساب (Webhook)</div>
+      <p style="color:var(--text-soft);margin:0 0 14px;font-size:13px">
+        عند تفعيله، يرد النظام تلقائياً على كل رسالة واتساب واردة برسالة مولّدة بالذكاء الاصطناعي
+        مبنية على بيانات الموقع الحالية (البرامج، الأسعار، الأخبار، مواعيد العمل) مباشرة من قاعدة البيانات.
+      </p>
+      <div class="form-grid">
+        <div class="form-group full">
+          <label><input type="checkbox" name="wa_auto_reply" value="1" <%= current.wa_auto_reply === '1' ? 'checked' : '' %> style="width:auto;display:inline-block;margin-left:6px"> تفعيل الرد التلقائي</label>
+        </div>
+        <div class="form-group full">
+          <label>رابط الـ Webhook (انسخه في Meta Developers)</label>
+          <input type="text" class="form-control" value="<%= webhookUrl %>" readonly dir="ltr" onclick="this.select()">
+        </div>
+        <div class="form-group">
+          <label>Verify Token</label>
+          <input type="text" class="form-control" name="whatsapp_webhook_token" value="<%= current.whatsapp_webhook_token || '' %>" dir="ltr" placeholder="مثال: myAcademy2026">
+          <small style="color:var(--text-soft)">رمز تأكيد يطابق ما ستدخله في إعدادات Meta</small>
+        </div>
+      </div>
+      <ol style="color:var(--text-soft);font-size:12px;margin:10px 0 0;padding-right:18px">
+        <li>رقم واتساب <b>Business</b> مع تفعيل WhatsApp Cloud API من Meta for Developers.</li>
+        <li>في Configuration أضف الرابط (دون <code>/webhooks/whatsapp</code> إضافي) فوق، واجعل Verify Token أعلاه، ثم تحقق (Verify).</li>
+        <li>فعّل حقل <code>messages</code> في Webhook fields، وسجّل نفس مفتاح Meta API و Phone ID في «إعدادات واتساب» بالموقع.</li>
+        <li>إن لم يتوفر مفتاح AI يعمل أو فشل المزوّد، يُرسل رد بديل لطيف مع رقم الهاتف.</li>
+      </ol>
     </form>
   </div>
 </div>

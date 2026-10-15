@@ -7,7 +7,7 @@ const { setFlash } = require('../lib/auth-cookie');
 const { aiDraftReply, PROVIDERS, DEFAULT_MODEL, settingsMap } = require('../lib/ai');
 const { sendViaApi, logMessage, waLinkFor, normalizePhone } = require('../lib/whatsapp');
 
-const AI_KEYS = ['ai_enabled', 'ai_provider', 'ai_api_key', 'ai_model', 'ai_tone', 'ai_max_length', 'ai_instructions'];
+const AI_KEYS = ['ai_enabled', 'ai_provider', 'ai_api_key', 'ai_model', 'ai_tone', 'ai_max_length', 'ai_instructions', 'wa_auto_reply', 'whatsapp_webhook_token'];
 
 router.get('/ai-replies', async function (req, res) {
   if (!canView(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -20,9 +20,10 @@ router.get('/ai-replies', async function (req, res) {
   current.ai_max_length = current.ai_max_length || '300';
   const guardians = await db.prepare('SELECT id, full_name, phone, whatsapp FROM guardians ORDER BY full_name').all();
   const lastMsgs = await db.prepare('SELECT * FROM whatsapp_messages ORDER BY id DESC LIMIT 15').all();
+  const webhookUrl = (req.protocol || 'https') + '://' + (req.get('host') || '') + '/webhooks/whatsapp';
   res.render('ai_replies', {
     title: 'الردود الذكية', active: 'ai_replies',
-    current, guardians, lastMsgs, providers: PROVIDERS,
+    current, guardians, lastMsgs, providers: PROVIDERS, webhookUrl,
     canEdit: canEdit(req.currentUser, 'settings')
   });
 });
@@ -31,7 +32,7 @@ router.post('/ai-replies/settings', async function (req, res) {
   if (!canEdit(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const st = await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)');
   for (const k of AI_KEYS) {
-    st.run(k, k === 'ai_enabled' ? (req.body[k] ? '1' : '0') : String(req.body[k] || '').trim());
+    st.run(k, k === 'ai_enabled' || k === 'wa_auto_reply' ? (req.body[k] ? '1' : '0') : String(req.body[k] || '').trim());
   }
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'settings', 0, 'تحديث إعدادات الردود الذكية', req);
   setFlash(res, { type: 'success', message: 'تم حفظ إعدادات الردود الذكية' });

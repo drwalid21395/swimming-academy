@@ -202,7 +202,7 @@ crud(router, '/coaches', {
 /* ============================================================== */
 /*                           اللاعبون                             */
 /* ============================================================== */
-const SW_STATUS = ['نشط', 'متوقف مؤقتاً', 'مجمد', 'منسحب', 'خريج'];
+const SW_STATUS = ['نشط', 'متوقف مؤقتاً', 'مجمد', 'منسحب', 'خريج', 'منتهي'];
 const SW_GENDER = ['ذكر', 'أنثى'];
 
 const swimmerFields = async function (values, req) {
@@ -970,7 +970,7 @@ router.get('/groups/:id/swimmers.xls', async function (req, res) {
 });
 
 function statusBadge(st) {
-  const map = { 'نشط': ['badge-success', 'fa-user-check'], 'متوقف مؤقتاً': ['badge-warning', 'fa-pause'], 'مجمد': ['badge-info', 'fa-snowflake'], 'منسحب': ['badge-danger', 'fa-user-minus'], 'خريج': ['badge-purple', 'fa-graduation-cap'] };
+  const map = { 'نشط': ['badge-success', 'fa-user-check'], 'متوقف مؤقتاً': ['badge-warning', 'fa-pause'], 'مجمد': ['badge-info', 'fa-snowflake'], 'منسحب': ['badge-danger', 'fa-user-minus'], 'خريج': ['badge-purple', 'fa-graduation-cap'], 'منتهي': ['badge-danger', 'fa-calendar-xmark'] };
   const m = map[st] || ['badge-gray', 'fa-circle'];
   return `<span class="badge ${m[0]}"><i class="fas ${m[1]}"></i> ${st}</span>`;
 }

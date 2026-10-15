@@ -9,6 +9,7 @@ const { withAcademy } = require('./lib/tenant-context');
 const { securityHeaders, stripServerHeader, csrfProtect } = require('./lib/security');
 const { readSport, setSport } = require('./lib/sport-context');
 const { enabledSportsForAcademy } = require('./lib/sports');
+const { syncExpiredSubscriptions } = require('./lib/expiry');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,6 +32,10 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '12mb' }));
+
+/* Webhook الواتساب الوارد: يُثبَّت قبل طبقات الحماية لأن Meta يرسل من خوادمها
+   (لا جلسة ولا Origin) ويُصادق عبر Verify Token. */
+app.use('/webhooks/whatsapp', require('./routes/webhook'));
 
 /* الترويسات الأمنية على كل الردود (بما فيها الملفات الثابتة) */
 app.use(stripServerHeader);
@@ -129,6 +134,8 @@ app.use(async function (req, res, next) {
   try {
     await ready();
     res.set('Cache-Control', 'no-store');
+    /* مزامنة دورية مخنوقة: تحوّل حالة اللاعب إلى «منتهي» عند انتهاء اشتراكه */
+    try { await syncExpiredSubscriptions(); } catch (e) { console.error('مزامنة انتهاء الاشتراكات:', e.message); }
     const settingsRows = await db.all('SELECT * FROM settings');
     const settings = {};
     settingsRows.forEach(r => { settings[r.key] = r.value; });
@@ -150,7 +157,7 @@ app.use(async function (req, res, next) {
     res.locals.today = today;
     res.locals.parseJSON = parseJSON;
     res.locals.statusBadge = function (st) {
-      const map = { 'نشط': ['badge-success', 'fa-user-check'], 'متوقف مؤقتاً': ['badge-warning', 'fa-pause'], 'مجمد': ['badge-info', 'fa-snowflake'], 'منسحب': ['badge-danger', 'fa-user-minus'], 'خريج': ['badge-purple', 'fa-graduation-cap'] };
+      const map = { 'نشط': ['badge-success', 'fa-user-check'], 'متوقف مؤقتاً': ['badge-warning', 'fa-pause'], 'مجمد': ['badge-info', 'fa-snowflake'], 'منسحب': ['badge-danger', 'fa-user-minus'], 'خريج': ['badge-purple', 'fa-graduation-cap'], 'منتهي': ['badge-danger', 'fa-calendar-xmark'] };
       const m = map[st] || ['badge-gray', 'fa-circle'];
       return `<span class="badge ${m[0]}"><i class="fas ${m[1]}"></i> ${st}</span>`;
     };
@@ -227,7 +234,7 @@ app.use(async function (req, res, next) {
 
 /* منع الوصول للوحة بدون تسجيل دخول */
 app.use(function (req, res, next) {
-  const publicPaths = ['/login', '/site', '/api/site'];
+  const publicPaths = ['/login', '/site', '/api/site', '/webhooks'];
   if (publicPaths.some(p => req.path.startsWith(p))) return next();
   if (!req.currentUser) {
     if (req.path.startsWith('/api/')) return res.status(401).json({ ok: false, error: 'غير مصرح' });

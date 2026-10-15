@@ -39,7 +39,7 @@
         <div class="detail-item"><div class="dl">الضريبة</div><div class="dv"><%= s.tax ? money(s.tax) : '—' %></div></div>
         <div class="detail-item"><div class="dl">طريقة الدفع</div><div class="dv"><%= s.payment_method %></div></div>
         <div class="detail-item"><div class="dl">رقم الإيصال</div><div class="dv"><%= s.receipt_no || '—' %></div></div>
-        <div class="detail-item"><div class="dl">الحالة</div><div class="dv"><span class="badge <%= s.status === 'نشط' ? 'badge-success' : s.status === 'مكتمل' ? 'badge-primary' : s.status === 'منتهي' ? 'badge-gray' : s.status === 'مجمد' ? 'badge-info' : 'badge-danger' %>"><%= s.status %></span></div></div>
+        <div class="detail-item"><div class="dl">الحالة</div><div class="dv"><span class="badge <%= s.status === 'نشط' ? 'badge-success' : s.status === 'مكتمل' ? 'badge-primary' : s.status === 'منتهي' ? 'badge-danger' : s.status === 'مجمد' ? 'badge-info' : 'badge-danger' %>"><%= s.status %></span></div></div>
         <div class="detail-item full"><div class="dl">ملاحظات</div><div class="dv"><%= s.notes || '—' %></div></div>
       </div>
     </div>

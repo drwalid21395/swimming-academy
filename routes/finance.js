@@ -103,7 +103,7 @@ router.get('/subscriptions', async function (req, res) {
       { key: 'sessions_used', label: 'الحصص', html: row => `<span class="badge badge-info">${row.sessions_used} / ${row.sessions_total}</span>` },
       { key: 'total', label: 'الإجمالي', html: row => `<span class="fw-700 text-primary">${money(row.total)}</span>` },
       { key: 'remaining', label: 'المتبقي', html: row => row.remaining > 0 ? `<span class="fw-700 text-danger">${money(row.remaining)}</span>` : `<span class="fw-700 text-success">مسدد</span>` },
-      { key: 'status', label: 'الحالة', html: row => `<span class="badge ${row.status === 'نشط' ? 'badge-success' : row.status === 'مكتمل' ? 'badge-primary' : row.status === 'منتهي' ? 'badge-gray' : row.status === 'مجمد' ? 'badge-info' : 'badge-danger'}">${row.status}</span>` }
+      { key: 'status', label: 'الحالة', html: row => `<span class="badge ${row.status === 'نشط' ? 'badge-success' : row.status === 'مكتمل' ? 'badge-primary' : row.status === 'منتهي' ? 'badge-danger' : row.status === 'مجمد' ? 'badge-info' : 'badge-danger'}">${row.status}</span>` }
     ],
     rows,
     filters: [
