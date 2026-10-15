@@ -9,6 +9,15 @@ function attendanceCounts(status) {
   return status === 'present' || status === 'late';
 }
 
+/* حالة اشتراك اللاعب (تاريخ الانتهاء ولونه) لعرضه بجوار الاسم في الحضور */
+function subBadge(end) {
+  if (!end) return null;
+  const d = String(end).slice(0, 10);
+  const days = Math.round((new Date(d + 'T00:00:00') - new Date(today() + 'T00:00:00')) / 86400000);
+  if (isNaN(days)) return null;
+  return { date: d, days: days, state: days < 0 ? 'expired' : (days <= 7 ? 'soon' : 'active') };
+}
+
 async function syncSubscriptionUsage(swimmerId, groupId, beforeStatus, afterStatus) {
   const before = attendanceCounts(beforeStatus);
   const after = attendanceCounts(afterStatus);
@@ -211,7 +220,10 @@ router.get('/attendance', async function (req, res) {
   const groups = [];
   for (const g of groupRows) {
     await syncGroup(g.id);
-    const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no FROM swimmer_group sg JOIN swimmers s ON s.id = sg.swimmer_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(g.id);
+    const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no,
+        (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status = 'نشط' ORDER BY sub.id DESC LIMIT 1) AS sub_end
+      FROM swimmer_group sg JOIN swimmers s ON s.id = sg.swimmer_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(g.id);
+    members.forEach(m => { m.sub = subBadge(m.sub_end); });
     const session = await db.prepare(`SELECT * FROM sessions WHERE group_id = ? AND date = ? AND deleted_at IS NULL ORDER BY start_time LIMIT 1`).get(g.id, date);
     const attMap = {};
     if (session) (await db.prepare('SELECT swimmer_id, status FROM attendance WHERE session_id = ?').all(session.id)).forEach(function (a) { attMap[a.swimmer_id] = a.status; });
@@ -235,12 +247,15 @@ router.get('/attendance/session/:id', async function (req, res) {
     LEFT JOIN groups g ON g.id = se.group_id LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id WHERE se.id = ?` + sessionClause(activeSport(req), 'se')).get(id);
   if (!s) return res.redirect('/attendance');
   await syncGroup(s.group_id);
-  const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, s.birth_date, a.status AS att_status, a.reason, a.coach_note, a.id AS att_id FROM swimmer_group sg
+  const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, s.birth_date, a.status AS att_status, a.reason, a.coach_note, a.id AS att_id,
+      (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status = 'نشط' ORDER BY sub.id DESC LIMIT 1) AS sub_end
+    FROM swimmer_group sg
     JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN attendance a ON a.session_id = ? AND a.swimmer_id = s.id
     WHERE sg.group_id = ? ORDER BY s.full_name`).all(id, s.group_id);
+  members.forEach(m => { m.sub = subBadge(m.sub_end); });
   res.render('attendance_session', {
     title: 'تسجيل الحضور', active: 'attendance',
-    s, members, date: today(), money,
+    s, members, date: today(), today: today(), money,
     page: { canEdit: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance') },
     canSave: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance')
   });

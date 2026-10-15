@@ -39,6 +39,11 @@
             <div>
               <b><%= m.full_name %></b>
               <div class="font-11 text-muted"><%= m.membership_no %></div>
+              <% if (m.sub) { %>
+                <span class="badge <%= m.sub.state === 'expired' ? 'badge-danger' : (m.sub.state === 'soon' ? 'badge-warning' : 'badge-success') %>" style="margin-top:2px" title="<%= m.sub.state === 'expired' ? 'الاشتراك منتهٍ' : 'ينتهي الاشتراك في ' + fmtDate(m.sub.date) %>">
+                  <i class="fas fa-calendar-check"></i> ينتهي: <%= fmtDate(m.sub.date) %>
+                </span>
+              <% } %>
             </div>
           </div>
         </div>
