@@ -258,12 +258,12 @@ const swimmerFields = async function (values, req) {
 router.get('/swimmers', async function (req, res) {
   const { status, program, level, coach_id, q } = req.query;
   let sql = `SELECT s.*, g.full_name AS guardian_name, l.name AS level_name, gr.name AS group_name, c.full_name AS coach_name, p.name AS program_name,
-    COALESCE((SELECT sub.sessions_used FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1),0) AS used,
-    COALESCE((SELECT sub.sessions_total FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1),0) AS stotal,
-    COALESCE((SELECT sub.paid_amount FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1),0) AS sub_paid,
-    COALESCE((SELECT sub.remaining FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1),0) AS sub_remaining,
-    (SELECT sub.start_date FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1) AS sub_start,
-    (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status='نشط' ORDER BY sub.id DESC LIMIT 1) AS sub_end
+    COALESCE((SELECT sub.sessions_used FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status='نشط') DESC, sub.id DESC LIMIT 1),0) AS used,
+    COALESCE((SELECT sub.sessions_total FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status='نشط') DESC, sub.id DESC LIMIT 1),0) AS stotal,
+    COALESCE((SELECT sub.paid_amount FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status='نشط') DESC, sub.id DESC LIMIT 1),0) AS sub_paid,
+    COALESCE((SELECT sub.remaining FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status='نشط') DESC, sub.id DESC LIMIT 1),0) AS sub_remaining,
+    (SELECT sub.start_date FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status='نشط') DESC, sub.id DESC LIMIT 1) AS sub_start,
+    (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status='نشط') DESC, sub.id DESC LIMIT 1) AS sub_end
     FROM swimmers s
     LEFT JOIN guardians g ON g.id = s.guardian_id
     LEFT JOIN levels l ON l.id = s.level_id

@@ -486,7 +486,7 @@ router.get('/payments/new', async function (req, res) {
   res.render('form', { form: { title: 'دفعة جديدة', subtitle: 'تسجيل دفعة مالية', icon: 'fa-plus', active: 'payments', action: '/payments/new',
     fields: [
       { key: 'swimmer_id', label: 'اللاعب', type: 'select', options: await swimmerOptions(activeSport(req)), required: true },
-      { key: 'subscription_id', label: 'الاشتراك (اختياري)', type: 'select', options: (await db.prepare("SELECT * FROM subscriptions WHERE status='نشط'" + progClause(activeSport(req), 'subscriptions') + " ORDER BY id DESC").all()).map(x => ({ value: x.id, label: '#' + x.id + ' — ' + x.swimmer_id })) },
+      { key: 'subscription_id', label: 'الاشتراك (اختياري)', type: 'select', options: (await db.prepare("SELECT * FROM subscriptions WHERE status IN ('نشط', 'منتهي')" + progClause(activeSport(req), 'subscriptions') + " ORDER BY id DESC").all()).map(x => ({ value: x.id, label: '#' + x.id + ' — ' + x.swimmer_id })) },
       { key: 'amount', label: 'المبلغ (ج.م)', type: 'number', number: true, required: true },
       { key: 'method', label: 'طريقة الدفع', type: 'select', options: ['نقدي', 'تحويل بنكي', 'بطاقة', 'محفظة إلكترونية', 'شيك'].map(v => ({ value: v, label: v })) },
       { key: 'receipt_no', label: 'رقم الإيصال', type: 'text' },

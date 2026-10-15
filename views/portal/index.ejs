@@ -48,7 +48,7 @@
           <div class="detail-item"><div class="dl">المدرسة</div><div class="dv"><%= k.s.school || '—' %></div></div>
           <div class="detail-item"><div class="dl">تاريخ التسجيل</div><div class="dv"><%= fmtDate(k.s.registration_date) %></div></div>
           <div class="detail-item"><div class="dl">حالة الاشتراك</div><div class="dv">
-            <% if (k.sub) { %><span class="badge <%= k.sub.status === 'نشط' ? 'badge-success' : 'badge-warning' %>"><%= k.sub.status %></span>
+            <% if (k.sub) { %><span class="badge <%= k.sub.status === 'نشط' ? 'badge-success' : k.sub.status === 'منتهي' ? 'badge-danger' : 'badge-warning' %>"><%= k.sub.status %></span>
               حتى <%= fmtDate(k.sub.end_date) %><% } else { %>—<% } %>
           </div></div>
         </div>

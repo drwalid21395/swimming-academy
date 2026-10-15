@@ -30,6 +30,12 @@ async function syncSubscriptionUsage(swimmerId, groupId, beforeStatus, afterStat
   if (!sub) return;
   await db.prepare(`UPDATE subscriptions SET sessions_used = MIN(sessions_total, MAX(0, sessions_used + ?)) WHERE id = ?`)
     .run(after ? 1 : -1, sub.id);
+  /* تحديث فوري لحالة الاشتراك بحسب استهلاك الحصص */
+  await db.prepare(`UPDATE subscriptions SET status = 'منتهي'
+    WHERE id = ? AND status = 'نشط' AND sessions_total > 0 AND sessions_used >= sessions_total`).run(sub.id);
+  await db.prepare(`UPDATE subscriptions SET status = 'نشط'
+    WHERE id = ? AND status = 'منتهي' AND (end_date IS NULL OR date(end_date) >= date(?))
+      AND (sessions_total = 0 OR sessions_used < sessions_total)`).run(sub.id, today());
 }
 const router = express.Router();
 
@@ -221,7 +227,7 @@ router.get('/attendance', async function (req, res) {
   for (const g of groupRows) {
     await syncGroup(g.id);
     const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no,
-        (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status = 'نشط' ORDER BY sub.id DESC LIMIT 1) AS sub_end
+        (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status = 'نشط') DESC, sub.id DESC LIMIT 1) AS sub_end
       FROM swimmer_group sg JOIN swimmers s ON s.id = sg.swimmer_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(g.id);
     members.forEach(m => { m.sub = subBadge(m.sub_end); });
     const session = await db.prepare(`SELECT * FROM sessions WHERE group_id = ? AND date = ? AND deleted_at IS NULL ORDER BY start_time LIMIT 1`).get(g.id, date);
@@ -248,7 +254,7 @@ router.get('/attendance/session/:id', async function (req, res) {
   if (!s) return res.redirect('/attendance');
   await syncGroup(s.group_id);
   const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, s.birth_date, a.status AS att_status, a.reason, a.coach_note, a.id AS att_id,
-      (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id AND sub.status = 'نشط' ORDER BY sub.id DESC LIMIT 1) AS sub_end
+      (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status = 'نشط') DESC, sub.id DESC LIMIT 1) AS sub_end
     FROM swimmer_group sg
     JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN attendance a ON a.session_id = ? AND a.swimmer_id = s.id
     WHERE sg.group_id = ? ORDER BY s.full_name`).all(id, s.group_id);
@@ -425,8 +431,8 @@ router.post('/sessions/:id/cancel', async function (req, res) {
   if (b.extend === '1' && swimmerIds.length) {
     const ndays = Math.max(1, Math.min(365, Number(b.extend_days) || 1));
     const placeholders = swimmerIds.map(() => '?').join(',');
-    const info = await db.prepare(`UPDATE subscriptions SET end_date = date(end_date, '+' || ? || ' days'), notes = COALESCE(notes || char(10), '') || 'تم مدّ الاشتراك ' || ? || ' يوم بعد إلغاء حصة بتاريخ ' || ?
-      WHERE swimmer_id IN (${placeholders}) AND status = 'نشط' AND end_date IS NOT NULL`)
+    const info = await db.prepare(`UPDATE subscriptions SET status = 'نشط', end_date = date(end_date, '+' || ? || ' days'), notes = COALESCE(notes || char(10), '') || 'تم مدّ الاشتراك ' || ? || ' يوم بعد إلغاء حصة بتاريخ ' || ?
+      WHERE swimmer_id IN (${placeholders}) AND status IN ('نشط', 'منتهي') AND end_date IS NOT NULL`)
       .run(ndays, ndays, s.date, ...swimmerIds);
     extendedCount = info.changes;
     audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'subscriptions', id, 'مدّ ' + extendedCount + ' اشتراكاً بـ ' + ndays + ' يوم', req);
@@ -436,8 +442,8 @@ router.post('/sessions/:id/cancel', async function (req, res) {
   let balanceAdded = 0;
   if (b.add_to_balance === '1' && createdCount > 0 && swimmerIds.length) {
     const placeholders = swimmerIds.map(() => '?').join(',');
-    const info = await db.prepare(`UPDATE subscriptions SET sessions_total = sessions_total + ?
-      WHERE swimmer_id IN (${placeholders}) AND status = 'نشط'`).run(createdCount, ...swimmerIds);
+    const info = await db.prepare(`UPDATE subscriptions SET status = 'نشط', sessions_total = sessions_total + ?
+      WHERE swimmer_id IN (${placeholders}) AND status IN ('نشط', 'منتهي')`).run(createdCount, ...swimmerIds);
     balanceAdded = info.changes;
     audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'subscriptions', id, 'إضافة ' + createdCount + ' حصة لرصيد ' + balanceAdded + ' اشتراك', req);
   }

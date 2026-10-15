@@ -198,7 +198,7 @@
                 <td><%= money(sub.total) %></td>
                 <td class="text-success fw-700"><%= money(sub.paid_amount) %></td>
                 <td class="<%= sub.remaining > 0 ? 'text-danger fw-700' : '' %>"><%= money(sub.remaining) %></td>
-                <td><span class="badge <%= sub.status === 'نشط' ? 'badge-success' : sub.status === 'مجمد' ? 'badge-info' : sub.status === 'مكتمل' ? 'badge-purple' : 'badge-gray' %>"><%= sub.status %></span></td>
+                <td><span class="badge <%= sub.status === 'نشط' ? 'badge-success' : sub.status === 'مجمد' ? 'badge-info' : sub.status === 'مكتمل' ? 'badge-purple' : sub.status === 'منتهي' ? 'badge-danger' : 'badge-gray' %>"><%= sub.status %></span></td>
                 <td>
                   <div class="flex gap-1">
                     <a href="/subscriptions/<%= sub.id %>" class="btn btn-ghost btn-sm" title="عرض"><i class="fas fa-eye"></i></a>

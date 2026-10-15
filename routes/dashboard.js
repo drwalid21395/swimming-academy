@@ -66,8 +66,8 @@ router.get('/', async function (req, res) {
   const [revenueRow, expenseRow, dueRow, unpaidRow] = await Promise.all([
     db.prepare('SELECT COALESCE(SUM(amount),0) s FROM revenues').get(),
     db.prepare('SELECT COALESCE(SUM(amount),0) s FROM expenses').get(),
-    db.prepare("SELECT COALESCE(SUM(remaining),0) s FROM subscriptions WHERE status = 'نشط'" + subsDueScope).get(),
-    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0 AND status = 'نشط'" + subsDueScope).get()
+    db.prepare("SELECT COALESCE(SUM(remaining),0) s FROM subscriptions WHERE status IN ('نشط', 'منتهي')" + subsDueScope).get(),
+    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0 AND status IN ('نشط', 'منتهي')" + subsDueScope).get()
   ]);
   const finance = { revenues: revenueRow.s, expenses: expenseRow.s, due: dueRow.s, unpaidCount: unpaidRow.c };
 
@@ -105,7 +105,7 @@ router.get('/', async function (req, res) {
   const [byProgram, expiring, overdue, missingDocs, upcomingComp, todaySessions, latestAssess] = await Promise.all([
     db.prepare(`SELECT p.name, COUNT(s.id) c FROM programs p LEFT JOIN swimmers s ON s.program_id = p.id AND s.deleted_at IS NULL WHERE p.deleted_at IS NULL` + sportClause(sid, 'p') + ` GROUP BY p.id ORDER BY c DESC LIMIT 8`).all(),
     db.prepare(`SELECT s.full_name, sub.end_date, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE s.deleted_at IS NULL AND sub.status = 'نشط' AND sub.end_date IS NOT NULL AND date(sub.end_date) BETWEEN date(?) AND date(?, '+7 day')` + expiringScope).all(now, now),
-    db.prepare(`SELECT s.full_name, sub.remaining, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE s.deleted_at IS NULL AND sub.status = 'نشط' AND sub.remaining > 0` + expiringScope).all(),
+    db.prepare(`SELECT s.full_name, sub.remaining, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE s.deleted_at IS NULL AND sub.status IN ('نشط', 'منتهي') AND sub.remaining > 0` + expiringScope).all(),
     db.prepare(`SELECT s.full_name, s.id FROM swimmers s WHERE s.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.owner_type='swimmer' AND d.owner_id=s.id AND d.doc_type='إقرار صحي') AND s.status = 'نشط'` + swimmerClause(sid) + ` LIMIT 4`).all(),
     db.prepare("SELECT * FROM competitions WHERE status = 'قادمة' ORDER BY date LIMIT 2").all(),
     db.prepare(`SELECT s.*, g.name AS group_name, c.full_name AS coach_name, p.name AS pool_name FROM sessions s
