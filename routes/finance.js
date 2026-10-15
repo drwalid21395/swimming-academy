@@ -6,6 +6,7 @@ const { buildRenewalMessage, buildReceiptMessage, sendReminder, waLinkFor, logMe
 const { setFlash } = require('../lib/auth-cookie');
 const { nextMembership } = require('../lib/membership');
 const { activeSport, sportClause, progClause, groupClause, swimmerClause, swimmerSportClause } = require('../lib/sport-context');
+const { syncExpiredSubscriptions } = require('../lib/expiry');
 const router = express.Router();
 
 function sportOptionsFor(req, res) {
@@ -228,6 +229,7 @@ router.post('/subscriptions/one-time', async function (req, res) {
     await tx.run(`INSERT INTO revenues (category, date, description, amount, payment_method, payer, status, sport_id, created_by) VALUES ('اشتراكات', ?, ?, ?, ?, ?, ?, ?, ?)`, today(), 'اشتراك لمرة واحدة: ' + swimmer.full_name, paid, b.payment_method || 'نقدي', swimmer.full_name, paid > 0 ? 'معتمد' : 'مسجل', sid, req.currentUser.id);
     await tx.commit();
     audit(req.currentUser.id, req.currentUser.full_name, 'add', 'subscriptions', info.lastInsertRowid, 'اشتراك لمرة واحدة', req);
+    try { await syncExpiredSubscriptions(true); } catch (e) { console.error('مزامنة انتهاء الاشتراكات:', e.message); }
     const guard = await db.prepare('SELECT COALESCE(whatsapp, phone) AS phone FROM guardians WHERE id = ?').get(guardianId || 0);
     if (guard && guard.phone) return res.redirect('/subscriptions/' + info.lastInsertRowid + '/receipt?confirm=1');
     setFlash(res, { type: 'success', message: 'تم تسجيل الاشتراك لمرة واحدة' });
@@ -268,6 +270,7 @@ router.post('/subscriptions/new', async function (req, res) {
   await db.prepare(`INSERT INTO revenues (category, date, description, amount, payment_method, payer, status, sport_id, created_by) VALUES ('اشتراكات', ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(b.paid_date || today(), 'اشتراك: ' + swimmerName + (b.receipt_no ? ' - إيصال ' + b.receipt_no : ''), paid, b.payment_method || 'نقدي', swimmerName, paid > 0 ? 'معتمد' : 'مسجل', context.sportId, req.currentUser.id);
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'subscriptions', info.lastInsertRowid, 'اشتراك جديد', req);
+  try { await syncExpiredSubscriptions(true); } catch (e) { console.error('مزامنة انتهاء الاشتراكات:', e.message); }
   /* إتمام الاشتراك: نعرض لولي الأمر إيصالاً بتفاصيل الاشتراك عبر واتساب، مع تأكيد قبل الإرسال.
      نقرأ رقم ولي الأمر، وإن وُجد نُظهر شاشة تأكيد للمعاينة قبل أي إرسال. */
   const subId = info.lastInsertRowid;
@@ -411,6 +414,7 @@ router.post('/subscriptions/:id/edit', async function (req, res) {
     .run(b.swimmer_id, b.program_id || null, b.group_id || null, context.sportId, b.start_date || today(), b.end_date || null, amounts.sessionsTotal, amounts.type, amounts.unitPrice, amounts.price, Number(b.discount || 0), Number(b.tax || 0), total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), b.is_installment === '1' ? 1 : 0, b.status || 'نشط', b.notes || '', id);
   await db.prepare('INSERT INTO subscription_history (subscription_id, swimmer_id, action, details, user_name) VALUES (?,?,?,?,?)').run(id, b.swimmer_id, 'تعديل', 'تحديث بيانات الاشتراك', req.currentUser.full_name);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'subscriptions', id, 'تعديل اشتراك', req);
+  try { await syncExpiredSubscriptions(true); } catch (e) { console.error('مزامنة انتهاء الاشتراكات:', e.message); }
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/subscriptions/' + id);
 });
