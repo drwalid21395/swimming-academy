@@ -788,6 +788,15 @@ router.get('/coach-payments', async function (req, res) {
       { name: 'status', label: 'الحالة', options: ['مستحق', 'مدفوع جزئياً', 'مسدد'].map(v => ({ value: v, label: v })) },
       { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches') + ' ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) }
     ],
+    bulkUrl: '/coach-payments/bulk',
+    bulkActions: [
+      ...(canEdit(req.currentUser, 'coachPayments') ? [
+        { value: 'settle', label: 'تسديد المحدد', icon: 'fa-circle-check', confirm: 'تسديد المستحقات المحددة بالكامل؟ سيتم تعليمها كـ «مسدد».' }
+      ] : []),
+      ...(canDel(req.currentUser, 'coachPayments') ? [
+        { value: 'delete', label: 'حذف المحدد', icon: 'fa-trash', confirm: 'هل أنت متأكد من حذف المستحقات المحددة؟ لا يمكن التراجع عن هذا الإجراء.' }
+      ] : [])
+    ],
     canAdd: canAdd(req.currentUser, 'coachPayments'), addUrl: canAdd(req.currentUser, 'coachPayments') ? '/coach-payments/new' : null, addLabel: 'استحقاق جديد',
     actions: () => row => [
       { label: 'تعديل', icon: 'fa-pen', href: '/coach-payments/' + row.id + '/edit' },
@@ -857,6 +866,31 @@ router.post('/coach-payments/:id/edit', async function (req, res) {
 router.post('/coach-payments/:id/delete', async function (req, res) {
   if (!canDel(req.currentUser, 'coachPayments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   await db.prepare('DELETE FROM coach_payments WHERE id=?').run(Number(req.params.id));
+  res.redirect('/coach-payments');
+});
+router.post('/coach-payments/bulk', async function (req, res) {
+  const ids = [].concat(req.body.ids || []).map(Number).filter(n => Number.isSafeInteger(n) && n > 0);
+  const action = String(req.body.action || '');
+  if (!ids.length) { setFlash(res, { type: 'error', message: 'لم يتم تحديد أي استحقاق' }); return res.redirect('/coach-payments'); }
+  const ph = ids.map(() => '?').join(',');
+  try {
+    if (action === 'delete') {
+      if (!canDel(req.currentUser, 'coachPayments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+      await db.batch([{ sql: `DELETE FROM coach_payments WHERE id IN (${ph})`, args: ids }]);
+      audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'coach_payments', null, 'حذف جماعي لعدد ' + ids.length + ' من المستحقات', req);
+      setFlash(res, { type: 'success', message: 'تم حذف ' + ids.length + ' استحقاق بنجاح' });
+    } else if (action === 'settle') {
+      if (!canEdit(req.currentUser, 'coachPayments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+      await db.batch([{ sql: `UPDATE coach_payments SET paid_amount = total, remaining = 0, status = 'مسدد', paid_date = COALESCE(NULLIF(paid_date, ''), ?) WHERE id IN (${ph})`, args: [today()].concat(ids) }]);
+      audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'coach_payments', null, 'تسديد جماعي لعدد ' + ids.length + ' من المستحقات', req);
+      setFlash(res, { type: 'success', message: 'تم تسديد ' + ids.length + ' استحقاق' });
+    } else {
+      setFlash(res, { type: 'error', message: 'إجراء غير معروف' });
+    }
+  } catch (e) {
+    console.error('خطأ في الإجراء الجماعي للمستحقات:', e.message);
+    setFlash(res, { type: 'error', message: 'فشل تنفيذ الإجراء: ' + e.message });
+  }
   res.redirect('/coach-payments');
 });
 
