@@ -24,6 +24,9 @@ const TRAINER_STATUS = [
   { value: 'ملغاة', label: 'حصة ملغاة', icon: 'fa-ban', cls: 'badge-gray' },
   { value: 'بديل', label: 'مدرب بديل', icon: 'fa-rotate', cls: 'badge-purple' }
 ];
+/* حالات حصص التدريب الخاص (إنجليزي ← عربي لعرضها في كشف المستحقات) */
+const PRIVATE_STATUS_AR = { present: 'حاضر', late: 'متأخر', absent: 'غائب', excused: 'معتذر', cancelled: 'ملغاة', scheduled: 'مجدولة' };
+
 const STAFF_STATUS = [
   { value: 'حاضر', label: 'حاضر', cls: 'badge-success' },
   { value: 'غائب', label: 'غائب', cls: 'badge-danger' },
@@ -592,9 +595,13 @@ async function computeTrainerPayroll(coachId, month) {
   const subs = await db.prepare('SELECT * FROM trainer_session_attendance WHERE substitute_coach_id = ? AND substr(date,1,7) = ?').all(coachId, month);
   subs.forEach(a => { gross += amountForAttendance(a, pol); });
 
+  // حصص التدريب الخاص (تُحتسب عند تسجيل الحضور أو التأخير)
+  const priv = await db.prepare("SELECT * FROM private_sessions WHERE coach_id = ? AND substr(date,1,7) = ? AND status IN ('present','late')").all(coachId, month);
+  priv.forEach(s => { gross += Number(s.rate || 0); });
+
   const adjustments = await db.prepare(`SELECT * FROM salary_adjustments WHERE coach_id = ? AND period = ?`).all(coachId, month);
   adjustments.forEach(x => { if (x.adj_type === 'bonus') extras += Number(x.amount || 0); else deductions += Number(x.amount || 0); });
-  return { coachId, personType: 'trainer', name: t.full_name, atts: atts.length + subs.length, gross, extras, deductions, net: Math.round((gross + extras - deductions) * 100) / 100 };
+  return { coachId, personType: 'trainer', name: t.full_name, atts: atts.length + subs.length + priv.length, gross, extras, deductions, net: Math.round((gross + extras - deductions) * 100) / 100 };
 }
 
 async function computeStaffPayroll(staffId, month) {
@@ -685,6 +692,16 @@ router.get('/payroll/:id', async function (req, res) {
   let statementRows = [];
   if (row.person_type === 'trainer' && row.coach_id) {
     statementRows = await db.prepare(`SELECT a.*, g.name AS group_name FROM trainer_session_attendance a LEFT JOIN groups g ON g.id=a.group_id WHERE a.coach_id = ? AND substr(a.date,1,7) = ? ORDER BY a.date`).all(row.coach_id, month);
+    const priv = await db.prepare(`SELECT ps.*, sw.full_name AS swimmer_name FROM private_sessions ps LEFT JOIN swimmers sw ON sw.id = ps.swimmer_id WHERE ps.coach_id = ? AND substr(ps.date,1,7) = ? ORDER BY ps.date`).all(row.coach_id, month);
+    priv.forEach(p => {
+      statementRows.push({
+        date: p.date, start_time: p.start_time, session_id: null,
+        group_name: 'تدريب خاص — ' + (p.swimmer_name || ''),
+        status: PRIVATE_STATUS_AR[p.status] || p.status,
+        session_rate: Number(p.rate || 0), _private: true
+      });
+    });
+    statementRows.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
   } else if (row.person_type === 'staff' && row.staff_id) {
     statementRows = await db.prepare('SELECT * FROM staff_attendance WHERE staff_id = ? AND substr(date,1,7) = ? ORDER BY date').all(row.staff_id, month);
   }
