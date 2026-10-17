@@ -6,7 +6,7 @@
     <div class="page-sub"><%= page.subtitle %> <span class="count-badge">إجمالي الطلبات: <%= page.rows.length %></span></div>
   </div>
   <div class="spacer"></div>
-  <div class="flex flex-wrap gap-1" style="align-items:center">
+  <div class="flex flex-wrap gap-1 res-toolbar" style="align-items:center">
     <form method="get" action="/reservations" class="flex flex-wrap gap-1" style="align-items:center">
       <select name="status" class="form-control" style="min-width:150px">
         <option value="">كل الحالات</option>
@@ -42,7 +42,7 @@
 
 <div class="card">
   <div class="table-wrap">
-    <table class="data-table">
+    <table class="data-table res-table">
       <thead>
         <tr>
           <th class="bulk-col"><input type="checkbox" class="bulk-all" title="تحديد الكل" aria-label="تحديد الكل"></th>
@@ -65,8 +65,8 @@
         <% if (page.rows.length) { %>
           <% page.rows.forEach(function (r) { %>
             <tr>
-              <td class="bulk-col"><input type="checkbox" class="bulk-check" value="<%= r.id %>" aria-label="تحديد الحجز"></td>
-              <td>
+              <td class="bulk-col res-check"><input type="checkbox" class="bulk-check" value="<%= r.id %>" aria-label="تحديد الحجز"></td>
+              <td class="res-head">
                 <div class="avatar-cell">
                   <div class="avatar-sm" style="background:linear-gradient(135deg,var(--primary),var(--primary-light));color:#fff"><%= (r.swimmer_name || 'ح').trim().charAt(0) %></div>
                   <div>
@@ -75,24 +75,24 @@
                   </div>
                 </div>
               </td>
-              <td><span class="badge badge-info"><%= r.sport_name || '—' %></span></td>
-              <td><b><%= r.program_name || '—' %></b></td>
-              <td><%= r.age !== null && r.age !== undefined ? r.age + ' سنة' : '—' %></td>
-              <td><%- r.phone ? '<span dir="ltr">' + r.phone + '</span>' : '—' %></td>
-              <td><%- r.whatsapp ? '<span dir="ltr">' + r.whatsapp + '</span>' : '—' %></td>
-              <td><%= r.initial_level || '—' %></td>
-              <td>
+              <td data-label="اللعبة"><span class="badge badge-info"><%= r.sport_name || '—' %></span></td>
+              <td data-label="البرنامج"><b><%= r.program_name || '—' %></b></td>
+              <td data-label="السن"><%= r.age !== null && r.age !== undefined ? r.age + ' سنة' : '—' %></td>
+              <td data-label="الهاتف"><%- r.phone ? '<span dir="ltr">' + r.phone + '</span>' : '—' %></td>
+              <td data-label="الواتساب"><%- r.whatsapp ? '<span dir="ltr">' + r.whatsapp + '</span>' : '—' %></td>
+              <td data-label="المستوى"><%= r.initial_level || '—' %></td>
+              <td data-label="ولي الأمر">
                 <% if (r.guardian_name) { %><div><b><%= r.guardian_name %></b></div><% } %>
                 <%- r.guardian_phone ? '<span dir="ltr">' + r.guardian_phone + '</span>' : (!r.guardian_name ? '—' : '') %>
               </td>
-              <td><%= r.swimmer_number || '—' %></td>
-              <td><div class="font-13 text-soft" style="max-width:180px;white-space:normal"><%= r.notes || '—' %></div></td>
-              <td><div class="font-13"><%= fmtDateTime(r.created_at) %></div></td>
-              <td><%- (function(){ const map = { 'جديدة': ['badge-primary','fa-circle'], 'تم التواصل': ['badge-info','fa-phone'], 'تم الحجز': ['badge-success','fa-check'], 'تم التحويل للاعب': ['badge-purple','fa-person-swimming'], 'ملغي': ['badge-danger','fa-ban'] }; const m = map[r.status] || ['badge-gray','fa-circle']; return '<span class="badge ' + m[0] + '"><i class="fas ' + m[1] + '"></i> ' + r.status + '</span>'; })() %>
+              <td data-label="رقم اللاعب"><%= r.swimmer_number || '—' %></td>
+              <td data-label="الملاحظات"><div class="font-13 text-soft" style="max-width:180px;white-space:normal"><%= r.notes || '—' %></div></td>
+              <td data-label="تاريخ الحجز"><div class="font-13"><%= fmtDateTime(r.created_at) %></div></td>
+              <td data-label="الحالة"><%- (function(){ const map = { 'جديدة': ['badge-primary','fa-circle'], 'تم التواصل': ['badge-info','fa-phone'], 'تم الحجز': ['badge-success','fa-check'], 'تم التحويل للاعب': ['badge-purple','fa-person-swimming'], 'ملغي': ['badge-danger','fa-ban'] }; const m = map[r.status] || ['badge-gray','fa-circle']; return '<span class="badge ' + m[0] + '"><i class="fas ' + m[1] + '"></i> ' + r.status + '</span>'; })() %>
                 <% if (r.status === 'تم التحويل للاعب' && !r.swimmer_id) { %>
                   <div class="font-11 text-danger" style="margin-top:4px"><i class="fas fa-triangle-exclamation"></i> لم يُنشأ اللاعب بعد — اضغط «تحويل للاعب»</div>
                 <% } %></td>
-              <td>
+              <td class="res-actions">
                 <div class="table-actions" style="flex-direction:column;align-items:flex-start;gap:6px">
                   <form method="POST" action="/reservations/<%= r.id %>/status" class="flex gap-1" style="align-items:center">
                     <select name="status" class="form-control" style="min-width:130px;padding:5px 8px;font-size:12px">
@@ -118,7 +118,7 @@
             </tr>
           <% }); %>
         <% } else { %>
-          <tr><td colspan="14"><div class="empty-state"><i class="fas fa-calendar-xmark"></i><p>لا توجد حجوزات — تظهر هنا تلقائياً بمجرد حجز زائر من الموقع</p></div></td></tr>
+          <tr class="res-empty"><td colspan="14"><div class="empty-state"><i class="fas fa-calendar-xmark"></i><p>لا توجد حجوزات — تظهر هنا تلقائياً بمجرد حجز زائر من الموقع</p></div></td></tr>
         <% } %>
       </tbody>
     </table>
