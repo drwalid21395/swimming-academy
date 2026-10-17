@@ -45,20 +45,20 @@
   <div class="card">
     <div class="card-header"><i class="fas fa-list-check"></i> تفصيل الحساب (<%= statementRows.length %> بند)</div>
     <div class="table-wrap">
-      <table class="data-table">
+      <table class="data-table rtable">
         <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th>البيان</th><th class="sortable">الحالة<span class="sort-ind"></span></th><th class="sortable">القيمة<span class="sort-ind"></span></th></tr></thead>
         <tbody>
           <% if (statementRows.length) { %>
             <% statementRows.forEach(function (a) { %>
               <tr>
-                <td><%= fmtDate(a.date) %></td>
-                <td><%= row.person_type === 'trainer' ? (a.group_name || 'حصة #' + a.session_id) : 'حضور يوم' %><% if (a.start_time) { %> <span class="font-11 text-muted" dir="ltr">(<%= a.start_time %>)</span><% } %></td>
-                <td><% var st = STATUS && STATUS.find ? STATUS.find(function (s) { return s.value === a.status; }) : null; if (st) { %><span class="badge <%= st.cls %>"><%= st.label %></span><% } else { %><span class="badge badge-gray"><%= a.status %></span><% } %></td>
-                <td><%= money(a.session_rate || a.shift_value || 0) %></td>
+                <td data-label="التاريخ"><%= fmtDate(a.date) %></td>
+                <td data-label="البيان"><%= row.person_type === 'trainer' ? (a.group_name || 'حصة #' + a.session_id) : 'حضور يوم' %><% if (a.start_time) { %> <span class="font-11 text-muted" dir="ltr">(<%= a.start_time %>)</span><% } %></td>
+                <td data-label="الحالة"><% var st = STATUS && STATUS.find ? STATUS.find(function (s) { return s.value === a.status; }) : null; if (st) { %><span class="badge <%= st.cls %>"><%= st.label %></span><% } else { %><span class="badge badge-gray"><%= a.status %></span><% } %></td>
+                <td data-label="القيمة"><%= money(a.session_rate || a.shift_value || 0) %></td>
               </tr>
             <% }); %>
           <% } else { %>
-            <tr><td colspan="4"><div class="empty-state"><i class="fas fa-list"></i><p>لا توجد بنود في هذا الشهر</p></div></td></tr>
+              <tr><td colspan="4"><div class="empty-state"><i class="fas fa-list-check"></i><p>لا توجد بنود</p></div></td></tr>
           <% } %>
         </tbody>
       </table>
@@ -69,39 +69,39 @@
     <div class="card">
       <div class="card-header"><i class="fas fa-scale-balanced"></i> الخصومات والإضافات (<%= adjustments.length %>)</div>
       <div class="table-wrap">
-        <table class="data-table">
-          <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th>النوع</th><th>التصنيف</th><th class="sortable">المبلغ<span class="sort-ind"></span></th></tr></thead>
-          <tbody>
-            <% if (adjustments.length) { %>
-              <% adjustments.forEach(function (x) { %>
-                <tr>
-                  <td><%= fmtDate(x.date) %></td>
-                  <td><% if (x.adj_type === 'bonus') { %><span class="badge badge-success">إضافة</span><% } else { %><span class="badge badge-danger">خصم</span><% } %></td>
-                  <td><%= x.adj_category || '—' %></td>
-                  <td class="<%= x.adj_type === 'bonus' ? 'text-success' : 'text-danger' %>"><%= money(x.amount) %></td>
-                </tr>
-              <% }); %>
-            <% } else { %>
-              <tr><td colspan="4"><div class="empty-state"><i class="fas fa-scale-balanced"></i><p>لا توجد قيود</p></div></td></tr>
-            <% } %>
-          </tbody>
-        </table>
+          <table class="data-table rtable">
+            <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th>النوع</th><th>التصنيف</th><th class="sortable">المبلغ<span class="sort-ind"></span></th></tr></thead>
+            <tbody>
+              <% if (adjustments.length) { %>
+                <% adjustments.forEach(function (x) { %>
+                  <tr>
+                    <td data-label="التاريخ"><%= fmtDate(x.date) %></td>
+                    <td data-label="النوع"><% if (x.adj_type === 'bonus') { %><span class="badge badge-success">إضافة</span><% } else { %><span class="badge badge-danger">خصم</span><% } %></td>
+                    <td data-label="التصنيف"><%= x.adj_category || '—' %></td>
+                    <td data-label="المبلغ" class="<%= x.adj_type === 'bonus' ? 'text-success' : 'text-danger' %>"><%= money(x.amount) %></td>
+                  </tr>
+                <% }); %>
+              <% } else { %>
+                <tr><td colspan="4"><div class="empty-state"><i class="fas fa-scale-balanced"></i><p>لا توجد قيود</p></div></td></tr>
+              <% } %>
+            </tbody>
+          </table>
       </div>
     </div>
 
     <div class="card">
       <div class="card-header"><i class="fas fa-receipt"></i> سجل الدفعات (<%= pays.length %>)</div>
       <div class="table-wrap">
-        <table class="data-table">
+        <table class="data-table rtable">
           <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th class="sortable">المبلغ<span class="sort-ind"></span></th><th>طريقة</th><th>بواسطة</th></tr></thead>
           <tbody>
             <% if (pays.length) { %>
               <% pays.forEach(function (p) { %>
                 <tr>
-                  <td><%= fmtDate(p.paid_date) %></td>
-                  <td class="fw-700 text-success"><%= money(p.amount) %></td>
-                  <td><span class="badge badge-primary"><%= p.method %></span></td>
-                  <td class="font-12"><%= p.payer_name || '—' %><% if (p.note) { %><br><span class="text-muted"><%= p.note %></span><% } %></td>
+                  <td data-label="التاريخ"><%= fmtDate(p.paid_date) %></td>
+                  <td data-label="المبلغ" class="fw-700 text-success"><%= money(p.amount) %></td>
+                  <td data-label="طريقة"><span class="badge badge-primary"><%= p.method %></span></td>
+                  <td data-label="بواسطة" class="font-12"><%= p.payer_name || '—' %><% if (p.note) { %><br><span class="text-muted"><%= p.note %></span><% } %></td>
                 </tr>
               <% }); %>
             <% } else { %>

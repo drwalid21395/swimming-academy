@@ -694,8 +694,9 @@ router.get('/payroll/:id', async function (req, res) {
   res.render('attendance_payroll/payroll_detail', {
     title: 'كشف حساب ' + (row.coach_name || row.staff_name || ''), active: 'payroll',
     row, statementRows, adjustments, pays, month, pol,
+    STATUS: row.person_type === 'trainer' ? TRAINER_STATUS : STAFF_STATUS,
     canEdit: canEdit(req.currentUser, 'payroll'), canDel: canDel(req.currentUser, 'payroll'),
-    canExport: canExport(req.currentUser, 'payroll'), PAY_METHODS, money, fmtDate
+    canExport: canExport(req.currentUser, 'payroll'), PAY_METHODS, money, fmtMoney, fmtDate
   });
 });
 

@@ -65,7 +65,7 @@
 
 <div class="card">
   <div class="table-wrap">
-    <table class="data-table">
+    <table class="data-table rtable">
       <thead>
         <tr>
           <th class="sortable">الشخص<span class="sort-ind"></span></th>
@@ -84,20 +84,20 @@
         <% if (rows.length) { %>
           <% rows.forEach(function (r) { %>
             <tr>
-              <td><b><%= r.coach_name || r.staff_name || '—' %></b><% if (r.branch_name) { %><br><span class="font-11 text-muted"><%= r.branch_name %></span><% } %></td>
-              <td><% if (r.person_type === 'trainer') { %><span class="badge badge-info"><i class="fas fa-user-tie"></i> مدرب</span><% } else { %><span class="badge badge-purple"><i class="fas fa-user-gear"></i> موظف</span><% } %></td>
-              <td><%= money(r.gross) %></td>
-              <td class="text-success"><%= money(r.extras) %></td>
-              <td class="text-danger"><%= money(r.deductions) %></td>
-              <td class="fw-700"><%= money(r.net) %></td>
-              <td class="text-success"><%= money(r.paid_amount) %></td>
-              <td class="<%= Number(r.remaining) > 0 ? 'text-danger fw-700' : 'text-success fw-700' %>"><%= money(r.remaining) %></td>
-              <td>
+              <td data-label="الشخص"><b><%= r.coach_name || r.staff_name || '—' %></b><% if (r.branch_name) { %><br><span class="font-11 text-muted"><%= r.branch_name %></span><% } %></td>
+              <td data-label="الفئة"><% if (r.person_type === 'trainer') { %><span class="badge badge-info"><i class="fas fa-user-tie"></i> مدرب</span><% } else { %><span class="badge badge-purple"><i class="fas fa-user-gear"></i> موظف</span><% } %></td>
+              <td data-label="الاستحقاق"><%= money(r.gross) %></td>
+              <td data-label="الإضافات" class="text-success"><%= money(r.extras) %></td>
+              <td data-label="الخصومات" class="text-danger"><%= money(r.deductions) %></td>
+              <td data-label="الصافي" class="fw-700"><%= money(r.net) %></td>
+              <td data-label="المدفوع" class="text-success"><%= money(r.paid_amount) %></td>
+              <td data-label="المتبقي" class="<%= Number(r.remaining) > 0 ? 'text-danger fw-700' : 'text-success fw-700' %>"><%= money(r.remaining) %></td>
+              <td data-label="الحالة">
                 <% if (r.status === 'مسدد') { %><span class="badge badge-success"><i class="fas fa-check-circle"></i> مسدد</span>
                 <% } else if (r.status === 'مدفوع جزئياً') { %><span class="badge badge-warning"><i class="fas fa-hourglass-half"></i> جزئي</span>
                 <% } else { %><span class="badge badge-danger"><i class="fas fa-hourglass"></i> مستحق</span><% } %>
               </td>
-              <td>
+              <td class="rt-actions" data-label="إجراءات">
                 <div class="table-actions">
                   <a href="/payroll/<%= r.id %>" class="btn btn-ghost btn-sm" title="التفاصيل"><i class="fas fa-eye"></i></a>
                   <% if (canDel && Number(r.paid_amount) <= 0 && Number(r.approved) !== 1) { %>

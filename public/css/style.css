@@ -1198,3 +1198,42 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
   .res-table .res-empty td::before { content: none; }
 }
 
+/* ============================= جداول متجاوبة (تتحول لكروت على الهاتف) ============================= */
+.grid-2 > * { min-width: 0; }
+@media (max-width: 768px) {
+  .table-wrap .rtable { min-width: 0 !important; border-collapse: separate; }
+  .rtable thead { display: none; }
+  .rtable tbody { display: block; }
+  .rtable tbody tr {
+    display: block;
+    background: var(--bg-soft);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+  }
+  .rtable td { display: flex; gap: 10px; align-items: baseline; padding: 4px 0 !important; border: 0 !important; }
+  .rtable td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 76px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+  }
+  .rtable td.rt-actions { align-items: center; }
+  .rtable td.rt-actions .table-actions { display: flex; gap: 8px; width: 100%; }
+  .rtable td.rt-actions .table-actions .btn { flex: 1 1 auto; justify-content: center; }
+}
+
+/* ============================= كشف حساب الرواتب: ملاءمة الهاتف ============================= */
+@media (max-width: 768px) {
+  #payForm { flex-direction: column; align-items: stretch; }
+  #payForm .form-group { width: 100%; }
+  #payForm .form-group .form-control { width: 100% !important; }
+  #payForm .btn { width: 100%; justify-content: center; }
+  .page-title { flex-wrap: wrap; min-width: 0; }
+  .page-title b { overflow-wrap: anywhere; }
+  .page-head > div:first-child { min-width: 0; }
+  .page-sub { overflow-wrap: anywhere; }
+}
+
