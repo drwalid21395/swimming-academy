@@ -45,9 +45,22 @@ app.use(securityHeaders);
 app.use(csrfProtect);
 
 /* ملفات تطبيق الويب التقدمي (PWA): أنواع محتوى صحيحة + نطاق كامل */
-app.get('/manifest.webmanifest', function (req, res) {
+app.get('/manifest.webmanifest', async function (req, res) {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.type('application/manifest+json').sendFile(path.join(__dirname, 'public', 'manifest.webmanifest'));
+  res.type('application/manifest+json');
+  let manifest = {};
+  try { manifest = JSON.parse(require('node:fs').readFileSync(path.join(__dirname, 'public', 'manifest.webmanifest'), 'utf8')); } catch (e) { manifest = {}; }
+  let appName = '', shortName = '';
+  try {
+    const rows = await db.prepare("SELECT key, value FROM settings WHERE key IN ('app_name', 'app_short_name')").all();
+    const m = {}; rows.forEach(function (r) { m[r.key] = r.value; });
+    appName = String(m.app_name || '').trim();
+    shortName = String(m.app_short_name || '').trim();
+  } catch (e) { /* تجاهل */ }
+  const finalName = appName || 'dr.walid academy';
+  manifest.name = finalName;
+  manifest.short_name = shortName || finalName;
+  res.send(JSON.stringify(manifest, null, 2));
 });
 app.get('/sw.js', function (req, res) {
   res.setHeader('Service-Worker-Allowed', '/');
@@ -152,6 +165,8 @@ app.use(async function (req, res, next) {
     settingsRows.forEach(r => { settings[r.key] = r.value; });
     res.locals.siteName = settings.site_name || 'أكاديمية السباحة';
     res.locals.siteLogo = settings.site_logo || '';
+    res.locals.appName = (settings.app_name && String(settings.app_name).trim()) || 'dr.walid academy';
+    res.locals.appShortName = (settings.app_short_name && String(settings.app_short_name).trim()) || res.locals.appName;
     res.locals.settings = settings;
     res.locals.canView = canView;
     res.locals.canAdd = canAdd;

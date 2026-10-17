@@ -237,7 +237,9 @@ const SETTING_DEFS = [
   { key: 'whatsapp_api_token', label: 'رمز WhatsApp API (Access Token)', type: 'text', section: 'إعدادات الواتساب' },
   { key: 'whatsapp_phone_id', label: 'معرّف رقم الهاتف (Phone Number ID)', type: 'text', section: 'إعدادات الواتساب' },
   { key: 'admin_name', label: 'اسم المسؤول الإداري (في رسالة الحجز)', type: 'text', section: 'رسالة حجز الواتساب' },
-  { key: 'tech_director_name', label: 'اسم المدير الفني (في رسالة الحجز)', type: 'text', section: 'رسالة حجز الواتساب' }
+  { key: 'tech_director_name', label: 'اسم المدير الفني (في رسالة الحجز)', type: 'text', section: 'رسالة حجز الواتساب' },
+  { key: 'app_name', label: 'اسم التطبيق عند التثبيت على الهاتف', type: 'text', section: 'تطبيق الموبايل (اسم التطبيق عند التثبيت)' },
+  { key: 'app_short_name', label: 'الاسم المختصر تحت أيقونة التطبيق', type: 'text', section: 'تطبيق الموبايل (اسم التطبيق عند التثبيت)' }
 ];
 router.get('/settings', async function (req, res) {
   if (!canView(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
