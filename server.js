@@ -46,6 +46,7 @@ app.use(csrfProtect);
 
 /* ملفات تطبيق الويب التقدمي (PWA): أنواع محتوى صحيحة + نطاق كامل */
 app.get('/manifest.webmanifest', function (req, res) {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.type('application/manifest+json').sendFile(path.join(__dirname, 'public', 'manifest.webmanifest'));
 });
 app.get('/sw.js', function (req, res) {

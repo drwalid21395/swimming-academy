@@ -1,5 +1,5 @@
 /* Service Worker — نظام إدارة أكاديمية السباحة (PWA) */
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const CACHE_NAME = 'academy-assets-' + CACHE_VERSION;
 const STATIC_PREFIXES = ['/vendor/', '/css/', '/js/', '/images/', '/webfonts/'];
 const OFFLINE_URL = '/offline.html';
