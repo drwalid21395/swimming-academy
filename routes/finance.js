@@ -562,6 +562,16 @@ router.get('/revenues', async function (req, res) {
     ],
     rows,
     filters: [{ name: 'category', label: 'الفئة', options: REV_CATEGORIES.map(v => ({ value: v, label: v })) }],
+    bulkUrl: '/revenues/bulk',
+    bulkActions: [
+      ...(canEdit(req.currentUser, 'revenues') ? [
+        { value: 'approve', label: 'اعتماد المحدد', icon: 'fa-circle-check', confirm: 'اعتماد الإيرادات المحددة؟' },
+        { value: 'pending', label: 'تعليق المحدد', icon: 'fa-clock', confirm: 'تعليق الإيرادات المحددة؟' }
+      ] : []),
+      ...(canDel(req.currentUser, 'revenues') ? [
+        { value: 'delete', label: 'حذف المحدد', icon: 'fa-trash', confirm: 'هل أنت متأكد من حذف الإيرادات المحددة؟ لا يمكن التراجع عن هذا الإجراء.' }
+      ] : [])
+    ],
     canAdd: canAdd(req.currentUser, 'revenues'), addUrl: canAdd(req.currentUser, 'revenues') ? '/revenues/new' : null, addLabel: 'إيراد جديد',
     actions: () => row => [
       { label: 'تعديل', icon: 'fa-pen', href: '/revenues/' + row.id + '/edit' },
@@ -607,6 +617,32 @@ router.post('/revenues/:id/delete', async function (req, res) {
   await db.prepare('DELETE FROM revenues WHERE id=?').run(Number(req.params.id));
   res.redirect('/revenues');
 });
+router.post('/revenues/bulk', async function (req, res) {
+  const ids = [].concat(req.body.ids || []).map(Number).filter(n => Number.isSafeInteger(n) && n > 0);
+  const action = String(req.body.action || '');
+  if (!ids.length) { setFlash(res, { type: 'error', message: 'لم يتم تحديد أي إيراد' }); return res.redirect('/revenues'); }
+  const ph = ids.map(() => '?').join(',');
+  try {
+    if (action === 'delete') {
+      if (!canDel(req.currentUser, 'revenues')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+      await db.batch([{ sql: `DELETE FROM revenues WHERE id IN (${ph})`, args: ids }]);
+      audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'revenues', null, 'حذف جماعي لعدد ' + ids.length + ' من الإيرادات', req);
+      setFlash(res, { type: 'success', message: 'تم حذف ' + ids.length + ' إيراد بنجاح' });
+    } else if (action === 'approve' || action === 'pending') {
+      if (!canEdit(req.currentUser, 'revenues')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+      const st = action === 'approve' ? 'معتمد' : 'معلق';
+      await db.batch([{ sql: `UPDATE revenues SET status=? WHERE id IN (${ph})`, args: [st].concat(ids) }]);
+      audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'revenues', null, 'تغيير حالة ' + ids.length + ' من الإيرادات إلى ' + st, req);
+      setFlash(res, { type: 'success', message: 'تم تحديث حالة ' + ids.length + ' إيراد' });
+    } else {
+      setFlash(res, { type: 'error', message: 'إجراء غير معروف' });
+    }
+  } catch (e) {
+    console.error('خطأ في الإجراء الجماعي للإيرادات:', e.message);
+    setFlash(res, { type: 'error', message: 'فشل تنفيذ الإجراء: ' + e.message });
+  }
+  res.redirect('/revenues');
+});
 
 /* ============================================================== */
 /*                          المصروفات                             */
@@ -645,6 +681,16 @@ router.get('/expenses', async function (req, res) {
     ],
     rows,
     filters: [{ name: 'category', label: 'الفئة', options: EXP_CATEGORIES.map(v => ({ value: v, label: v })) }],
+    bulkUrl: '/expenses/bulk',
+    bulkActions: [
+      ...(canEdit(req.currentUser, 'expenses') ? [
+        { value: 'approve', label: 'اعتماد المحدد', icon: 'fa-circle-check', confirm: 'اعتماد المصروفات المحددة؟' },
+        { value: 'pending', label: 'تعليق المحدد', icon: 'fa-clock', confirm: 'تعليق المصروفات المحددة؟' }
+      ] : []),
+      ...(canDel(req.currentUser, 'expenses') ? [
+        { value: 'delete', label: 'حذف المحدد', icon: 'fa-trash', confirm: 'هل أنت متأكد من حذف المصروفات المحددة؟ لا يمكن التراجع عن هذا الإجراء.' }
+      ] : [])
+    ],
     canAdd: canAdd(req.currentUser, 'expenses'), addUrl: canAdd(req.currentUser, 'expenses') ? '/expenses/new' : null, addLabel: 'مصروف جديد',
     actions: () => row => [
       { label: 'تعديل', icon: 'fa-pen', href: '/expenses/' + row.id + '/edit' },
@@ -688,6 +734,32 @@ router.post('/expenses/:id/edit', async function (req, res) {
 router.post('/expenses/:id/delete', async function (req, res) {
   if (!canDel(req.currentUser, 'expenses')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   await db.prepare('DELETE FROM expenses WHERE id=?').run(Number(req.params.id));
+  res.redirect('/expenses');
+});
+router.post('/expenses/bulk', async function (req, res) {
+  const ids = [].concat(req.body.ids || []).map(Number).filter(n => Number.isSafeInteger(n) && n > 0);
+  const action = String(req.body.action || '');
+  if (!ids.length) { setFlash(res, { type: 'error', message: 'لم يتم تحديد أي مصروف' }); return res.redirect('/expenses'); }
+  const ph = ids.map(() => '?').join(',');
+  try {
+    if (action === 'delete') {
+      if (!canDel(req.currentUser, 'expenses')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+      await db.batch([{ sql: `DELETE FROM expenses WHERE id IN (${ph})`, args: ids }]);
+      audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'expenses', null, 'حذف جماعي لعدد ' + ids.length + ' من المصروفات', req);
+      setFlash(res, { type: 'success', message: 'تم حذف ' + ids.length + ' مصروف بنجاح' });
+    } else if (action === 'approve' || action === 'pending') {
+      if (!canEdit(req.currentUser, 'expenses')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+      const st = action === 'approve' ? 'معتمد' : 'معلق';
+      await db.batch([{ sql: `UPDATE expenses SET status=? WHERE id IN (${ph})`, args: [st].concat(ids) }]);
+      audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'expenses', null, 'تغيير حالة ' + ids.length + ' من المصروفات إلى ' + st, req);
+      setFlash(res, { type: 'success', message: 'تم تحديث حالة ' + ids.length + ' مصروف' });
+    } else {
+      setFlash(res, { type: 'error', message: 'إجراء غير معروف' });
+    }
+  } catch (e) {
+    console.error('خطأ في الإجراء الجماعي للمصروفات:', e.message);
+    setFlash(res, { type: 'error', message: 'فشل تنفيذ الإجراء: ' + e.message });
+  }
   res.redirect('/expenses');
 });
 
