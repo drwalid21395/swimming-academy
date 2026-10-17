@@ -15,3 +15,9 @@ Thumbs.db
 .env*
 
 .env*
+
+# أدوات/مشاريع محلية لا تُرفع
+opencode.json
+academic-student-management/
+academic-student-management-backup/
+

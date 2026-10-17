@@ -35,5 +35,12 @@
     © <%= new Date().getFullYear() %> <%= data.siteName %> — جميع الحقوق محفوظة
   </div>
 </footer>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('/sw.js').catch(function () {});
+    });
+  }
+</script>
 </body>
 </html>

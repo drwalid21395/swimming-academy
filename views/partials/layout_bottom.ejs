@@ -14,5 +14,12 @@
 <script src="/js/app.js?v=10"></script>
 <% if (typeof pageScripts !== 'undefined' && pageScripts) { pageScripts.forEach(function (s) { %><script src="<%= s %>"></script><% }); } %>
 <% if (typeof inlineScript !== 'undefined' && inlineScript) { %><script><%= inlineScript %></script><% } %>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('/sw.js').catch(function () {});
+    });
+  }
+</script>
 </body>
 </html>

@@ -7,6 +7,14 @@
   <link rel="stylesheet" href="/vendor/fa-all.min.css">
   <link rel="stylesheet" href="/css/style.css?v=21">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏊</text></svg>">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
+  <meta name="theme-color" content="#0ea5e9">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="<%= siteName %>">
+  <meta name="application-name" content="<%= siteName %>">
   <% if (typeof primaryColor !== 'undefined' && primaryColor && /^#[0-9a-fA-F]{6}$/.test(primaryColor)) {
     const _clamp = (n) => Math.max(0, Math.min(255, Math.round(n)));
     const _h = primaryColor.replace('#','');
@@ -64,5 +72,12 @@
     <% } %>
   </div>
 </div>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('/sw.js').catch(function () {});
+    });
+  }
+</script>
 </body>
 </html>

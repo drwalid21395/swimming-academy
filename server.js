@@ -44,6 +44,16 @@ app.use(securityHeaders);
 /* دفاع إضافي ضد CSRF: طلبات من أصل مختلف تُرفض (لا يؤثر على نفس الأصل) */
 app.use(csrfProtect);
 
+/* ملفات تطبيق الويب التقدمي (PWA): أنواع محتوى صحيحة + نطاق كامل */
+app.get('/manifest.webmanifest', function (req, res) {
+  res.type('application/manifest+json').sendFile(path.join(__dirname, 'public', 'manifest.webmanifest'));
+});
+app.get('/sw.js', function (req, res) {
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('application/javascript').sendFile(path.join(__dirname, 'public', 'sw.js'));
+});
+
 /* الملفات الثابتة + المرفقات المخزنة داخل قاعدة البيانات */
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/uploads/:name', async function (req, res) {
