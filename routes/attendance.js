@@ -323,7 +323,7 @@ router.get('/trainer-attendance', async function (req, res) {
   const placeFilter = fPool ? ' AND a.pool_id = ' + fPool : (fBranch ? ' AND a.branch_id = ' + fBranch : '');
   const placeFilterU = fPool ? ' AND pool_id = ' + fPool : (fBranch ? ' AND branch_id = ' + fBranch : '');
   const rows = await db.prepare(`SELECT a.*, g.name AS group_name, b.name AS branch_name, c.full_name AS coach_name,
-      sc.full_name AS substitute_name, p.name AS pool_name
+      COALESCE(sc.full_name, a.substitute_name) AS substitute_name, p.name AS pool_name
     FROM trainer_session_attendance a
     LEFT JOIN groups g ON g.id = a.group_id
     LEFT JOIN branches b ON b.id = a.branch_id
@@ -436,6 +436,7 @@ router.post('/trainer-attendance/save-day', async function (req, res) {
     const durationMin = durationMinutes(session.start_time, session.end_time);
     const late_minutes = Number(v.late_minutes || 0);
     const substitute_coach_id = status === 'بديل' ? (Number(v.substitute_coach_id) || null) : null;
+    const substitute_name = status === 'بديل' && !substitute_coach_id ? String(v.substitute_name || '').trim().slice(0, 120) : null;
     const cancel_reason = status === 'ملغاة' ? String(v.cancel_reason || '') : '';
     const payment_policy = status === 'ملغاة' ? String(v.payment_policy || '') : '';
     const existing = await db.prepare('SELECT * FROM trainer_session_attendance WHERE session_id = ? AND coach_id = ?').get(session.id, coachId);
@@ -446,11 +447,11 @@ router.post('/trainer-attendance/save-day', async function (req, res) {
       if (poolRow) { branch_id = poolRow.branch_id || branch_id; } else { pool_id = null; }
     }
     if (existing) {
-      await db.prepare(`UPDATE trainer_session_attendance SET status=?, session_rate=?, late_minutes=?, cancel_reason=?, payment_policy=?, note=?, pool_id=?, branch_id=?, updated_by=?, updated_at=? WHERE id=?`)
-        .run(status, session_rate, late_minutes, cancel_reason, payment_policy, String(v.note || ''), pool_id, branch_id, req.currentUser.id, new Date().toLocaleString('sv-SE').replace('T', ' '), existing.id);
+      await db.prepare(`UPDATE trainer_session_attendance SET status=?, session_rate=?, late_minutes=?, cancel_reason=?, payment_policy=?, note=?, pool_id=?, branch_id=?, substitute_coach_id=?, substitute_name=?, updated_by=?, updated_at=? WHERE id=?`)
+        .run(status, session_rate, late_minutes, cancel_reason, payment_policy, String(v.note || ''), pool_id, branch_id, substitute_coach_id, substitute_name, req.currentUser.id, new Date().toLocaleString('sv-SE').replace('T', ' '), existing.id);
     } else {
-      await db.prepare(`INSERT INTO trainer_session_attendance (session_id, group_id, branch_id, pool_id, coach_id, substitute_coach_id, date, start_time, end_time, duration_min, status, session_rate, base_rate, late_minutes, cancel_reason, payment_policy, note, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(session.id, session.group_id, branch_id, pool_id, coachId, substitute_coach_id, date, session.start_time, session.end_time, durationMin, status, session_rate, rate.effective, late_minutes, cancel_reason, payment_policy, String(v.note || ''), req.currentUser.id);
+      await db.prepare(`INSERT INTO trainer_session_attendance (session_id, group_id, branch_id, pool_id, coach_id, substitute_coach_id, substitute_name, date, start_time, end_time, duration_min, status, session_rate, base_rate, late_minutes, cancel_reason, payment_policy, note, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(session.id, session.group_id, branch_id, pool_id, coachId, substitute_coach_id, substitute_name, date, session.start_time, session.end_time, durationMin, status, session_rate, rate.effective, late_minutes, cancel_reason, payment_policy, String(v.note || ''), req.currentUser.id);
     }
     n++;
   }
@@ -735,7 +736,7 @@ router.get('/payroll/:id', async function (req, res) {
   const month = row.period;
   let statementRows = [];
   if (row.person_type === 'trainer' && row.coach_id) {
-    statementRows = await db.prepare(`SELECT a.*, g.name AS group_name FROM trainer_session_attendance a LEFT JOIN groups g ON g.id=a.group_id WHERE a.coach_id = ? AND substr(a.date,1,7) = ? ORDER BY a.date`).all(row.coach_id, month);
+    statementRows = await db.prepare(`SELECT a.*, g.name AS group_name, COALESCE(sc.full_name, a.substitute_name) AS substitute_name FROM trainer_session_attendance a LEFT JOIN groups g ON g.id=a.group_id LEFT JOIN coaches sc ON sc.id=a.substitute_coach_id WHERE a.coach_id = ? AND substr(a.date,1,7) = ? ORDER BY a.date`).all(row.coach_id, month);
     const priv = await db.prepare(`SELECT ps.*, sw.full_name AS swimmer_name FROM private_sessions ps LEFT JOIN swimmers sw ON sw.id = ps.swimmer_id WHERE ps.coach_id = ? AND substr(ps.date,1,7) = ? ORDER BY ps.date`).all(row.coach_id, month);
     priv.forEach(p => {
       statementRows.push({

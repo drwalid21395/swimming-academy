@@ -104,14 +104,18 @@
             <div class="form-group" style="margin:0;min-width:180px"><label class="font-11 text-muted">ملاحظة</label><input type="text" class="form-control t-note" data-coach="<%= s.id %>" value="<%= s.att && s.att.note ? s.att.note : '' %>" placeholder="اختيارية"></div>
           </div>
           <div class="flex gap-1 sub-wrap" data-coach="<%= s.id %>" style="display:<%= cur === 'بديل' ? 'flex' : 'none' %>;flex-wrap:wrap;align-items:center;border-top:1px dashed var(--card-border);padding-top:6px">
-            <div class="form-group" style="margin:0;min-width:230px">
-              <label class="font-11 text-muted"><i class="fas fa-rotate text-purple"></i> المدرب البديل — تُضاف مستحقات الحصة عليه <span class="req">*</span></label>
-              <select class="form-control t-sub" style="min-width:230px">
-                <option value="">— اختَر المدرب البديل —</option>
+            <div class="form-group" style="margin:0;min-width:220px">
+              <label class="font-11 text-muted"><i class="fas fa-rotate text-purple"></i> المدرب البديل من الأكاديمية</label>
+              <select class="form-control t-sub" style="min-width:220px">
+                <option value="">— اختَر من المدربين —</option>
                 <% coaches.forEach(function (c) { if (Number(c.id) !== Number(s.id)) { %><option value="<%= c.id %>" <%= s.att && Number(s.att.substitute_coach_id) === Number(c.id) ? 'selected' : '' %>><%= c.full_name %></option><% } }); %>
               </select>
             </div>
-            <div class="form-hint" style="margin-top:18px"><i class="fas fa-circle-info"></i> عند "مدرب بديل" تُسجَّل الحصة بتاريخ وتوقيت اليوم وتُضاف مستحقاتها إلى رصيد المدرب البديل.</div>
+            <div class="form-group" style="margin:0;min-width:200px">
+              <label class="font-11 text-muted"><i class="fas fa-user-pen text-purple"></i> أو اكتب اسم بديل خارجي <span class="req">*</span></label>
+              <input type="text" class="form-control t-sub-name" style="min-width:200px" maxlength="120" placeholder="اسم مدرب ليس في الأكاديمية" value="<%= s.att && s.att.substitute_coach_id == null && s.att.substitute_name ? s.att.substitute_name : '' %>">
+            </div>
+            <div class="form-hint" style="margin-top:18px"><i class="fas fa-circle-info"></i> يُسجَّل اسم البديل في كشف المستحقات بجانب الحصة — سواء كان من مدربي الأكاديمية أو اسماً خارجياً.</div>
           </div>
         </div>
       <% }); %>
@@ -199,6 +203,7 @@
     // إظهار/إخفاء حقل المدرب البديل
     var coachId = btn.getAttribute('data-coach');
     row.querySelectorAll('.t-sub').forEach(function (sel) { sel.disabled = status !== 'بديل'; });
+    row.querySelectorAll('.t-sub-name').forEach(function (inp) { inp.disabled = status !== 'بديل'; });
     var wrap = row.querySelector('.sub-wrap');
     if (wrap && wrap.getAttribute('data-coach') === coachId) wrap.style.display = status === 'بديل' ? 'flex' : 'none';
   });
@@ -215,7 +220,22 @@
       b.className = 'att-btn trainer-status ' + cls;
       row.querySelectorAll('.sub-wrap').forEach(function (w) { w.style.display = 'none'; });
       row.querySelectorAll('.t-sub').forEach(function (sel) { sel.disabled = true; });
+      row.querySelectorAll('.t-sub-name').forEach(function (inp) { inp.disabled = true; });
     });
+  });
+
+  // ===== البديل: الاستبدال المتبادل بين الاختيار والكتابة =====
+  card.addEventListener('change', function (e) {
+    if (e.target.classList && e.target.classList.contains('t-sub')) {
+      var row = rowOf(e.target);
+      if (e.target.value) row.querySelectorAll('.t-sub-name').forEach(function (inp) { inp.value = ''; });
+    }
+  });
+  card.addEventListener('input', function (e) {
+    if (e.target.classList && e.target.classList.contains('t-sub-name') && e.target.value.trim()) {
+      var row = rowOf(e.target);
+      row.querySelectorAll('.t-sub').forEach(function (sel) { sel.value = ''; });
+    }
   });
 
   // ===== تصفية المكان: الفرع يرشّح المسابح =====
@@ -320,12 +340,16 @@
         if (poolEl && poolEl.value) rec.pool_id = poolEl.value;
         if (status === 'بديل') {
           var sub = row.querySelector('.t-sub');
-          if (!sub || !sub.value) { missingSub = true; return; }
-          rec.substitute_coach_id = sub.value;
+          var subName = row.querySelector('.t-sub-name');
+          var subId = sub && sub.value ? sub.value : '';
+          var subTxt = subName ? subName.value.trim() : '';
+          if (!subId && !subTxt) { missingSub = true; return; }
+          if (subId) rec.substitute_coach_id = subId;
+          if (subTxt) rec.substitute_name = subTxt;
         }
         statuses[id] = rec;
       });
-      if (missingSub) { App.showToast('اختر المدرب البديل لكل من اختيرت حالته "مدرب بديل"', 'error'); return; }
+      if (missingSub) { App.showToast('اختر المدرب البديل أو اكتب اسمه لكل من اختيرت حالته "مدرب بديل"', 'error'); return; }
       btn.disabled = true;
       fetch('/trainer-attendance/save-day', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
