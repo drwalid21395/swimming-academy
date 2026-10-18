@@ -1,4 +1,4 @@
-/**
+﻿/**
  * نظام الحضور والغياب ومستحقات المدربين والموظفين
  * - حضور المدربين حسب الحصة (مربوط بجدول الحصص الحالي)
  * - حضور الموظفين
@@ -364,6 +364,12 @@ router.get('/trainer-attendance', async function (req, res) {
 ================================================================ */
 /* حفظ حضور يومي جماعي لجميع المدربين (ينشئ الحصص تلقائياً حسب الجدول اليوم) */
 router.post('/trainer-attendance/save-day', async function (req, res) {
+router.post('/trainer-attendance/bulk-delete', async function(req,res){ if(!canDel(req.currentUser,'trainerAttendance')) return res.status(403).json({ok:false,error:'غير مصرح'}); const ids=(Array.isArray(req.body.ids)?req.body.ids:[]).map(Number).filter(n=>Number.isFinite(n)); if(!ids.length) return res.json({ok:false,error:'لا توجد سجلات'}); try{ await db.prepare('DELETE FROM trainer_session_attendance WHERE id IN ('+ids.map(()=>'?').join(',')+')').run(...ids); res.json({ok:true,count:ids.length}); }catch(e){ res.json({ok:false,error:e.message}); }});
+
+router.post('/trainer-attendance/bulk-clear', async function(req,res){ if(!canEdit(req.currentUser,'trainerAttendance')) return res.status(403).json({ok:false,error:'غير مصرح'}); const ids=(Array.isArray(req.body.ids)?req.body.ids:[]).map(Number).filter(n=>Number.isFinite(n)); if(!ids.length) return res.json({ok:false,error:'لا توجد سجلات'}); try{ await db.prepare('UPDATE trainer_session_attendance SET status=? WHERE id IN ('+ids.map(()=>'?').join(',')+')').run('',...ids); res.json({ok:true,count:ids.length}); }catch(e){ res.json({ok:false,error:e.message}); }});
+
+router.post('/trainer-attendance/clear-range', async function(req,res){ if(!canDel(req.currentUser,'trainerAttendance')) return res.status(403).json({ok:false,error:'غير مصرح'}); const from=String(req.body.from||''); const to=String(req.body.to||''); if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(from)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(to)) return res.json({ok:false,error:'تاريخ غير صحيح'}); try{ await db.prepare('DELETE FROM trainer_session_attendance WHERE date >= ? AND date <= ?').run(from,to); res.json({ok:true}); }catch(e){ res.json({ok:false,error:e.message}); }});
+
   if (!canAdd(req.currentUser, 'trainerAttendance')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
   const b = req.body;
   const date = String(b.date || today());
