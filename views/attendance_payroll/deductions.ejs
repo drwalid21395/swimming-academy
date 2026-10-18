@@ -88,19 +88,19 @@
   <div class="card">
     <div class="card-header"><i class="fas fa-list"></i> سجل قيود <%= month %></div>
     <div class="table-wrap">
-      <table class="data-table">
+      <table class="data-table rtable">
         <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th>الشخص</th><th>النوع</th><th>التصنيف</th><th class="sortable">المبلغ<span class="sort-ind"></span></th><th>السبب</th><th></th></tr></thead>
         <tbody>
           <% if (rows.length) { %>
             <% rows.forEach(function (r) { %>
               <tr>
-                <td><%= fmtDate(r.date) %></td>
-                <td><b><%= r.coach_name || r.staff_name || '—' %></b></td>
-                <td><% if (r.adj_type === 'bonus') { %><span class="badge badge-success"><i class="fas fa-arrow-up"></i> إضافة</span><% } else { %><span class="badge badge-danger"><i class="fas fa-arrow-down"></i> خصم</span><% } %></td>
-                <td><%= r.adj_category || '—' %></td>
-                <td class="<%= r.adj_type === 'bonus' ? 'text-success fw-700' : 'text-danger fw-700' %>"><%= money(r.amount) %></td>
-                <td class="font-12"><%= r.reason || r.notes || '—' %></td>
-                <td>
+                <td data-label="التاريخ"><%= fmtDate(r.date) %></td>
+                <td data-label="الشخص"><b><%= r.coach_name || r.staff_name || '—' %></b></td>
+                <td data-label="النوع"><% if (r.adj_type === 'bonus') { %><span class="badge badge-success"><i class="fas fa-arrow-up"></i> إضافة</span><% } else { %><span class="badge badge-danger"><i class="fas fa-arrow-down"></i> خصم</span><% } %></td>
+                <td data-label="التصنيف"><%= r.adj_category || '—' %></td>
+                <td data-label="المبلغ" class="<%= r.adj_type === 'bonus' ? 'text-success fw-700' : 'text-danger fw-700' %>"><%= money(r.amount) %></td>
+                <td data-label="السبب" class="font-12"><%= r.reason || r.notes || '—' %></td>
+                <td class="rt-actions" data-label="إجراءات">
                   <div class="table-actions">
                     <button class="btn btn-ghost btn-sm" data-edit='<%= JSON.stringify(r).replace(/'/g, "&#39;") %>' title="تعديل"><i class="fas fa-pen"></i></button>
                     <form method="POST" action="/deductions/delete/<%= r.id %>" style="display:inline;margin:0"><button type="submit" class="btn btn-ghost btn-sm text-danger" data-confirm="حذف هذا القيد؟" title="حذف"><i class="fas fa-trash"></i></button></form>
