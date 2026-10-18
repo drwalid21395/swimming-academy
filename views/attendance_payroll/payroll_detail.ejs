@@ -20,23 +20,111 @@
   <div class="kpi"><div class="k-val <%= Number(row.remaining) > 0 ? 'text-danger' : 'text-success' %>"><%= money(row.remaining) %></div><div class="k-lbl">المتبقي</div></div>
 </div>
 
+<% var personName = row.coach_name || row.staff_name || ''; %>
+<% var personPhone = row.person_type === 'trainer' ? (row.coach_phone || '') : (row.staff_phone || ''); %>
+<% var lastPay = pays.length ? pays[pays.length - 1] : null; %>
+<% var tplVal = (settings && settings.pay_ussd_tpl != null && settings.pay_ussd_tpl !== '') ? settings.pay_ussd_tpl : '*9*7*{phone}*{amount}#'; %>
+
+<% if (canEdit) { %>
+<div class="card no-print">
+  <div class="card-header"><i class="fas fa-terminal"></i> قالب الكود الجاهز للتحويل (لكل الكباتن)</div>
+  <div class="card-body">
+    <div class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="margin:0;flex:1;min-width:290px">
+        <label class="font-11 text-muted">اكتب القالب مرة واحدة ويثبت لكل الكباتن — <b dir="ltr">{phone}</b> = رقم الكابتن و <b dir="ltr">{amount}</b> = المبلغ</label>
+        <input type="text" id="tplInput" class="form-control" dir="ltr" value="<%= tplVal %>" placeholder="*9*7*{phone}*{amount}#">
+      </div>
+      <button type="button" class="btn btn-primary" id="tplSave"><i class="fas fa-floppy-disk"></i> حفظ القالب</button>
+    </div>
+    <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> عند اختيار <b>Vodafone Cash</b> يُولَّد الكود تلقائياً برقم الكابتن والمبلغ (مع زر اتصال بالكود مباشرة)، وعند اختيار <b>InstaPay</b> يظهر زر فتح التطبيق — ويمكنك تعديل القالب في أي وقت.</div>
+  </div>
+</div>
+<% } %>
+
 <% if (canEdit && Number(row.remaining) > 0) { %>
 <div class="card no-print">
   <div class="card-header"><i class="fas fa-money-bill-wave"></i> تسجيل دفعة</div>
   <div class="card-body">
-    <form id="payForm" method="post" class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
-      <div class="form-group" style="margin:0"><label class="font-11 text-muted">المبلغ (كحد أقصى <b><%= fmtMoney(row.remaining) %></b>)</label><input type="number" step="0.01" name="amount" class="form-control" value="<%= row.remaining %>" min="0.01" max="<%= row.remaining %>" style="width:140px" required></div>
-      <div class="form-group" style="margin:0"><label class="font-11 text-muted">التاريخ</label><input type="date" name="paid_date" class="form-control" value="<%= today() %>"></div>
-      <div class="form-group" style="margin:0"><label class="font-11 text-muted">طريقة الدفع</label>
-        <select name="method" class="form-control">
-          <% PAY_METHODS.forEach(function (m) { %><option value="<%= m %>"><%= m %></option><% }); %>
-        </select>
+    <form id="payForm" method="post">
+      <div class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="margin:0">
+          <label class="font-11 text-muted">نوع القبض</label>
+          <div class="flex gap-1">
+            <label class="check-chip"><input type="radio" name="pay_scope" value="full" checked><span class="chip-label"><i class="fas fa-check-double"></i> قبض كامل</span></label>
+            <label class="check-chip"><input type="radio" name="pay_scope" value="partial"><span class="chip-label"><i class="fas fa-circle-half-stroke"></i> قبض جزئي</span></label>
+          </div>
+        </div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">المبلغ (كحد أقصى <b><%= fmtMoney(row.remaining) %></b>)</label><input type="number" step="0.01" name="amount" id="payAmount" class="form-control" value="<%= row.remaining %>" min="0.01" max="<%= row.remaining %>" style="width:150px" readonly required></div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">التاريخ</label><input type="date" name="paid_date" class="form-control" value="<%= today() %>"></div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">طريقة الدفع</label>
+          <select name="method" id="payMethod" class="form-control">
+            <% PAY_METHODS.forEach(function (m) { %><option value="<%= m %>"><%= m %></option><% }); %>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">كود/رقم التحويل المطلوب</label><input type="text" name="transfer_code" id="payCode" class="form-control" dir="ltr" value="<%= personPhone %>" placeholder="Vodafone Cash / InstaPay" style="width:175px"></div>
+        <div class="form-group" style="margin:0;min-width:170px"><label class="font-11 text-muted">ملاحظة</label><input type="text" name="note" class="form-control" placeholder="اختيارية"></div>
       </div>
-      <div class="form-group" style="margin:0;min-width:180px"><label class="font-11 text-muted">ملاحظة</label><input type="text" name="note" class="form-control" placeholder="اختيارية"></div>
-      <button type="submit" class="btn btn-success btn-lg"><i class="fas fa-hand-holding-usd"></i> صرف دفعة</button>
-      <% if (!Number(row.approved)) { %><button type="button" class="btn btn-outline btn-lg" id="approveBtn"><i class="fas fa-check"></i> اعتماد الكشف</button><% } %>
+      <div id="readyBox" data-phone="<%= personPhone %>" style="display:none">
+        <div class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end;margin-top:10px">
+          <div class="form-group" style="margin:0;flex:1;min-width:280px">
+            <label class="font-11 text-muted"><i class="fas fa-bolt"></i> الكود الجاهز للتحويل <span id="readyFor"></span></label>
+            <input type="text" id="readyCode" class="form-control" dir="ltr" readonly placeholder="—">
+          </div>
+          <button type="button" class="btn btn-outline" id="readyCopy"><i class="fas fa-copy"></i> نسخ الكود</button>
+          <button type="button" class="btn btn-outline" id="readyUse"><i class="fas fa-file-import"></i> استخدامه في حقل الكود</button>
+          <a href="#" id="readyDial" class="btn btn-primary"><i class="fas fa-phone-volume"></i> اتصال بالكود</a>
+        </div>
+        <div class="form-hint" style="margin-top:6px"><i class="fas fa-circle-info"></i> الكود مولّد من قالبك برقم الكابتن والمبلغ — «اتصال بالكود» يفتح هاتفك جاهزاً للاتصال، و«استخدامه» يضعه في حقل كود التحويل تلقائياً.</div>
+      </div>
+      <div class="flex gap-1" style="margin-top:10px;align-items:center" id="instaRow" hidden>
+        <a href="https://ipn.eg/S" target="_blank" rel="noopener" class="btn btn-success" id="instaOpen"><i class="fas fa-arrow-up-right-from-square"></i> فتح تطبيق InstaPay</a>
+        <span class="font-11 text-muted">يفتح التطبيق مباشرة على هاتفك — ومن الحاسوب يفتح موقع InstaPay.</span>
+      </div>
+      <div class="flex gap-1" style="flex-wrap:wrap;margin-top:10px;align-items:center">
+        <span class="badge badge-success" id="scopeHint">النتيجة بعد الصرف: مسدد</span>
+        <button type="submit" class="btn btn-success btn-lg"><i class="fas fa-hand-holding-usd"></i> صرف دفعة</button>
+        <% if (!Number(row.approved)) { %><button type="button" class="btn btn-outline btn-lg" id="approveBtn"><i class="fas fa-check"></i> اعتماد الكشف</button><% } %>
+      </div>
     </form>
-    <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> عند الصرف يتم تسجيل دفعة و إنشاء مصروف تلقائياً في سجل المصروفات (فئة: رواتب وأجور).</div>
+    <div class="form-hint" style="margin-top:8px"><i class="fas fa-mobile-screen-button"></i> هاتف الفودافون كاش المدرب/الموظف (من الملف): <% if (personPhone) { %><b dir="ltr"><%= personPhone %></b><% } else { %><span class="text-danger">غير مسجَّل بالملف</span><% } %></div>
+    <div class="form-hint" style="margin-top:4px"><i class="fas fa-circle-info"></i> عند الصرف يتم تسجيل دفعة و إنشاء مصروف تلقائياً في سجل المصروفات (فئة: رواتب وأجور).</div>
+  </div>
+</div>
+<% } %>
+
+<% if (canEdit || pays.length > 0) { %>
+<div class="card no-print" id="waCard"
+  data-name="<%= personName %>"
+  data-month="<%= month %>"
+  data-remaining="<%= row.remaining %>"
+  data-status="<%= row.status %>"
+  data-site="<%= siteName %>"
+  data-amount="<%= lastPay ? lastPay.amount : '' %>"
+  data-method="<%= lastPay ? lastPay.method : '' %>"
+  data-date="<%= lastPay ? lastPay.paid_date : '' %>">
+  <div class="card-header"><i class="fab fa-whatsapp" style="color:#25d366"></i> رسالة الصرف الجاهزة (واتساب)</div>
+  <div class="card-body">
+    <div class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="margin:0">
+        <label class="font-11 text-muted">هاتف المدرب/الموظف (من الملف)</label>
+        <input type="text" id="waPhone" class="form-control" dir="ltr" value="<%= personPhone %>" placeholder="غير مسجل بالملف" style="width:185px">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="font-11 text-muted">كود/رقم التحويل المطلوب</label>
+        <input type="text" id="waCode" class="form-control" dir="ltr" value="<%= lastPay && lastPay.transfer_code ? lastPay.transfer_code : personPhone %>" placeholder="010xxxxxxxx" style="width:195px">
+      </div>
+      <div class="form-group" style="margin:0;flex:1;min-width:280px">
+        <label class="font-11 text-muted">نص الرسالة (قابل للتعديل)</label>
+        <textarea id="waText" class="form-control" rows="4" style="width:100%"></textarea>
+      </div>
+    </div>
+    <div class="flex gap-1" style="margin-top:10px;flex-wrap:wrap;align-items:center">
+      <button type="button" class="btn btn-success" id="waSend"><i class="fab fa-whatsapp"></i> فتح واتساب — جاهز للإرسال</button>
+      <button type="button" class="btn btn-outline" id="waCopy"><i class="fas fa-copy"></i> نسخ النص</button>
+      <button type="button" class="btn btn-outline" id="waReset"><i class="fas fa-rotate"></i> إعادة توليد</button>
+      <span class="font-11 text-muted" id="waHint"></span>
+    </div>
+    <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> الرسالة تُجهَّز على رقم المدرب المسجَّل بملفه ومعها كود/رقم التحويل — ويمكن تعديل الكود والنص قبل الإرسال.</div>
   </div>
 </div>
 <% } %>
@@ -100,7 +188,7 @@
                 <tr>
                   <td data-label="التاريخ"><%= fmtDate(p.paid_date) %></td>
                   <td data-label="المبلغ" class="fw-700 text-success"><%= money(p.amount) %></td>
-                  <td data-label="طريقة"><span class="badge badge-primary"><%= p.method %></span></td>
+                  <td data-label="طريقة"><span class="badge badge-primary"><%= p.method %></span><% if (p.transfer_code) { %><br><span class="font-11 text-muted" dir="ltr"><i class="fas fa-hashtag"></i> <%= p.transfer_code %></span><% } %></td>
                   <td data-label="بواسطة" class="font-12"><%= p.payer_name || '—' %><% if (p.note) { %><br><span class="text-muted"><%= p.note %></span><% } %></td>
                 </tr>
               <% }); %>
@@ -116,20 +204,245 @@
 
 <script>
 (function () {
+  function money(n) {
+    if (n === null || n === undefined || isNaN(n)) n = 0;
+    return Number(n).toLocaleString('ar-EG', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' ج.م';
+  }
   var payForm = document.getElementById('payForm');
-  if (payForm) payForm.addEventListener('submit', function (e) {
-    e.preventDefault();
-    var fd = new FormData(e.target); var data = {};
-    fd.forEach(function (v, k) { data[k] = v; });
-    var btn = e.target.querySelector('button[type="submit"]'); btn.disabled = true;
-    fetch('/payroll/<%= row.id %>/pay', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
-    }).then(function (r) { return r.json(); }).then(function (res) {
-      btn.disabled = false;
-      if (res.ok) { App.showToast('تم صرف ' + money(res.paidNow), 'success'); setTimeout(function () { location.reload(); }, 700); }
-      else { App.showToast(res.error || 'فشل الصرف', 'error'); }
-    }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+  var card = document.getElementById('waCard');
+  var remaining = card ? Number(card.getAttribute('data-remaining') || 0) : Number(<%= JSON.stringify(Number(row.remaining) || 0) %>);
+  var userEdited = false;
+  var tplInput = document.getElementById('tplInput');
+  var tplSave = document.getElementById('tplSave');
+  var readyBox = document.getElementById('readyBox');
+  var readyCode = document.getElementById('readyCode');
+  var readyFor = document.getElementById('readyFor');
+  var readyCopy = document.getElementById('readyCopy');
+  var readyUse = document.getElementById('readyUse');
+  var readyDial = document.getElementById('readyDial');
+  var instaRow = document.getElementById('instaRow');
+  var instaOpen = document.getElementById('instaOpen');
+  var payCode = payForm ? payForm.querySelector('#payCode') : null;
+  var mSel = payForm ? payForm.querySelector('#payMethod') : null;
+  var lastAuto = '';
+
+  function postJSON(url, payload) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(function (r) { return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) {} return { r: r, j: j }; }); });
+  }
+
+  function currentAmt() {
+    if (!payForm) return 0;
+    var scopeEl = payForm.querySelector('input[name="pay_scope"]:checked');
+    var scope = scopeEl ? scopeEl.value : 'full';
+    if (scope === 'full') return remaining;
+    var a = payForm.querySelector('#payAmount');
+    return Number((a && a.value) || 0);
+  }
+
+  function genCode() {
+    if (!tplInput || !readyBox) return '';
+    var phone = (readyBox.getAttribute('data-phone') || '').trim();
+    var amtStr = String(Number(currentAmt()) || 0);
+    var t = tplInput.value || '';
+    ['{phone}', '[phone]', 'الرقم'].forEach(function (k) { t = t.split(k).join(phone); });
+    ['{amount}', '[amount]', 'المبلغ'].forEach(function (k) { t = t.split(k).join(amtStr); });
+    return t;
+  }
+
+  function syncReady() {
+    if (!readyBox || !readyCode) return;
+    var method = mSel ? mSel.value : '';
+    var show = (method === 'Vodafone Cash');
+    readyBox.style.display = show ? '' : 'none';
+    if (instaRow) instaRow.hidden = (method !== 'InstaPay');
+    if (!show) return;
+    var code = genCode();
+    readyCode.value = code;
+    if (readyFor) readyFor.textContent = '— ' + method;
+    if (readyDial) readyDial.href = code ? ('tel:' + code.replace(/#/g, '%23')) : '#';
+    if (payCode && code && (!payCode.dataset.manual || payCode.value === lastAuto)) {
+      payCode.value = code;
+      lastAuto = code;
+      delete payCode.dataset.manual;
+    }
+  }
+
+  function compose() {
+    if (!card) return;
+    var name = card.getAttribute('data-name') || '';
+    var monthV = card.getAttribute('data-month') || '';
+    var site = card.getAttribute('data-site') || '';
+    var codeEl = document.getElementById('waCode');
+    var code = codeEl ? codeEl.value.trim() : '';
+    var amt = 0, method = '', date = '', scopeLabel = '', result = '';
+    if (payForm) {
+      var scopeEl = payForm.querySelector('input[name="pay_scope"]:checked');
+      var scope = scopeEl ? scopeEl.value : 'full';
+      var amtEl = payForm.querySelector('#payAmount');
+      amt = scope === 'full' ? remaining : Number((amtEl && amtEl.value) || 0);
+      var mEl = payForm.querySelector('#payMethod');
+      method = mEl ? mEl.value : '';
+      var dEl = payForm.querySelector('input[name="paid_date"]');
+      date = dEl ? dEl.value : '';
+      scopeLabel = scope === 'full' ? 'قبض كامل' : 'قبض جزئي';
+      result = amt >= remaining - 0.001 ? 'مسدد' : 'مدفوع جزئياً';
+    } else {
+      amt = Number(card.getAttribute('data-amount') || 0);
+      method = card.getAttribute('data-method') || '';
+      date = card.getAttribute('data-date') || '';
+      scopeLabel = remaining <= 0 ? 'قبض كامل' : 'قبض جزئي';
+      result = card.getAttribute('data-status') || '';
+    }
+    var lines = [];
+    lines.push('🏊 *إشعار صرف مستحقات*');
+    lines.push('──────────────');
+    if (name) lines.push('الاسم: ' + name);
+    if (monthV) lines.push('الفترة: ' + monthV);
+    if (date) lines.push('التاريخ: ' + date);
+    lines.push('المبلغ: ' + money(amt) + ' (' + scopeLabel + ')');
+    if (method) lines.push('طريقة الدفع: ' + method);
+    lines.push('كود/رقم التحويل: ' + (code || '—'));
+    if (result) lines.push('الحالة: ' + result);
+    lines.push('──────────────');
+    if (site) lines.push('مع خالص الشكر — ' + site);
+    var ta = document.getElementById('waText');
+    if (ta && !userEdited) ta.value = lines.join('\n');
+  }
+
+  function updateHint() {
+    var hint = document.getElementById('scopeHint');
+    if (!hint || !payForm) return;
+    var scopeEl = payForm.querySelector('input[name="pay_scope"]:checked');
+    var scope = scopeEl ? scopeEl.value : 'full';
+    var amtEl = payForm.querySelector('#payAmount');
+    var amt = scope === 'full' ? remaining : Number((amtEl && amtEl.value) || 0);
+    var res = amt >= remaining - 0.001 ? 'مسدد' : 'مدفوع جزئياً';
+    hint.textContent = 'النتيجة بعد الصرف: ' + res;
+    hint.className = 'badge ' + (res === 'مسدد' ? 'badge-success' : 'badge-warning');
+  }
+
+  function syncScope() {
+    if (!payForm) return;
+    var scopeEl = payForm.querySelector('input[name="pay_scope"]:checked');
+    var scope = scopeEl ? scopeEl.value : 'full';
+    var amtEl = payForm.querySelector('#payAmount');
+    if (scope === 'full') { amtEl.value = remaining; amtEl.readOnly = true; }
+    else { amtEl.readOnly = false; }
+    updateHint();
+    compose();
+    syncReady();
+  }
+
+  if (payForm) {
+    Array.prototype.forEach.call(payForm.querySelectorAll('input[name="pay_scope"]'), function (el) {
+      el.addEventListener('change', syncScope);
+    });
+    var amtEl = payForm.querySelector('#payAmount');
+    if (amtEl) amtEl.addEventListener('input', function () { updateHint(); compose(); syncReady(); });
+    var mEl = payForm.querySelector('#payMethod');
+    if (mEl) mEl.addEventListener('change', function () { compose(); syncReady(); });
+    var dEl = payForm.querySelector('input[name="paid_date"]');
+    if (dEl) dEl.addEventListener('change', compose);
+    var codeFormEl = payForm.querySelector('#payCode');
+    var waCodeEl = document.getElementById('waCode');
+    if (codeFormEl) codeFormEl.addEventListener('input', function () {
+      codeFormEl.dataset.manual = '1';
+      if (waCodeEl) { waCodeEl.value = codeFormEl.value; compose(); }
+    });
+    syncScope();
+
+    payForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var fd = new FormData(e.target); var data = {};
+      fd.forEach(function (v, k) { data[k] = v; });
+      var btn = e.target.querySelector('button[type="submit"]'); btn.disabled = true;
+      postJSON('/payroll/<%= row.id %>/pay', data).then(function (o) {
+        btn.disabled = false;
+        if (o.j && o.j.ok) { App.showToast('تم صرف ' + money(Number(data.amount || 0)), 'success'); setTimeout(function () { location.reload(); }, 700); }
+        else { App.showToast((o.j && o.j.error) || ('فشل الصرف (' + o.r.status + ')'), 'error'); }
+      }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+    });
+  }
+
+  if (tplInput) tplInput.addEventListener('input', function () { syncReady(); });
+  if (tplSave && tplInput) tplSave.addEventListener('click', function () {
+    tplSave.disabled = true;
+    postJSON('/payroll/transfer-tpl', { tpl: tplInput.value }).then(function (o) {
+      tplSave.disabled = false;
+      if (o.j && o.j.ok) { App.showToast('تم حفظ قالب الكود', 'success'); syncReady(); }
+      else App.showToast((o.j && o.j.error) || ('تعذر الحفظ (' + o.r.status + ')'), 'error');
+    }).catch(function () { tplSave.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
   });
+  if (readyCopy && readyCode) readyCopy.addEventListener('click', function () {
+    if (!readyCode.value) { App.showToast('لا يوجد كود جاهز', 'error'); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(readyCode.value).then(function () { App.showToast('تم نسخ الكود', 'success'); }, function () { App.showToast('تعذر النسخ', 'error'); });
+    } else {
+      readyCode.select(); document.execCommand('copy');
+      App.showToast('تم نسخ الكود', 'success');
+    }
+  });
+  if (readyUse && readyCode && payCode) readyUse.addEventListener('click', function () {
+    if (!readyCode.value) { App.showToast('لا يوجد كود جاهز', 'error'); return; }
+    payCode.value = readyCode.value;
+    delete payCode.dataset.manual;
+    lastAuto = readyCode.value;
+    App.showToast('تم وضع الكود في حقل التحويل', 'success');
+  });
+  if (instaOpen) instaOpen.addEventListener('click', function (e) {
+    e.preventDefault();
+    var mob = /Mobile|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Silk/i.test(navigator.userAgent);
+    window.open(mob ? 'https://ipn.eg/S' : 'https://www.instapay.eg/', '_blank');
+  });
+
+  var waText = document.getElementById('waText');
+  if (waText) waText.addEventListener('input', function () { userEdited = true; });
+  var waCode = document.getElementById('waCode');
+  if (waCode) waCode.addEventListener('input', compose);
+  var waReset = document.getElementById('waReset');
+  if (waReset) waReset.addEventListener('click', function () { userEdited = false; compose(); App.showToast('تم إعادة توليد النص', 'success'); });
+  var waPhone = document.getElementById('waPhone');
+  var waHint = document.getElementById('waHint');
+  function phoneHint() {
+    if (!waHint || !waPhone) return;
+    if (!waPhone.value.trim()) { waHint.textContent = 'لا يوجد هاتف مسجل بالملف — أدخله يدوياً'; waHint.className = 'font-11 text-danger'; }
+    else { waHint.textContent = ''; waHint.className = 'font-11 text-muted'; }
+  }
+  if (waPhone) waPhone.addEventListener('input', function () {
+    phoneHint();
+    if (readyBox) { readyBox.setAttribute('data-phone', waPhone.value.trim()); syncReady(); }
+  });
+  phoneHint();
+  var waSend = document.getElementById('waSend');
+  if (waSend) waSend.addEventListener('click', function () {
+    var phoneEl = document.getElementById('waPhone');
+    var phone = phoneEl ? phoneEl.value.trim() : '';
+    var text = waText ? waText.value : '';
+    if (!phone) { phoneHint(); App.showToast('أدخل رقم هاتف المدرب أولاً', 'error'); if (phoneEl) phoneEl.focus(); return; }
+    var d = String(phone).replace(/\D+/g, '');
+    if (d.indexOf('00') === 0) d = d.slice(2);
+    if (d.indexOf('0') === 0) d = d.slice(1);
+    if (d.length <= 11) d = '20' + d;
+    var mob = /Mobile|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Silk/i.test(navigator.userAgent);
+    var url = mob ? ('https://wa.me/' + d + '?text=' + encodeURIComponent(text))
+                  : ('https://web.whatsapp.com/send?phone=' + d + '&text=' + encodeURIComponent(text));
+    window.open(url, '_blank');
+  });
+  var waCopy = document.getElementById('waCopy');
+  if (waCopy) waCopy.addEventListener('click', function () {
+    if (!waText) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(waText.value).then(function () { App.showToast('تم نسخ النص', 'success'); }, function () { App.showToast('تعذر النسخ', 'error'); });
+    } else {
+      waText.select(); document.execCommand('copy');
+      App.showToast('تم نسخ النص', 'success');
+    }
+  });
+
+  compose();
+  syncReady();
+
   var approveBtn = document.getElementById('approveBtn');
   if (approveBtn) approveBtn.addEventListener('click', function () {
     App.showConfirm('اعتماد هذا الكشف؟', function () {

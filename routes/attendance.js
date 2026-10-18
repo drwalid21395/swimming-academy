@@ -723,10 +723,19 @@ async function upsertPayroll(p, month, req) {
   return info.lastInsertRowid;
 }
 
+/* حفظ قالب الكود الجاهز للتحويل (يُستخدم لكل الكباتن — قابل للتعديل في أي وقت) */
+router.post('/payroll/transfer-tpl', async function (req, res) {
+  if (!canEdit(req.currentUser, 'payroll')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
+  const tpl = String((req.body && req.body.tpl) || '').trim().slice(0, 120);
+  await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)').run('pay_ussd_tpl', tpl);
+  audit(req.currentUser.id, req.currentUser.fullName || req.currentUser.full_name, 'edit', 'settings', 0, 'تعديل قالب كود التحويل: ' + tpl, req);
+  res.json({ ok: true, tpl });
+});
+
 router.get('/payroll/:id', async function (req, res) {
   if (!canView(req.currentUser, 'payroll')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
-    const row = await db.prepare(`SELECT p.*, c.full_name AS coach_name, c.qualification, s.full_name AS staff_name, s.job_title, b.name AS branch_name
+    const row = await db.prepare(`SELECT p.*, c.full_name AS coach_name, c.qualification, c.phone AS coach_phone, s.full_name AS staff_name, s.job_title, s.phone AS staff_phone, b.name AS branch_name
     FROM payroll p
     LEFT JOIN coaches c ON c.id = p.coach_id
     LEFT JOIN staff s ON s.id = p.staff_id
@@ -769,25 +778,29 @@ router.post('/payroll/:id/pay', async function (req, res) {
   const b = req.body;
   const row = await db.prepare('SELECT * FROM payroll WHERE id = ?').get(id);
   if (!row) return res.status(404).json({ ok: false });
-  const amount = Math.min(Number(b.amount || 0), Number(row.remaining || 0));
+  const fullScope = String(b.pay_scope || '') === 'full' || String(b.full || '') === '1';
+  const rowRemaining = Number(row.remaining || 0);
+  const amount = fullScope ? rowRemaining : Math.min(Number(b.amount || 0), rowRemaining);
   if (amount <= 0) return res.json({ ok: false, error: 'مبلغ غير صالح' });
   const paidDate = String(b.paid_date || today());
   const method = String(b.method || 'نقدي');
   const note = String(b.note || '');
-  const info = await db.prepare(`INSERT INTO payroll_transactions (payroll_id, amount, paid_date, method, note, created_by) VALUES (?,?,?,?,?,?)`)
-    .run(id, amount, paidDate, method, note, req.currentUser.id);
+  const transferCode = String(b.transfer_code || '').trim().slice(0, 60);
+  const info = await db.prepare(`INSERT INTO payroll_transactions (payroll_id, amount, paid_date, method, note, transfer_code, created_by) VALUES (?,?,?,?,?,?,?)`)
+    .run(id, amount, paidDate, method, note, transferCode, req.currentUser.id);
   // تحديث حالة الكشف
   const paidNow = Math.round((Number(row.paid_amount || 0) + amount) * 100) / 100;
   const remaining = Math.round((Number(row.net || 0) - paidNow) * 100) / 100;
   const status = remaining <= 0 ? 'مسدد' : 'مدفوع جزئياً';
   await db.prepare(`UPDATE payroll SET paid_amount=?, remaining=?, status=? WHERE id=?`).run(paidNow, remaining, status, id);
   // إنشاء مصروف تلقائي بنفس نمط نظام coach_payments الحالي
-  const name = row.coach_name || row.staff_name || ('#' + id);
+  const meta = await db.prepare(`SELECT COALESCE(c.full_name, s.full_name) AS pname FROM payroll p LEFT JOIN coaches c ON c.id=p.coach_id LEFT JOIN staff s ON s.id=p.staff_id WHERE p.id=?`).get(id);
+  const name = (meta && meta.pname) || ('#' + id);
   try {
     await db.prepare(`INSERT INTO expenses (category, date, description, amount, payment_method, beneficiary, status, created_by) VALUES ('رواتب وأجور', ?, ?, ?, ?, ?, 'معتمد', ?)`)
-      .run(paidDate, 'صرف مستحقات: ' + name + ' (شهر ' + row.period + ')', amount, method, name, req.currentUser.id);
+      .run(paidDate, 'صرف مستحقات: ' + name + ' (شهر ' + row.period + ')' + (transferCode ? ' — كود: ' + transferCode : ''), amount, method, name, req.currentUser.id);
   } catch (e) { /* لا نكسر العملية */ }
-  audit(req.currentUser.id, req.currentUser.fullName || req.currentUser.full_name, 'approve_payment', 'payroll', id, 'صرف مستحقات ' + name + ': ' + money(amount) + ' (' + method + ')', req);
+  audit(req.currentUser.id, req.currentUser.fullName || req.currentUser.full_name, 'approve_payment', 'payroll', id, 'صرف مستحقات ' + name + ': ' + money(amount) + ' (' + method + ')' + (transferCode ? ' — كود: ' + transferCode : ''), req);
   res.json({ ok: true, paidNow, remaining, status, id: Number(info.lastInsertRowid || 0) });
 });
 
