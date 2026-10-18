@@ -1,65 +1,65 @@
-﻿<%- include('../partials/layout_top', { title: '╪ص╪╢┘ê╪▒ ╪د┘┘à╪»╪▒╪ذ┘è┘', active: 'trainerAttendance' }) %>
+<%- include('../partials/layout_top', { title: 'حضور المدربين', active: 'trainerAttendance' }) %>
 <div class="page-head">
   <div>
-    <div class="page-title"><i class="fas fa-user-check"></i> ╪ص╪╢┘ê╪▒ ╪د┘┘à╪»╪▒╪ذ┘è┘</div>
-    <div class="page-sub">╪ز╪│╪ش┘è┘ ┘ê┘à╪ز╪د╪ذ╪╣╪ر ╪ص╪╢┘ê╪▒ ╪د┘┘à╪»╪▒╪ذ┘è┘ ╪ص╪│╪ذ ╪د┘┘è┘ê┘à ظ¤ <b><%= fmtDate(date) %></b></div>
+    <div class="page-title"><i class="fas fa-user-check"></i> حضور المدربين</div>
+    <div class="page-sub">تسجيل ومتابعة حضور المدربين حسب اليوم — <b><%= fmtDate(date) %></b></div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
-    <a href="/trainer-attendance?date=<%= yday %>" class="btn btn-ghost btn-sm" title="╪ث┘à╪│">╪ث┘à╪│</a>
-    <a href="/trainer-attendance?date=<%= today() %>" class="btn btn-ghost btn-sm" title="╪د┘┘è┘ê┘à">╪د┘┘è┘ê┘à</a>
+    <a href="/trainer-attendance?date=<%= yday %>" class="btn btn-ghost btn-sm" title="أمس">أمس</a>
+    <a href="/trainer-attendance?date=<%= today() %>" class="btn btn-ghost btn-sm" title="اليوم">اليوم</a>
     <form method="get" action="/trainer-attendance" class="flex gap-1">
       <input type="date" name="date" class="form-control" value="<%= date %>">
-      <button class="btn btn-outline btn-sm" type="submit"><i class="fas fa-magnifying-glass"></i> ╪╣╪▒╪╢</button>
+      <button class="btn btn-outline btn-sm" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
     </form>
-    <a href="/staff-hours?date=<%= date %>" class="btn btn-primary btn-sm"><i class="fas fa-bolt"></i> ╪د┘╪ص╪╢┘ê╪▒ ╪د┘╪│╪▒┘è╪╣</a>
-    <a href="/attendance-reports?month=<%= date.slice(0,7) %>" class="btn btn-ghost btn-sm"><i class="fas fa-chart-column"></i> ╪ز┘é╪د╪▒┘è╪▒</a>
+    <a href="/staff-hours?date=<%= date %>" class="btn btn-primary btn-sm"><i class="fas fa-bolt"></i> الحضور السريع</a>
+    <a href="/attendance-reports?month=<%= date.slice(0,7) %>" class="btn btn-ghost btn-sm"><i class="fas fa-chart-column"></i> تقارير</a>
   </div>
 </div>
 
 <div class="kpi-row">
-  <div class="kpi"><div class="k-val text-success"><%= kpi.present %></div><div class="k-lbl">╪ص╪د╪╢╪▒</div></div>
-  <div class="kpi"><div class="k-val text-danger"><%= kpi.absent %></div><div class="k-lbl">╪║╪د╪خ╪ذ</div></div>
-  <div class="kpi"><div class="k-val text-warning"><%= kpi.excused %></div><div class="k-lbl">┘à╪╣╪ز╪░╪▒</div></div>
-  <div class="kpi"><div class="k-val text-primary"><%= kpi.late %></div><div class="k-lbl">┘à╪ز╪ث╪«╪▒</div></div>
-  <div class="kpi"><div class="k-val"><%= sheet.length %></div><div class="k-lbl">┘à╪»╪▒╪ذ┘è┘</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= kpi.present %></div><div class="k-lbl">حاضر</div></div>
+  <div class="kpi"><div class="k-val text-danger"><%= kpi.absent %></div><div class="k-lbl">غائب</div></div>
+  <div class="kpi"><div class="k-val text-warning"><%= kpi.excused %></div><div class="k-lbl">معتذر</div></div>
+  <div class="kpi"><div class="k-val text-primary"><%= kpi.late %></div><div class="k-lbl">متأخر</div></div>
+  <div class="kpi"><div class="k-val"><%= sheet.length %></div><div class="k-lbl">مدربين</div></div>
 </div>
 
 <div class="card" id="trainerAttCard">
   <div class="card-header">
-    <h3><i class="fas fa-users"></i> ┘é╪د╪خ┘à╪ر ╪ص╪╢┘ê╪▒ ┘è┘ê┘à <b class="text-primary"><%= fmtDate(date) %></b></h3>
+    <h3><i class="fas fa-users"></i> قائمة حضور يوم <b class="text-primary"><%= fmtDate(date) %></b></h3>
   </div>
   <div class="card-body">
     <% if (sheet.length) { %>
       <div class="flex gap-1" style="margin-bottom:14px;flex-wrap:wrap">
         <% if (canAdd) { %>
-          <button class="btn btn-success btn-sm" data-ma="╪ص╪د╪╢╪▒"><i class="fas fa-check"></i> ╪د┘┘â┘ ╪ص╪د╪╢╪▒</button>
-          <button class="btn btn-outline-danger btn-sm" data-ma="╪║╪د╪خ╪ذ"><i class="fas fa-xmark"></i> ╪د┘┘â┘ ╪║╪د╪خ╪ذ</button>
-          <button class="btn btn-outline-warning btn-sm" data-ma="┘à╪╣╪ز╪░╪▒"><i class="fas fa-book"></i> ╪د┘┘â┘ ┘à╪╣╪ز╪░╪▒</button>
-          <button class="btn btn-outline-primary btn-sm" data-ma="┘à╪ز╪ث╪«╪▒"><i class="fas fa-clock"></i> ╪د┘┘â┘ ┘à╪ز╪ث╪«╪▒</button>
-          <button class="btn btn-primary btn-sm trainer-save-btn" data-date="<%= date %>"><i class="fas fa-floppy-disk"></i> ╪ص┘╪╕ ╪د┘╪ص╪╢┘ê╪▒</button>
+          <button class="btn btn-success btn-sm" data-ma="حاضر"><i class="fas fa-check"></i> الكل حاضر</button>
+          <button class="btn btn-outline-danger btn-sm" data-ma="غائب"><i class="fas fa-xmark"></i> الكل غائب</button>
+          <button class="btn btn-outline-warning btn-sm" data-ma="معتذر"><i class="fas fa-book"></i> الكل معتذر</button>
+          <button class="btn btn-outline-primary btn-sm" data-ma="متأخر"><i class="fas fa-clock"></i> الكل متأخر</button>
+          <button class="btn btn-primary btn-sm trainer-save-btn" data-date="<%= date %>"><i class="fas fa-floppy-disk"></i> حفظ الحضور</button>
         <% } %>
       </div>
       <div class="att-row" style="border-bottom-width:2px">
-        <div class="att-name"><b>╪د┘┘à╪»╪▒╪ذ</b></div>
+        <div class="att-name"><b>المدرب</b></div>
         <div class="att-btns">
           <% STATUS.forEach(function (st) { %><span class="att-btn att-head" title="<%= st.label %>" style="cursor:default"><span class="font-11"><%= st.label %></span></span><% }); %>
         </div>
       </div>
       <% sheet.forEach(function (s) { %>
         <% var cur = s.att ? s.att.status : ''; %>
-        <% function clsFor(v) { return v === '╪ص╪د╪╢╪▒' ? 'active-present' : v === '╪║╪د╪خ╪ذ' ? 'active-absent' : v === '┘à╪╣╪ز╪░╪▒' ? 'active-excused' : v === '┘à╪ز╪ث╪«╪▒' ? 'active-late' : v === '┘à┘╪║╪د╪ر' ? 'active-cancelled' : v === '╪ذ╪»┘è┘' ? 'active-substitute' : ''; } %>
+        <% function clsFor(v) { return v === 'حاضر' ? 'active-present' : v === 'غائب' ? 'active-absent' : v === 'معتذر' ? 'active-excused' : v === 'متأخر' ? 'active-late' : v === 'ملغاة' ? 'active-cancelled' : v === 'بديل' ? 'active-substitute' : ''; } %>
         <div class="att-row" style="flex-direction:column;align-items:stretch;gap:6px">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
             <div class="att-name" style="flex:1">
               <div class="flex items-center gap-1">
-                <div class="avatar-sm"><%= (s.full_name || '┘à').trim().charAt(0) %></div>
+                <div class="avatar-sm"><%= (s.full_name || 'م').trim().charAt(0) %></div>
                 <div>
                   <b><%= s.full_name %></b>
                   <div class="font-11 text-muted">
                     <% if (s.branch_name) { %><i class="fas fa-building"></i> <%= s.branch_name %><% } %>
-                    <% if (s.group_name) { %> ┬╖ <i class="fas fa-people-group"></i> <%= s.group_name %><% } %>
-                    <% if (s.time) { %> ┬╖ <i class="fas fa-clock"></i> <b dir="ltr"><%= s.time %></b><% } %>
+                    <% if (s.group_name) { %> · <i class="fas fa-people-group"></i> <%= s.group_name %><% } %>
+                    <% if (s.time) { %> · <i class="fas fa-clock"></i> <b dir="ltr"><%= s.time %></b><% } %>
                   </div>
                 </div>
               </div>
@@ -71,62 +71,78 @@
             </div>
           </div>
           <div class="flex gap-1" style="flex-wrap:wrap;align-items:center">
-            <div class="form-group" style="margin:0"><label class="font-11 text-muted">┘é┘è┘à╪ر ╪د┘╪ص╪╡╪ر (╪ش.┘à)</label><input type="number" step="0.01" class="form-control t-rate" data-coach="<%= s.id %>" style="width:120px" value="<%= s.att && s.att.session_rate != null ? s.att.session_rate : '' %>" placeholder="╪ز┘┘é╪د╪خ┘è"></div>
-            <div class="form-group" style="margin:0"><label class="font-11 text-muted">╪»┘é╪د╪خ┘é ╪د┘╪ز╪ث╪«┘è╪▒</label><input type="number" class="form-control t-late" data-coach="<%= s.id %>" style="width:90px" value="<%= s.att && s.att.late_minutes ? s.att.late_minutes : 0 %>"></div>
-            <div class="form-group" style="margin:0;min-width:180px"><label class="font-11 text-muted">┘à┘╪د╪ص╪╕╪ر</label><input type="text" class="form-control t-note" data-coach="<%= s.id %>" value="<%= s.att && s.att.note ? s.att.note : '' %>" placeholder="╪د╪«╪ز┘è╪د╪▒┘è╪ر"></div>
+            <div class="form-group" style="margin:0"><label class="font-11 text-muted">قيمة الحصة (ج.م)</label><input type="number" step="0.01" class="form-control t-rate" data-coach="<%= s.id %>" style="width:120px" value="<%= s.att && s.att.session_rate != null ? s.att.session_rate : '' %>" placeholder="تلقائي"></div>
+            <div class="form-group" style="margin:0"><label class="font-11 text-muted">دقائق التأخير</label><input type="number" class="form-control t-late" data-coach="<%= s.id %>" style="width:90px" value="<%= s.att && s.att.late_minutes ? s.att.late_minutes : 0 %>"></div>
+            <div class="form-group" style="margin:0;min-width:180px"><label class="font-11 text-muted">ملاحظة</label><input type="text" class="form-control t-note" data-coach="<%= s.id %>" value="<%= s.att && s.att.note ? s.att.note : '' %>" placeholder="اختيارية"></div>
           </div>
-          <div class="flex gap-1 sub-wrap" data-coach="<%= s.id %>" style="display:<%= cur === '╪ذ╪»┘è┘' ? 'flex' : 'none' %>;flex-wrap:wrap;align-items:center;border-top:1px dashed var(--card-border);padding-top:6px">
+          <div class="flex gap-1 sub-wrap" data-coach="<%= s.id %>" style="display:<%= cur === 'بديل' ? 'flex' : 'none' %>;flex-wrap:wrap;align-items:center;border-top:1px dashed var(--card-border);padding-top:6px">
             <div class="form-group" style="margin:0;min-width:230px">
-              <label class="font-11 text-muted"><i class="fas fa-rotate text-purple"></i> ╪د┘┘à╪»╪▒╪ذ ╪د┘╪ذ╪»┘è┘ ظ¤ ╪ز┘╪╢╪د┘ ┘à╪│╪ز╪ص┘é╪د╪ز ╪د┘╪ص╪╡╪ر ╪╣┘┘è┘ç <span class="req">*</span></label>
+              <label class="font-11 text-muted"><i class="fas fa-rotate text-purple"></i> المدرب البديل — تُضاف مستحقات الحصة عليه <span class="req">*</span></label>
               <select class="form-control t-sub" style="min-width:230px">
-                <option value="">ظ¤ ╪د╪«╪ز┘╪▒ ╪د┘┘à╪»╪▒╪ذ ╪د┘╪ذ╪»┘è┘ ظ¤</option>
+                <option value="">— اختَر المدرب البديل —</option>
                 <% coaches.forEach(function (c) { if (Number(c.id) !== Number(s.id)) { %><option value="<%= c.id %>" <%= s.att && Number(s.att.substitute_coach_id) === Number(c.id) ? 'selected' : '' %>><%= c.full_name %></option><% } }); %>
               </select>
             </div>
-            <div class="form-hint" style="margin-top:18px"><i class="fas fa-circle-info"></i> ╪╣┘╪» "┘à╪»╪▒╪ذ ╪ذ╪»┘è┘" ╪ز┘╪│╪ش┘┘ّ┘ ╪د┘╪ص╪╡╪ر ╪ذ╪ز╪د╪▒┘è╪« ┘ê╪ز┘ê┘é┘è╪ز ╪د┘┘è┘ê┘à ┘ê╪ز┘╪╢╪د┘ ┘à╪│╪ز╪ص┘é╪د╪ز┘ç╪د ╪ح┘┘ë ╪▒╪╡┘è╪» ╪د┘┘à╪»╪▒╪ذ ╪د┘╪ذ╪»┘è┘.</div>
+            <div class="form-hint" style="margin-top:18px"><i class="fas fa-circle-info"></i> عند "مدرب بديل" تُسجَّل الحصة بتاريخ وتوقيت اليوم وتُضاف مستحقاتها إلى رصيد المدرب البديل.</div>
           </div>
         </div>
       <% }); %>
     <% } else { %>
-      <div class="empty-state"><i class="fas fa-user-slash"></i><p>┘╪د ┘è┘ê╪ش╪» ┘à╪»╪▒╪ذ┘ê┘ ┘╪┤╪╖┘ê┘</p></div>
+      <div class="empty-state"><i class="fas fa-user-slash"></i><p>لا يوجد مدربون نشطون</p></div>
     <% } %>
   </div>
 </div>
 
 <div class="card">
-  <div class="card-header"><i class="fas fa-list"></i> ╪│╪ش┘ ╪ص╪╢┘ê╪▒ ╪┤┘ç╪▒ <b><%= month %></b></div>
+  <div class="card-header"><i class="fas fa-list"></i> سجل حضور شهر <b><%= month %></b></div>
+  <div class="card-body" style="padding-bottom:0">
+    <div class="flex gap-1" id="trainerBulkBar" style="flex-wrap:wrap;align-items:center">
+      <span class="font-12 text-muted">المحدد: <b id="trainerSelCount">0</b></span>
+      <button class="btn btn-outline-danger btn-sm" id="trainerBulkDelete" disabled><i class="fas fa-trash"></i> حذف المحدد</button>
+      <button class="btn btn-outline-warning btn-sm" id="trainerBulkClear" disabled><i class="fas fa-eraser"></i> مسح حالة المحدد</button>
+      <span class="spacer"></span>
+      <div class="flex gap-1" style="align-items:center;flex-wrap:wrap">
+        <label class="font-12 text-muted">مسح النطاق:</label>
+        <input type="date" id="trainerRangeFrom" class="form-control" style="width:150px" dir="ltr">
+        <input type="date" id="trainerRangeTo" class="form-control" style="width:150px" dir="ltr">
+        <button class="btn btn-danger btn-sm" id="trainerRangeClear"><i class="fas fa-calendar-xmark"></i> مسح كل السجلات في النطاق</button>
+      </div>
+    </div>
+  </div>
   <div class="table-wrap">
     <table class="data-table" id="trainerTable">
       <thead>
         <tr>
-          <th class="sortable">╪د┘╪ز╪د╪▒┘è╪«<span class="sort-ind"></span></th>
-          <th class="sortable">╪د┘┘à╪ش┘à┘ê╪╣╪ر<span class="sort-ind"></span></th>
-          <th class="sortable">╪د┘┘à╪»╪▒╪ذ<span class="sort-ind"></span></th>
-          <th>╪د┘┘ê┘é╪ز</th>
-          <th class="sortable">╪د┘╪ص╪د┘╪ر<span class="sort-ind"></span></th>
-          <th>┘é┘è┘à╪ر ╪د┘╪ص╪╡╪ر</th>
-          <th>╪د┘┘à┘╪د╪ص╪╕╪ر</th>
+          <th style="width:34px"><input type="checkbox" id="trainerChkAll" title="تحديد الكل"></th>
+          <th class="sortable">التاريخ<span class="sort-ind"></span></th>
+          <th class="sortable">المجموعة<span class="sort-ind"></span></th>
+          <th class="sortable">المدرب<span class="sort-ind"></span></th>
+          <th>الوقت</th>
+          <th class="sortable">الحالة<span class="sort-ind"></span></th>
+          <th>قيمة الحصة</th>
+          <th>الملاحظة</th>
         </tr>
       </thead>
       <tbody>
         <% if (rows.length) { %>
           <% rows.forEach(function (r) { %>
             <% var st = STATUS.find(function (s) { return s.value === r.status; }); %>
-            <tr>
+            <tr class="trainer-row" data-id="<%= r.id %>">
+              <td data-label=""><input type="checkbox" class="trainer-rowchk" value="<%= r.id %>"></td>
               <td><b><%= fmtDate(r.date) %></b></td>
-              <td><%= r.group_name || ('╪ص╪╡╪ر #' + r.session_id) %></td>
-              <td><b><%= r.coach_name || ('┘à╪»╪▒╪ذ #' + r.coach_id) %></b><% if (r.substitute_name) { %><br><span class="badge badge-purple"><i class="fas fa-rotate"></i> ╪ذ╪»┘è┘: <%= r.substitute_name %></span><% } %></td>
-              <td dir="ltr"><%= r.start_time %> ظ¤ <%= r.end_time || '' %></td>
+              <td><%= r.group_name || ('حصة #' + r.session_id) %></td>
+              <td><b><%= r.coach_name || ('مدرب #' + r.coach_id) %></b><% if (r.substitute_name) { %><br><span class="badge badge-purple"><i class="fas fa-rotate"></i> بديل: <%= r.substitute_name %></span><% } %></td>
+              <td dir="ltr"><%= r.start_time %> — <%= r.end_time || '' %></td>
               <td>
                 <% if (st) { %><span class="badge <%= st.cls %>"><i class="fas <%= st.icon %>"></i> <%= st.label %></span><% } else { %><span class="badge badge-gray"><%= r.status %></span><% } %>
-                <% if (r.late_minutes > 0) { %><span class="badge badge-warning"><%= r.late_minutes %> ╪»</span><% } %>
+                <% if (r.late_minutes > 0) { %><span class="badge badge-warning"><%= r.late_minutes %> د</span><% } %>
               </td>
               <td><%= money(r.amount) %></td>
-              <td class="text-muted font-12"><%= r.note || 'ظ¤' %></td>
+              <td class="text-muted font-12"><%= r.note || '—' %></td>
             </tr>
           <% }); %>
         <% } else { %>
-          <tr><td colspan="7"><div class="empty-state"><i class="fas fa-clipboard-user"></i><p>┘╪د ┘è┘ê╪ش╪» ╪ص╪╢┘ê╪▒ ┘à╪│╪ش┘ ┘┘è ┘ç╪░╪د ╪د┘╪┤┘ç╪▒ ظ¤ ╪د╪ذ╪»╪ث ┘à┘ ┘é╪د╪خ┘à╪ر ╪ص╪╢┘ê╪▒ ╪د┘┘è┘ê┘à ╪ث╪╣┘┘ë ╪د┘╪╡┘╪ص╪ر</p></div></td></tr>
+          <tr><td colspan="8"><div class="empty-state"><i class="fas fa-clipboard-user"></i><p>لا يوجد حضور مسجل في هذا الشهر — ابدأ من قائمة حضور اليوم أعلى الصفحة</p></div></td></tr>
         <% } %>
       </tbody>
     </table>
@@ -139,7 +155,7 @@
   if (!card) return;
 
   function activeCls(status) {
-    return status === '╪ص╪د╪╢╪▒' ? 'active-present' : status === '╪║╪د╪خ╪ذ' ? 'active-absent' : status === '┘à╪╣╪ز╪░╪▒' ? 'active-excused' : status === '┘à╪ز╪ث╪«╪▒' ? 'active-late' : status === '┘à┘╪║╪د╪ر' ? 'active-cancelled' : 'active-substitute';
+    return status === 'حاضر' ? 'active-present' : status === 'غائب' ? 'active-absent' : status === 'معتذر' ? 'active-excused' : status === 'متأخر' ? 'active-late' : status === 'ملغاة' ? 'active-cancelled' : 'active-substitute';
   }
   function rowOf(btn) { return btn.closest('.att-row'); }
 
@@ -150,11 +166,11 @@
     var status = btn.getAttribute('data-status');
     row.querySelectorAll('.trainer-status').forEach(function (b) { b.className = 'att-btn trainer-status'; });
     btn.className = 'att-btn trainer-status ' + activeCls(status);
-    // ╪ح╪╕┘ç╪د╪▒/╪ح╪«┘╪د╪ة ╪ص┘é┘ ╪د┘┘à╪»╪▒╪ذ ╪د┘╪ذ╪»┘è┘
+    // إظهار/إخفاء حقل المدرب البديل
     var coachId = btn.getAttribute('data-coach');
-    row.querySelectorAll('.t-sub').forEach(function (sel) { sel.disabled = status !== '╪ذ╪»┘è┘'; });
+    row.querySelectorAll('.t-sub').forEach(function (sel) { sel.disabled = status !== 'بديل'; });
     var wrap = row.querySelector('.sub-wrap');
-    if (wrap && wrap.getAttribute('data-coach') === coachId) wrap.style.display = status === '╪ذ╪»┘è┘' ? 'flex' : 'none';
+    if (wrap && wrap.getAttribute('data-coach') === coachId) wrap.style.display = status === 'بديل' ? 'flex' : 'none';
   });
 
   card.addEventListener('click', function (e) {
@@ -172,6 +188,70 @@
     });
   });
 
+  // ===== تحديد ومسح سجلات الشهر =====
+  var tbl = document.getElementById('trainerTable');
+  if (tbl) {
+    var selCount = document.getElementById('trainerSelCount');
+    var delBtn = document.getElementById('trainerBulkDelete');
+    var clrBtn = document.getElementById('trainerBulkClear');
+    function selectedIds() {
+      return Array.prototype.map.call(tbl.querySelectorAll('.trainer-rowchk:checked'), function (c) { return Number(c.value); }).filter(function (n) { return Number.isFinite(n); });
+    }
+    function refreshSel() {
+      var n = selectedIds().length;
+      if (selCount) selCount.textContent = n;
+      if (delBtn) delBtn.disabled = n === 0;
+      if (clrBtn) clrBtn.disabled = n === 0;
+      var all = tbl.querySelector('#trainerChkAll');
+      var boxes = tbl.querySelectorAll('.trainer-rowchk');
+      if (all) { all.checked = boxes.length > 0 && n === boxes.length; all.indeterminate = n > 0 && n < boxes.length; }
+    }
+    tbl.addEventListener('change', function (e) {
+      if (e.target.id === 'trainerChkAll') {
+        var on = e.target.checked;
+        tbl.querySelectorAll('.trainer-rowchk').forEach(function (c) { c.checked = on; });
+        refreshSel(); return;
+      }
+      if (e.target.classList && e.target.classList.contains('trainer-rowchk')) refreshSel();
+    });
+    function postJson(url, body) {
+      return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) { return r.json(); });
+    }
+    if (delBtn) delBtn.addEventListener('click', function () {
+      var ids = selectedIds();
+      if (!ids.length) return;
+      if (!confirm('حذف ' + ids.length + ' سجل(ات) نهائياً؟')) return;
+      delBtn.disabled = true;
+      postJson('/trainer-attendance/bulk-delete', { ids: ids }).then(function (res) {
+        if (res.ok) { App.showToast('تم حذف ' + (res.count || ids.length) + ' سجل', 'success'); setTimeout(function () { location.reload(); }, 500); }
+        else { App.showToast(res.error || 'فشل الحذف', 'error'); delBtn.disabled = false; }
+      }).catch(function () { delBtn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+    });
+    if (clrBtn) clrBtn.addEventListener('click', function () {
+      var ids = selectedIds();
+      if (!ids.length) return;
+      clrBtn.disabled = true;
+      postJson('/trainer-attendance/bulk-clear', { ids: ids }).then(function (res) {
+        if (res.ok) { App.showToast('تم مسح حالة ' + (res.count || ids.length) + ' سجل', 'success'); setTimeout(function () { location.reload(); }, 500); }
+        else { App.showToast(res.error || 'فشل المسح', 'error'); clrBtn.disabled = false; }
+      }).catch(function () { clrBtn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+    });
+    var rangeBtn = document.getElementById('trainerRangeClear');
+    if (rangeBtn) rangeBtn.addEventListener('click', function () {
+      var from = (document.getElementById('trainerRangeFrom') || {}).value || '';
+      var to = (document.getElementById('trainerRangeTo') || {}).value || '';
+      if (!from || !to) { App.showToast('اختر تاريخ البداية والنهاية', 'error'); return; }
+      if (from > to) { App.showToast('تاريخ البداية بعد النهاية', 'error'); return; }
+      if (!confirm('مسح كل سجلات الحضور من ' + from + ' إلى ' + to + '؟')) return;
+      rangeBtn.disabled = true;
+      postJson('/trainer-attendance/clear-range', { from: from, to: to }).then(function (res) {
+        if (res.ok) { App.showToast('تم مسح سجلات النطاق', 'success'); setTimeout(function () { location.reload(); }, 500); }
+        else { App.showToast(res.error || 'فشل المسح', 'error'); rangeBtn.disabled = false; }
+      }).catch(function () { rangeBtn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+    });
+    refreshSel();
+  }
+
   document.querySelectorAll('.trainer-save-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var statuses = {};
@@ -181,7 +261,7 @@
         if (!st || !st.getAttribute('data-coach')) return;
         var id = st.getAttribute('data-coach');
         var active = row.querySelector('.trainer-status.active-present, .trainer-status.active-absent, .trainer-status.active-excused, .trainer-status.active-late, .trainer-status.active-cancelled, .trainer-status.active-substitute');
-        var status = active ? active.getAttribute('data-status') : '╪ص╪د╪╢╪▒';
+        var status = active ? active.getAttribute('data-status') : 'حاضر';
         var rateEl = row.querySelector('.t-rate');
         var lateEl = row.querySelector('.t-late');
         var noteEl = row.querySelector('.t-note');
@@ -189,23 +269,23 @@
         if (rateEl) rec.session_rate = rateEl.value;
         if (lateEl) rec.late_minutes = lateEl.value || 0;
         if (noteEl) rec.note = noteEl.value;
-        if (status === '╪ذ╪»┘è┘') {
+        if (status === 'بديل') {
           var sub = row.querySelector('.t-sub');
           if (!sub || !sub.value) { missingSub = true; return; }
           rec.substitute_coach_id = sub.value;
         }
         statuses[id] = rec;
       });
-      if (missingSub) { App.showToast('╪د╪«╪ز╪▒ ╪د┘┘à╪»╪▒╪ذ ╪د┘╪ذ╪»┘è┘ ┘┘â┘ ┘à┘ ╪د╪«╪ز┘è╪▒╪ز ╪ص╪د┘╪ز┘ç "┘à╪»╪▒╪ذ ╪ذ╪»┘è┘"', 'error'); return; }
+      if (missingSub) { App.showToast('اختر المدرب البديل لكل من اختيرت حالته "مدرب بديل"', 'error'); return; }
       btn.disabled = true;
       fetch('/trainer-attendance/save-day', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date: btn.dataset.date, statuses: statuses })
       }).then(function (r) { return r.json(); }).then(function (res) {
         btn.disabled = false;
-        if (res.ok) { App.showToast('╪ز┘à ╪ص┘╪╕ ╪ص╪╢┘ê╪▒ ╪د┘┘à╪»╪▒╪ذ┘è┘ (' + (res.count || 0) + ')', 'success'); setTimeout(function () { location.reload(); }, 600); }
-        else { App.showToast(res.error || '┘╪┤┘ ╪د┘╪ص┘╪╕', 'error'); }
-      }).catch(function () { btn.disabled = false; App.showToast('╪ز╪╣╪░╪▒ ╪د┘╪د╪ز╪╡╪د┘ ╪ذ╪د┘╪«╪د╪»┘à', 'error'); });
+        if (res.ok) { App.showToast('تم حفظ حضور المدربين (' + (res.count || 0) + ')', 'success'); setTimeout(function () { location.reload(); }, 600); }
+        else { App.showToast(res.error || 'فشل الحفظ', 'error'); }
+      }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
     });
   });
 })();
