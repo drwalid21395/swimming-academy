@@ -797,11 +797,75 @@ router.post('/payroll/:id/pay', async function (req, res) {
   const meta = await db.prepare(`SELECT COALESCE(c.full_name, s.full_name) AS pname FROM payroll p LEFT JOIN coaches c ON c.id=p.coach_id LEFT JOIN staff s ON s.id=p.staff_id WHERE p.id=?`).get(id);
   const name = (meta && meta.pname) || ('#' + id);
   try {
-    await db.prepare(`INSERT INTO expenses (category, date, description, amount, payment_method, beneficiary, status, created_by) VALUES ('رواتب وأجور', ?, ?, ?, ?, ?, 'معتمد', ?)`)
+    const expInfo = await db.prepare(`INSERT INTO expenses (category, date, description, amount, payment_method, beneficiary, status, created_by) VALUES ('رواتب وأجور', ?, ?, ?, ?, ?, 'معتمد', ?)`)
       .run(paidDate, 'صرف مستحقات: ' + name + ' (شهر ' + row.period + ')' + (transferCode ? ' — كود: ' + transferCode : ''), amount, method, name, req.currentUser.id);
+    const expId = Number(expInfo.lastInsertRowid || 0) || 0;
+    if (expId) await db.prepare('UPDATE payroll_transactions SET expense_id = ? WHERE id = ?').run(expId, Number(info.lastInsertRowid || 0));
   } catch (e) { /* لا نكسر العملية */ }
   audit(req.currentUser.id, req.currentUser.fullName || req.currentUser.full_name, 'approve_payment', 'payroll', id, 'صرف مستحقات ' + name + ': ' + money(amount) + ' (' + method + ')' + (transferCode ? ' — كود: ' + transferCode : ''), req);
   res.json({ ok: true, paidNow, remaining, status, id: Number(info.lastInsertRowid || 0) });
+});
+
+/* إعادة احتساب إجماليات الكشف من الدفعات (تُستدعى بعد تعديل/حذف دفعة) */
+async function recomputePayrollTotals(payrollId) {
+  const p = await db.prepare('SELECT net FROM payroll WHERE id = ?').get(payrollId);
+  if (!p) return null;
+  const s = await db.prepare('SELECT COALESCE(SUM(amount), 0) AS paid FROM payroll_transactions WHERE payroll_id = ?').get(payrollId);
+  const paid = Math.round(Number(s.paid || 0) * 100) / 100;
+  const remaining = Math.round((Number(p.net || 0) - paid) * 100) / 100;
+  const status = remaining <= 0 ? 'مسدد' : 'مدفوع جزئياً';
+  await db.prepare('UPDATE payroll SET paid_amount=?, remaining=?, status=? WHERE id=?').run(paid, remaining, status, payrollId);
+  return { paid: paid, remaining: remaining, status: status };
+}
+
+/* تعديل دفعة (قبل أو بعد التحويل) — يحدّث المدفوع والمتبقي والمصروف المرتبط */
+router.post('/payroll/txn/:txnId/update', async function (req, res) {
+  if (!canEdit(req.currentUser, 'payroll')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
+  const txnId = Number(req.params.txnId);
+  const txn = await db.prepare('SELECT * FROM payroll_transactions WHERE id = ?').get(txnId);
+  if (!txn) return res.status(404).json({ ok: false, error: 'الدفعة غير موجودة' });
+  const b = req.body;
+  const amount = Math.round(Number(b.amount || 0) * 100) / 100;
+  if (!(amount > 0)) return res.json({ ok: false, error: 'مبلغ غير صالح' });
+  const p = await db.prepare('SELECT * FROM payroll WHERE id = ?').get(txn.payroll_id);
+  if (!p) return res.status(404).json({ ok: false, error: 'الكشف غير موجود' });
+  const otherSum = await db.prepare('SELECT COALESCE(SUM(amount), 0) AS s FROM payroll_transactions WHERE payroll_id = ? AND id != ?').get(txn.payroll_id, txnId);
+  const sumAfter = Math.round((Number(otherSum.s || 0) + amount) * 100) / 100;
+  if (sumAfter > Number(p.net || 0) + 0.001) return res.json({ ok: false, error: 'مجموع الدفعات يتجاوز صافي الكشف (' + money(p.net) + ')' });
+  const paidDate = String(b.paid_date || txn.paid_date || today());
+  const method = String(b.method || txn.method || 'نقدي');
+  const note = String(b.note || '');
+  const transferCode = String(b.transfer_code || '').trim().slice(0, 60);
+  await db.prepare('UPDATE payroll_transactions SET amount=?, paid_date=?, method=?, note=?, transfer_code=? WHERE id=?')
+    .run(amount, paidDate, method, note, transferCode, txnId);
+  const meta = await db.prepare(`SELECT COALESCE(c.full_name, s.full_name) AS pname FROM payroll p LEFT JOIN coaches c ON c.id=p.coach_id LEFT JOIN staff s ON s.id=p.staff_id WHERE p.id=?`).get(txn.payroll_id);
+  const pname = (meta && meta.pname) || ('#' + txn.payroll_id);
+  if (txn.expense_id) {
+    try {
+      await db.prepare('UPDATE expenses SET date=?, description=?, amount=?, payment_method=?, beneficiary=? WHERE id=?')
+        .run(paidDate, 'صرف مستحقات: ' + pname + ' (شهر ' + p.period + ')' + (transferCode ? ' — كود: ' + transferCode : ''), amount, method, pname, txn.expense_id);
+    } catch (e) { /* لا نكسر العملية */ }
+  }
+  const totals = await recomputePayrollTotals(txn.payroll_id);
+  audit(req.currentUser.id, req.currentUser.fullName || req.currentUser.full_name, 'edit', 'payroll', txnId, 'تعديل دفعة مستحقات ' + pname + ': ' + money(txn.amount) + ' → ' + money(amount) + ' (' + method + ')' + (transferCode ? ' — كود: ' + transferCode : ''), req);
+  res.json(Object.assign({ ok: true, payroll_id: txn.payroll_id }, totals || {}));
+});
+
+/* حذف دفعة (قبل أو بعد التحويل) — يعيد احتساب الإجماليات ويحذف المصروف المرتبط */
+router.post('/payroll/txn/:txnId/delete', async function (req, res) {
+  if (!canDel(req.currentUser, 'payroll')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
+  const txnId = Number(req.params.txnId);
+  const txn = await db.prepare('SELECT * FROM payroll_transactions WHERE id = ?').get(txnId);
+  if (!txn) return res.status(404).json({ ok: false, error: 'الدفعة غير موجودة' });
+  if (txn.expense_id) {
+    try { await db.prepare('DELETE FROM expenses WHERE id = ?').run(txn.expense_id); } catch (e) { /* لا نكسر العملية */ }
+  }
+  await db.prepare('DELETE FROM payroll_transactions WHERE id = ?').run(txnId);
+  const meta = await db.prepare(`SELECT COALESCE(c.full_name, s.full_name) AS pname FROM payroll p LEFT JOIN coaches c ON c.id=p.coach_id LEFT JOIN staff s ON s.id=p.staff_id WHERE p.id=?`).get(txn.payroll_id);
+  const pname = (meta && meta.pname) || ('#' + txn.payroll_id);
+  const totals = await recomputePayrollTotals(txn.payroll_id);
+  audit(req.currentUser.id, req.currentUser.fullName || req.currentUser.full_name, 'delete', 'payroll', txnId, 'حذف دفعة مستحقات ' + pname + ': ' + money(txn.amount) + ' (' + txn.method + ')' + (txn.transfer_code ? ' — كود: ' + txn.transfer_code : ''), req);
+  res.json(Object.assign({ ok: true, payroll_id: txn.payroll_id }, totals || {}));
 });
 
 /* اعتماد الكشف */

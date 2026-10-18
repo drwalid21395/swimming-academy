@@ -129,6 +129,33 @@
 </div>
 <% } %>
 
+<% if (canEdit) { %>
+<div class="card no-print" id="txnEditCard" hidden>
+  <div class="card-header"><i class="fas fa-pen-to-square"></i> تعديل دفعة <span id="txnEditFor" class="font-12 text-muted"></span></div>
+  <div class="card-body">
+    <form id="txnEditForm" method="post">
+      <input type="hidden" id="txnEditId" value="">
+      <div class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">المبلغ</label><input type="number" step="0.01" min="0.01" id="txnEditAmount" class="form-control" style="width:150px" required></div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">التاريخ</label><input type="date" id="txnEditDate" class="form-control"></div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">طريقة الدفع</label>
+          <select id="txnEditMethod" class="form-control">
+            <% PAY_METHODS.forEach(function (m) { %><option value="<%= m %>"><%= m %></option><% }); %>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">كود/رقم التحويل</label><input type="text" id="txnEditCode" class="form-control" dir="ltr" style="width:175px"></div>
+        <div class="form-group" style="margin:0;min-width:170px"><label class="font-11 text-muted">ملاحظة</label><input type="text" id="txnEditNote" class="form-control"></div>
+      </div>
+      <div class="flex gap-1" style="margin-top:10px;align-items:center;flex-wrap:wrap">
+        <button type="submit" class="btn btn-primary"><i class="fas fa-floppy-disk"></i> حفظ التعديل</button>
+        <button type="button" class="btn btn-outline" id="txnEditCancel"><i class="fas fa-xmark"></i> إلغاء</button>
+        <span class="font-11 text-muted">يُحدَّث المدفوع والمتبقي وحالة الكشف تلقائياً — وكذلك المصروف المرتبط بهذه الدفعة إن وُجد.</span>
+      </div>
+    </form>
+  </div>
+</div>
+<% } %>
+
 <div class="grid-2" style="align-items:start">
   <div class="card">
     <div class="card-header"><i class="fas fa-list-check"></i> تفصيل الحساب (<%= statementRows.length %> بند)</div>
@@ -181,7 +208,7 @@
       <div class="card-header"><i class="fas fa-receipt"></i> سجل الدفعات (<%= pays.length %>)</div>
       <div class="table-wrap">
         <table class="data-table rtable">
-          <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th class="sortable">المبلغ<span class="sort-ind"></span></th><th>طريقة</th><th>بواسطة</th></tr></thead>
+          <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th class="sortable">المبلغ<span class="sort-ind"></span></th><th>طريقة</th><th>بواسطة</th><% if (canEdit || canDel) { %><th class="no-print">إجراءات</th><% } %></tr></thead>
           <tbody>
             <% if (pays.length) { %>
               <% pays.forEach(function (p) { %>
@@ -190,10 +217,20 @@
                   <td data-label="المبلغ" class="fw-700 text-success"><%= money(p.amount) %></td>
                   <td data-label="طريقة"><span class="badge badge-primary"><%= p.method %></span><% if (p.transfer_code) { %><br><span class="font-11 text-muted" dir="ltr"><i class="fas fa-hashtag"></i> <%= p.transfer_code %></span><% } %></td>
                   <td data-label="بواسطة" class="font-12"><%= p.payer_name || '—' %><% if (p.note) { %><br><span class="text-muted"><%= p.note %></span><% } %></td>
+                  <% if (canEdit || canDel) { %>
+                  <td data-label="إجراءات" class="no-print">
+                    <% if (canEdit) { %>
+                    <button type="button" class="btn btn-outline btn-sm txn-edit" title="تعديل الدفعة" data-id="<%= p.id %>" data-amount="<%= p.amount %>" data-date="<%= p.paid_date %>" data-method="<%= p.method %>" data-code="<%= p.transfer_code || '' %>" data-note="<%= p.note || '' %>"><i class="fas fa-pen"></i></button>
+                    <% } %>
+                    <% if (canDel) { %>
+                    <button type="button" class="btn btn-outline btn-sm txn-del" title="حذف الدفعة" data-id="<%= p.id %>"><i class="fas fa-trash"></i></button>
+                    <% } %>
+                  </td>
+                  <% } %>
                 </tr>
               <% }); %>
             <% } else { %>
-              <tr><td colspan="4"><div class="empty-state"><i class="fas fa-receipt"></i><p>لم تُسجل أي دفعات بعد</p></div></td></tr>
+              <tr><td colspan="<%= (canEdit || canDel) ? 5 : 4 %>"><div class="empty-state"><i class="fas fa-receipt"></i><p>لم تُسجل أي دفعات بعد</p></div></td></tr>
             <% } %>
           </tbody>
         </table>
@@ -438,6 +475,50 @@
       waText.select(); document.execCommand('copy');
       App.showToast('تم نسخ النص', 'success');
     }
+  });
+
+  var txnEditCard = document.getElementById('txnEditCard');
+  Array.prototype.forEach.call(document.querySelectorAll('.txn-edit'), function (btn) {
+    btn.addEventListener('click', function () {
+      if (!txnEditCard) return;
+      document.getElementById('txnEditId').value = btn.dataset.id;
+      document.getElementById('txnEditAmount').value = btn.dataset.amount;
+      document.getElementById('txnEditDate').value = btn.dataset.date;
+      var tm = document.getElementById('txnEditMethod');
+      Array.prototype.forEach.call(tm.options, function (o) { o.selected = (o.value === btn.dataset.method); });
+      document.getElementById('txnEditCode').value = btn.dataset.code || '';
+      document.getElementById('txnEditNote').value = btn.dataset.note || '';
+      document.getElementById('txnEditFor').textContent = '— رقم ' + btn.dataset.id;
+      txnEditCard.hidden = false;
+      txnEditCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+  var txnEditCancel = document.getElementById('txnEditCancel');
+  if (txnEditCancel) txnEditCancel.addEventListener('click', function () { txnEditCard.hidden = true; });
+  var txnEditForm = document.getElementById('txnEditForm');
+  if (txnEditForm) txnEditForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var tid = document.getElementById('txnEditId').value;
+    postJSON('/payroll/txn/' + tid + '/update', {
+      amount: Number(document.getElementById('txnEditAmount').value || 0),
+      paid_date: document.getElementById('txnEditDate').value,
+      method: document.getElementById('txnEditMethod').value,
+      transfer_code: document.getElementById('txnEditCode').value,
+      note: document.getElementById('txnEditNote').value
+    }).then(function (o) {
+      if (o.j && o.j.ok) { App.showToast('تم تعديل الدفعة وتحديث الكشف', 'success'); setTimeout(function () { location.reload(); }, 600); }
+      else { App.showToast((o.j && o.j.error) || ('فشل التعديل (' + o.r.status + ')'), 'error'); }
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.txn-del'), function (btn) {
+    btn.addEventListener('click', function () {
+      App.showConfirm('حذف هذه الدفعة نهائياً؟ سيُعاد احتساب المدفوع والمتبقي والمصروف المرتبط بها.', function () {
+        postJSON('/payroll/txn/' + btn.dataset.id + '/delete', {}).then(function (o) {
+          if (o.j && o.j.ok) { App.showToast('تم حذف الدفعة وإعادة الاحتساب', 'success'); setTimeout(function () { location.reload(); }, 600); }
+          else { App.showToast((o.j && o.j.error) || ('فشل الحذف (' + o.r.status + ')'), 'error'); }
+        });
+      });
+    });
   });
 
   compose();
