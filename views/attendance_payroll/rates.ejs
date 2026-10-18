@@ -57,7 +57,7 @@
           <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> حفظ أسعار المدرب</button>
         </div>
       </form>
-      <div class="form-hint" style="margin-top:10px"><i class="fas fa-circle-info"></i> عند عدم ضبط السعر يُستخدم <b>راتب الحصة</b> من ملف المدرب تلقائياً.</div>
+      <div class="form-hint" style="margin-top:10px"><i class="fas fa-circle-info"></i> عند عدم ضبط السعر يُستخدم <b>راتب الحصة</b> من ملف المدرب تلقائياً — وعند الحفظ يتم تحديث سجلات الحضور المسجّلة بالسعر القديم (التسعير التلقائي فقط، والحصص بسعر يدوي تبقى كما هي) وإعادة احتساب كشوف المستحقات القائمة مع الحفاظ على المبالغ المدفوعة.</div>
     </div>
   </div>
 
@@ -113,6 +113,7 @@
           <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> حفظ أجور الموظف</button>
         </div>
       </form>
+      <div class="form-hint" style="margin-top:10px"><i class="fas fa-circle-info"></i> عند الحفظ يتم إعادة احتساب كشوف المستحقات القائمة لهذا الموظف بالجديد مع الحفاظ على المبالغ المدفوعة.</div>
     </div>
   </div>
 </div>
@@ -151,7 +152,13 @@
       fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
         .then(function (r) { return r.json(); }).then(function (res) {
           btn.disabled = false;
-          if (res.ok) { App.showToast('تم الحفظ', 'success'); setTimeout(function () { location.reload(); }, 600); }
+          if (res.ok) {
+            var extra = '';
+            if (res.updated_attendance) extra += ' — تم تحديث ' + res.updated_attendance + ' سجل حضور';
+            if (res.recomputed) extra += ' وإعادة احتساب ' + res.recomputed + ' كشف مستحقات';
+            App.showToast('تم الحفظ' + extra, 'success');
+            setTimeout(function () { location.reload(); }, 900);
+          }
           else { App.showToast(res.error || 'فشل الحفظ', 'error'); }
         }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
     });

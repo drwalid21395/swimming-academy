@@ -719,7 +719,7 @@ async function upsertPayroll(p, month, req) {
       .run(p.gross, p.extras, p.deductions, p.net, remaining, remaining <= 0 ? 'مسدد' : (paid > 0 ? 'مدفوع جزئياً' : 'مستحق'), new Date().toLocaleString('sv-SE').replace('T', ' '), existing.id);
     return existing.id;
   }
-  const info = await db.prepare(`INSERT INTO payroll (person_type, coach_id, staff_id, period, gross, extras, deductions, net, paid_amount, remaining, status, note) VALUES (?,?,?,?,?,?,?,?,0,0,'مستحق','مولّد تلقائياً')`).run(...values);
+  const info = await db.prepare(`INSERT INTO payroll (person_type, coach_id, staff_id, period, gross, extras, deductions, net, paid_amount, remaining, status, note) VALUES (?,?,?,?,?,?,?,?,0,?,'مستحق','مولّد تلقائياً')`).run(...values, p.net);
   return info.lastInsertRowid;
 }
 
@@ -908,10 +908,36 @@ router.post('/rates/trainer', async function (req, res) {
   const b = req.body;
   const coachId = Number(b.coach_id || 0);
   if (!coachId) return res.json({ ok: false, error: 'اختر المدرب' });
+  const defaultRate = Number(b.default_rate || 0);
+  const branchId = b.branch_id ? Number(b.branch_id) : null;
+  const branchRate = Number(b.branch_rate || 0);
   await db.prepare(`INSERT INTO trainer_rates (coach_id, default_rate, hourly_rate, private_rate, group_rate, branch_id, branch_rate, period) VALUES (?,?,?,?,?,?,?,?)`)
-    .run(coachId, Number(b.default_rate || 0), Number(b.hourly_rate || 0), Number(b.private_rate || 0), Number(b.group_rate || 0), b.branch_id ? Number(b.branch_id) : null, Number(b.branch_rate || 0), b.period || today().slice(0, 7));
-  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'payroll', coachId, 'تحديث أسعار المدرب #' + coachId, req);
-  res.json({ ok: true });
+    .run(coachId, defaultRate, Number(b.hourly_rate || 0), Number(b.private_rate || 0), Number(b.group_rate || 0), branchId, branchRate, b.period || today().slice(0, 7));
+  /* تحديث الحضور المسجّل مسبقاً (التسعير التلقائي فقط — لا نلمس الحصص يدوية السعر) */
+  let updAtt = 0;
+  if (branchId && branchRate > 0) {
+    const r1 = await db.prepare(`UPDATE trainer_session_attendance SET base_rate=?, session_rate=?
+      WHERE coach_id=? AND branch_id=? AND (session_rate IS NULL OR session_rate=0 OR session_rate=base_rate)`)
+      .run(branchRate, branchRate, coachId, branchId);
+    const r2 = await db.prepare(`UPDATE trainer_session_attendance SET base_rate=?, session_rate=?
+      WHERE coach_id=? AND (branch_id IS NULL OR branch_id!=?) AND (session_rate IS NULL OR session_rate=0 OR session_rate=base_rate)`)
+      .run(defaultRate, defaultRate, coachId, branchId);
+    updAtt = Number(r1.changes || 0) + Number(r2.changes || 0);
+  } else {
+    const r = await db.prepare(`UPDATE trainer_session_attendance SET base_rate=?, session_rate=?
+      WHERE coach_id=? AND (session_rate IS NULL OR session_rate=0 OR session_rate=base_rate)`)
+      .run(defaultRate, defaultRate, coachId);
+    updAtt = Number(r.changes || 0);
+  }
+  /* إعادة احتساب كشوف المستحقات القائمة لهذا المدرب (تحفظ المدفوع وتعدّل المتبقي والحالة) */
+  let recomputed = 0;
+  const periods = await db.prepare("SELECT DISTINCT period FROM payroll WHERE person_type='trainer' AND coach_id=?").all(coachId);
+  for (const p of periods) {
+    const cp = await computeTrainerPayroll(coachId, p.period);
+    if (cp) { await upsertPayroll(cp, p.period, req); recomputed++; }
+  }
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'payroll', coachId, 'تحديث أسعار المدرب #' + coachId + (updAtt ? ' — تحديث ' + updAtt + ' سجل حضور' : '') + (recomputed ? ' وإعادة احتساب ' + recomputed + ' كشف مستحقات' : ''), req);
+  res.json({ ok: true, updated_attendance: updAtt, recomputed: recomputed });
 });
 
 router.post('/rates/staff', async function (req, res) {
@@ -926,8 +952,15 @@ router.post('/rates/staff', async function (req, res) {
   } else {
     await db.prepare(`INSERT INTO staff_rates (staff_id, pay_system, monthly_salary, work_days_count, work_hours, day_value, hourly_value, overtime_hour_value, shift_value) VALUES (?,?,?,?,?,?,?,?,?)`).run(...vals);
   }
-  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'payroll', staffId, 'تحديث أجور الموظف #' + staffId, req);
-  res.json({ ok: true });
+  /* إعادة احتساب كشوف المستحقات القائمة لهذا الموظف (تحفظ المدفوع وتعدّل المتبقي والحالة) */
+  let recomputed = 0;
+  const periods = await db.prepare("SELECT DISTINCT period FROM payroll WHERE person_type='staff' AND staff_id=?").all(staffId);
+  for (const p of periods) {
+    const cp = await computeStaffPayroll(staffId, p.period);
+    if (cp) { await upsertPayroll(cp, p.period, req); recomputed++; }
+  }
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'payroll', staffId, 'تحديث أجور الموظف #' + staffId + (recomputed ? ' وإعادة احتساب ' + recomputed + ' كشف مستحقات' : ''), req);
+  res.json({ ok: true, recomputed: recomputed });
 });
 
 /* ================================================================
