@@ -6,14 +6,36 @@
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
-    <a href="/trainer-attendance?date=<%= yday %>" class="btn btn-ghost btn-sm" title="أمس">أمس</a>
-    <a href="/trainer-attendance?date=<%= today() %>" class="btn btn-ghost btn-sm" title="اليوم">اليوم</a>
+    <a href="/trainer-attendance?date=<%= yday %><% if (fBranch) { %>&branch=<%= fBranch %><% } %><% if (fPool) { %>&pool=<%= fPool %><% } %>" class="btn btn-ghost btn-sm" title="أمس">أمس</a>
+    <a href="/trainer-attendance?date=<%= today() %><% if (fBranch) { %>&branch=<%= fBranch %><% } %><% if (fPool) { %>&pool=<%= fPool %><% } %>" class="btn btn-ghost btn-sm" title="اليوم">اليوم</a>
     <form method="get" action="/trainer-attendance" class="flex gap-1">
       <input type="date" name="date" class="form-control" value="<%= date %>">
+      <% if (fBranch) { %><input type="hidden" name="branch" value="<%= fBranch %>"><% } %>
+      <% if (fPool) { %><input type="hidden" name="pool" value="<%= fPool %>"><% } %>
       <button class="btn btn-outline btn-sm" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
     </form>
     <a href="/staff-hours?date=<%= date %>" class="btn btn-primary btn-sm"><i class="fas fa-bolt"></i> الحضور السريع</a>
     <a href="/attendance-reports?month=<%= date.slice(0,7) %>" class="btn btn-ghost btn-sm"><i class="fas fa-chart-column"></i> تقارير</a>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+  <div class="card-body" style="padding:12px">
+    <form method="get" action="/trainer-attendance" class="flex gap-1" style="flex-wrap:wrap;align-items:center">
+      <label class="font-12 text-muted">التصفية بالمكان:</label>
+      <select name="branch" id="fBranch" class="form-control" style="min-width:150px">
+        <option value="">كل الفروع</option>
+        <% (branches || []).forEach(function (b) { %><option value="<%= b.id %>" <%= Number(fBranch) === Number(b.id) ? 'selected' : '' %>><%= b.name %></option><% }); %>
+      </select>
+      <select name="pool" id="fPool" class="form-control" style="min-width:150px">
+        <option value="">كل المسابح</option>
+        <% (pools || []).forEach(function (p) { %><option value="<%= p.id %>" data-branch="<%= p.branch_id || '' %>" <%= Number(fPool) === Number(p.id) ? 'selected' : '' %>><%= p.name %></option><% }); %>
+      </select>
+      <input type="hidden" name="month" value="<%= month %>">
+      <input type="hidden" name="date" value="<%= date %>">
+      <button class="btn btn-outline btn-sm" type="submit"><i class="fas fa-filter"></i> تطبيق</button>
+      <% if (fBranch || fPool) { %><a href="/trainer-attendance?month=<%= month %>&date=<%= date %>" class="btn btn-ghost btn-sm"><i class="fas fa-xmark"></i> إلغاء التصفية</a><% } %>
+    </form>
   </div>
 </div>
 
@@ -73,6 +95,12 @@
           <div class="flex gap-1" style="flex-wrap:wrap;align-items:center">
             <div class="form-group" style="margin:0"><label class="font-11 text-muted">قيمة الحصة (ج.م)</label><input type="number" step="0.01" class="form-control t-rate" data-coach="<%= s.id %>" style="width:120px" value="<%= s.att && s.att.session_rate != null ? s.att.session_rate : '' %>" placeholder="تلقائي"></div>
             <div class="form-group" style="margin:0"><label class="font-11 text-muted">دقائق التأخير</label><input type="number" class="form-control t-late" data-coach="<%= s.id %>" style="width:90px" value="<%= s.att && s.att.late_minutes ? s.att.late_minutes : 0 %>"></div>
+            <div class="form-group" style="margin:0;min-width:150px"><label class="font-11 text-muted"><i class="fas fa-location-dot"></i> المكان</label>
+              <select class="form-control t-pool" data-coach="<%= s.id %>" style="min-width:150px">
+                <option value="">— افتراضي —</option>
+                <% (pools || []).forEach(function (p) { %><option value="<%= p.id %>" <%= s.att && Number(s.att.pool_id) === Number(p.id) ? 'selected' : '' %>><%= p.name %></option><% }); %>
+              </select>
+            </div>
             <div class="form-group" style="margin:0;min-width:180px"><label class="font-11 text-muted">ملاحظة</label><input type="text" class="form-control t-note" data-coach="<%= s.id %>" value="<%= s.att && s.att.note ? s.att.note : '' %>" placeholder="اختيارية"></div>
           </div>
           <div class="flex gap-1 sub-wrap" data-coach="<%= s.id %>" style="display:<%= cur === 'بديل' ? 'flex' : 'none' %>;flex-wrap:wrap;align-items:center;border-top:1px dashed var(--card-border);padding-top:6px">
@@ -120,6 +148,7 @@
           <th>الوقت</th>
           <th class="sortable">الحالة<span class="sort-ind"></span></th>
           <th>قيمة الحصة</th>
+          <th><i class="fas fa-location-dot"></i> المكان</th>
           <th>الملاحظة</th>
         </tr>
       </thead>
@@ -138,11 +167,12 @@
                 <% if (r.late_minutes > 0) { %><span class="badge badge-warning"><%= r.late_minutes %> د</span><% } %>
               </td>
               <td><%= money(r.amount) %></td>
+              <td class="font-12"><% if (r.pool_name) { %><i class="fas fa-person-swimming text-primary"></i> <%= r.pool_name %><% } else if (r.branch_name) { %><i class="fas fa-building"></i> <%= r.branch_name %><% } else { %><span class="text-muted">—</span><% } %></td>
               <td class="text-muted font-12"><%= r.note || '—' %></td>
             </tr>
           <% }); %>
         <% } else { %>
-          <tr><td colspan="8"><div class="empty-state"><i class="fas fa-clipboard-user"></i><p>لا يوجد حضور مسجل في هذا الشهر — ابدأ من قائمة حضور اليوم أعلى الصفحة</p></div></td></tr>
+          <tr><td colspan="9"><div class="empty-state"><i class="fas fa-clipboard-user"></i><p>لا يوجد حضور مسجل في هذا الشهر — ابدأ من قائمة حضور اليوم أعلى الصفحة</p></div></td></tr>
         <% } %>
       </tbody>
     </table>
@@ -187,6 +217,23 @@
       row.querySelectorAll('.t-sub').forEach(function (sel) { sel.disabled = true; });
     });
   });
+
+  // ===== تصفية المكان: الفرع يرشّح المسابح =====
+  var fBranch = document.getElementById('fBranch');
+  var fPool = document.getElementById('fPool');
+  if (fBranch && fPool) {
+    function filterPools() {
+      var bid = fBranch.value;
+      Array.prototype.forEach.call(fPool.options, function (op) {
+        if (!op.value) return;
+        var pb = op.getAttribute('data-branch');
+        op.hidden = !!(bid && pb && String(pb) !== String(bid));
+        if (op.hidden && op.selected) fPool.value = '';
+      });
+    }
+    fBranch.addEventListener('change', filterPools);
+    filterPools();
+  }
 
   // ===== تحديد ومسح سجلات الشهر =====
   var tbl = document.getElementById('trainerTable');
@@ -265,10 +312,12 @@
         var rateEl = row.querySelector('.t-rate');
         var lateEl = row.querySelector('.t-late');
         var noteEl = row.querySelector('.t-note');
+        var poolEl = row.querySelector('.t-pool');
         var rec = { status: status };
         if (rateEl) rec.session_rate = rateEl.value;
         if (lateEl) rec.late_minutes = lateEl.value || 0;
         if (noteEl) rec.note = noteEl.value;
+        if (poolEl && poolEl.value) rec.pool_id = poolEl.value;
         if (status === 'بديل') {
           var sub = row.querySelector('.t-sub');
           if (!sub || !sub.value) { missingSub = true; return; }

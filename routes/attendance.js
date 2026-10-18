@@ -318,14 +318,19 @@ router.get('/trainer-attendance', async function (req, res) {
   if (!canView(req.currentUser, 'trainerAttendance')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const month = (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) ? req.query.month : today().slice(0, 7);
   const date = (req.query.date && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)) ? req.query.date : today();
+  const fBranch = (req.query.branch && /^\d+$/.test(req.query.branch)) ? Number(req.query.branch) : null;
+  const fPool = (req.query.pool && /^\d+$/.test(req.query.pool)) ? Number(req.query.pool) : null;
+  const placeFilter = fPool ? ' AND a.pool_id = ' + fPool : (fBranch ? ' AND a.branch_id = ' + fBranch : '');
+  const placeFilterU = fPool ? ' AND pool_id = ' + fPool : (fBranch ? ' AND branch_id = ' + fBranch : '');
   const rows = await db.prepare(`SELECT a.*, g.name AS group_name, b.name AS branch_name, c.full_name AS coach_name,
-      sc.full_name AS substitute_name
+      sc.full_name AS substitute_name, p.name AS pool_name
     FROM trainer_session_attendance a
     LEFT JOIN groups g ON g.id = a.group_id
     LEFT JOIN branches b ON b.id = a.branch_id
+    LEFT JOIN pools p ON p.id = a.pool_id
     LEFT JOIN coaches c ON c.id = a.coach_id
     LEFT JOIN coaches sc ON sc.id = a.substitute_coach_id
-    WHERE substr(a.date,1,7) = ?` + tacScope(activeSport(req)) + `
+    WHERE substr(a.date,1,7) = ?` + tacScope(activeSport(req)) + placeFilter + `
     ORDER BY a.date DESC, a.start_time`).all(month);
   const pol = (await getPolicy()).pol;
   rows.forEach(r => {
@@ -333,7 +338,7 @@ router.get('/trainer-attendance', async function (req, res) {
   });
 
   const dayAtt = {};
-  (await db.prepare('SELECT * FROM trainer_session_attendance WHERE 1=1' + tacScope(activeSport(req)) + ' AND date = ?').all(date)).forEach(a => { if (!dayAtt[a.coach_id]) dayAtt[a.coach_id] = a; });
+  (await db.prepare('SELECT * FROM trainer_session_attendance WHERE 1=1' + tacScope(activeSport(req)) + placeFilterU + ' AND date = ?').all(date)).forEach(a => { if (!dayAtt[a.coach_id]) dayAtt[a.coach_id] = a; });
 
   const sessionsToday = await db.prepare(`SELECT se.group_id, se.coach_id, se.start_time, g.name AS group_name FROM sessions se LEFT JOIN groups g ON g.id = se.group_id WHERE se.date = ? AND se.deleted_at IS NULL` + sessionClause(activeSport(req), 'se')).all(date);
   const timeMap = {};
@@ -359,7 +364,9 @@ router.get('/trainer-attendance', async function (req, res) {
   let present = 0, absent = 0, excused = 0, late = 0;
   Object.keys(dayAtt).forEach(k => { const st = dayAtt[k].status; if (st === 'حاضر') present++; else if (st === 'غائب') absent++; else if (st === 'معتذر') excused++; else if (st === 'متأخر') late++; });
   const yday = (new Date(Date.now() - 86400000)).toISOString().slice(0, 10);
-  res.render('attendance_payroll/trainer_attendance', { title: 'حضور المدربين', active: 'trainerAttendance', sheet, rows, month, date, yday, kpi: { present, absent, excused, late }, coaches, STATUS: TRAINER_STATUS, canAdd: canAdd(req.currentUser, 'trainerAttendance') });
+  const branches = await db.prepare(`SELECT id, name FROM branches ORDER BY name`).all();
+  const pools = await db.prepare(`SELECT p.id, p.name, p.branch_id FROM pools p ORDER BY p.name`).all();
+  res.render('attendance_payroll/trainer_attendance', { title: 'حضور المدربين', active: 'trainerAttendance', sheet, rows, month, date, yday, kpi: { present, absent, excused, late }, coaches, STATUS: TRAINER_STATUS, canAdd: canAdd(req.currentUser, 'trainerAttendance'), branches, pools, fBranch, fPool });
 });
 
 router.post('/trainer-attendance/bulk-delete', async function (req, res) {
@@ -432,12 +439,18 @@ router.post('/trainer-attendance/save-day', async function (req, res) {
     const cancel_reason = status === 'ملغاة' ? String(v.cancel_reason || '') : '';
     const payment_policy = status === 'ملغاة' ? String(v.payment_policy || '') : '';
     const existing = await db.prepare('SELECT * FROM trainer_session_attendance WHERE session_id = ? AND coach_id = ?').get(session.id, coachId);
+    let pool_id = Number(v.pool_id) || session.pool_id || (groupRow ? groupRow.pool_id : null) || null;
+    let branch_id = groupRow ? groupRow.branch_id : null;
+    if (pool_id) {
+      const poolRow = await db.prepare('SELECT * FROM pools WHERE id = ?').get(pool_id);
+      if (poolRow) { branch_id = poolRow.branch_id || branch_id; } else { pool_id = null; }
+    }
     if (existing) {
-      await db.prepare(`UPDATE trainer_session_attendance SET status=?, session_rate=?, late_minutes=?, cancel_reason=?, payment_policy=?, note=?, updated_by=?, updated_at=? WHERE id=?`)
-        .run(status, session_rate, late_minutes, cancel_reason, payment_policy, String(v.note || ''), req.currentUser.id, new Date().toLocaleString('sv-SE').replace('T', ' '), existing.id);
+      await db.prepare(`UPDATE trainer_session_attendance SET status=?, session_rate=?, late_minutes=?, cancel_reason=?, payment_policy=?, note=?, pool_id=?, branch_id=?, updated_by=?, updated_at=? WHERE id=?`)
+        .run(status, session_rate, late_minutes, cancel_reason, payment_policy, String(v.note || ''), pool_id, branch_id, req.currentUser.id, new Date().toLocaleString('sv-SE').replace('T', ' '), existing.id);
     } else {
-      await db.prepare(`INSERT INTO trainer_session_attendance (session_id, group_id, branch_id, coach_id, substitute_coach_id, date, start_time, end_time, duration_min, status, session_rate, base_rate, late_minutes, cancel_reason, payment_policy, note, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(session.id, session.group_id, groupRow ? groupRow.branch_id : null, coachId, substitute_coach_id, date, session.start_time, session.end_time, durationMin, status, session_rate, rate.effective, late_minutes, cancel_reason, payment_policy, String(v.note || ''), req.currentUser.id);
+      await db.prepare(`INSERT INTO trainer_session_attendance (session_id, group_id, branch_id, pool_id, coach_id, substitute_coach_id, date, start_time, end_time, duration_min, status, session_rate, base_rate, late_minutes, cancel_reason, payment_policy, note, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(session.id, session.group_id, branch_id, pool_id, coachId, substitute_coach_id, date, session.start_time, session.end_time, durationMin, status, session_rate, rate.effective, late_minutes, cancel_reason, payment_policy, String(v.note || ''), req.currentUser.id);
     }
     n++;
   }
