@@ -248,6 +248,9 @@
           <i class="fas fa-bell"></i><span class="btn-text">الإشعارات</span>
           <% if (typeof unreadCount !== 'undefined' && unreadCount > 0) { %><span class="dot"><%= unreadCount > 99 ? '99+' : unreadCount %></span><% } %>
         </a>
+        <button type="button" class="icon-btn with-label install-app-btn" title="تثبيت التطبيق على الهاتف">
+          <i class="fas fa-download"></i><span class="btn-text">تثبيت التطبيق</span>
+        </button>
         <div class="dropdown">
           <button class="user-chip dropdown-toggle">
             <div class="user-avatar"><%= user.full_name ? user.full_name.trim().charAt(0) : 'م' %></div>
