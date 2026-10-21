@@ -1,14 +1,9 @@
-/* زر تثبيت التطبيق على الهاتف (PWA) — يعمل في الإدارة والموقع العام */
+/* زر تثبيت التطبيق على الهاتف (PWA) — يعمل في الإدارة والموقع العام وصفحة الدخول */
 (function () {
   var deferred = null;
   var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
 
-  function qs(sel, root) { return (root || document).querySelector(sel); }
   function all(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
-
-  function setButtonsVisible(v) {
-    all('.install-app-btn').forEach(function (b) { b.style.display = v ? '' : 'none'; });
-  }
 
   function toast(msg, type) {
     if (window.App && App.showToast) App.showToast(msg, type || 'success');
@@ -17,13 +12,11 @@
   window.addEventListener('beforeinstallprompt', function (e) {
     e.preventDefault();
     deferred = e;
-    if (!standalone) setButtonsVisible(true);
   });
 
   window.addEventListener('appinstalled', function () {
     deferred = null;
     standalone = true;
-    setButtonsVisible(false);
     toast('تم تثبيت التطبيق على جهازك', 'success');
   });
 
@@ -49,20 +42,14 @@
     document.head.appendChild(css);
   }
 
-  function showHelp() {
+  function openSheet(icon, title, body) {
     ensureCss();
-    var ios = isIos();
-    var steps = ios
-      ? '<ol><li>افتح زر <b>المشاركة</b> <i class="fas fa-arrow-up-from-bracket"></i> في شريط أدوات سفاري</li><li>مرّر واختر <b>«إضافة إلى الشاشة الرئيسية»</b></li><li>اضغط <b>إضافة</b> في الأعلى</li></ol>'
-      : '<ol><li>افتح قائمة المتصفح <b>⋮</b> (أعلى/أسفل الشاشة)</li><li>اختر <b>«تثبيت التطبيق»</b> أو <b>«Install app»</b></li><li>اضغط <b>تثبيت</b> للتأكيد</li></ol>';
     var overlay = document.createElement('div');
     overlay.className = 'install-overlay';
     overlay.innerHTML =
       '<div class="install-sheet" role="dialog" aria-modal="true">' +
-      '<div class="is-ic"><i class="fas fa-mobile-screen-button"></i></div>' +
-      '<h3>تثبيت التطبيق على هاتفك</h3>' +
-      '<p>' + (ios ? 'اتبع الخطوات التالية لإضافته إلى شاشتك الرئيسية:' : 'اتبع الخطوات التالية لتثبيته كتطبيق:') + '</p>' +
-      steps +
+      '<div class="is-ic"><i class="fas ' + icon + '"></i></div>' +
+      '<h3>' + title + '</h3>' + body +
       '<button type="button" class="btn btn-primary">تمام</button>' +
       '</div>';
     document.body.appendChild(overlay);
@@ -79,8 +66,20 @@
     });
   }
 
+  function showInstalled() {
+    openSheet('fa-circle-check', 'التطبيق مثبت بالفعل', '<p>ستجده على شاشة هاتفك الرئيسية — افتحه من هناك في أي وقت.</p>');
+  }
+
+  function showHelp() {
+    var ios = isIos();
+    var steps = ios
+      ? '<p>اتبع الخطوات التالية لإضافته إلى شاشتك الرئيسية:</p><ol><li>افتح زر <b>المشاركة</b> <i class="fas fa-arrow-up-from-bracket"></i> في شريط أدوات سفاري</li><li>مرّر واختر <b>«إضافة إلى الشاشة الرئيسية»</b></li><li>اضغط <b>إضافة</b> في الأعلى</li></ol>'
+      : '<p>اتبع الخطوات التالية لتثبيته كتطبيق:</p><ol><li>افتح قائمة المتصفح <b>⋮</b> (أعلى/أسفل الشاشة)</li><li>اختر <b>«تثبيت التطبيق»</b> أو <b>«Install app»</b></li><li>اضغط <b>تثبيت</b> للتأكيد</li></ol>';
+    openSheet('fa-mobile-screen-button', 'تثبيت التطبيق على هاتفك', steps);
+  }
+
   function install() {
-    if (standalone) { toast('التطبيق مثبت بالفعل على جهازك', 'success'); return; }
+    if (standalone) { showInstalled(); return; }
     if (deferred) {
       var d = deferred;
       deferred = null;
@@ -94,7 +93,6 @@
   }
 
   function bind() {
-    if (standalone) { setButtonsVisible(false); return; }
     all('.install-app-btn').forEach(function (b) {
       if (b.dataset.installBound) return;
       b.dataset.installBound = '1';
