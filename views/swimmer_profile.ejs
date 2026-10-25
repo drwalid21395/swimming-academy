@@ -21,10 +21,17 @@
     <div class="sub mt-1"><i class="fas fa-layer-group"></i> <%= s.program_name || '—' %> · <i class="fas fa-user-tie"></i> <%= s.coach_name || '—' %></div>
   </div>
   <div class="profile-meta">
-    <div class="meta-chip"><div class="mc-val"><%= activeSub ? activeSub.sessions_used + ' / ' + activeSub.sessions_total : '—' %></div><div class="mc-lbl">حصص مستخدمة / كلية</div></div>
+    <% if (activeSubs && activeSubs.length) { activeSubs.forEach(function (asub) { %>
+    <div class="meta-chip" title="<%= asub.program_name || '—' %>">
+      <div class="mc-val"><%= asub.sessions_used %> / <%= asub.sessions_total %></div>
+      <div class="mc-lbl"><%= asub.program_name || 'اشتراك نشط' %></div>
+    </div>
+    <% }); } else { %>
+    <div class="meta-chip"><div class="mc-val">—</div><div class="mc-lbl">لا يوجد اشتراك نشط</div></div>
+    <% } %>
     <div class="meta-chip"><div class="mc-val"><%= attStats.total ? pct(attStats.present, attStats.total) : 0 %>%</div><div class="mc-lbl">نسبة الحضور</div></div>
-    <div class="meta-chip"><div class="mc-val"><%= activeSub ? Math.max(0, activeSub.sessions_total - activeSub.sessions_used) : 0 %></div><div class="mc-lbl">حصص متبقية</div></div>
-    <div class="meta-chip"><div class="mc-val"><%= activeSub && activeSub.remaining > 0 ? money(activeSub.remaining) : 'مسدد' %></div><div class="mc-lbl">المستحق</div></div>
+    <div class="meta-chip"><div class="mc-val"><%= activeSub ? Math.max(0, activeSub.sessions_total - activeSub.sessions_used) : 0 %></div><div class="mc-lbl">حصص متبقية (أولى)</div></div>
+    <div class="meta-chip"><div class="mc-val"><%= activeSub && activeSub.remaining > 0 ? money(activeSub.remaining) : 'مسدد' %></div><div class="mc-lbl">المستحق (أولى)</div></div>
   </div>
 </div>
 
@@ -110,30 +117,34 @@
       </div>
     </div>
     <div class="card">
-      <div class="card-header"><h3><i class="fas fa-file-contract"></i> الاشتراك الحالي</h3></div>
+      <div class="card-header"><h3><i class="fas fa-file-contract"></i> الاشتراكات النشطة (<%= activeSubs.length %>)</h3></div>
       <div class="card-body">
-        <% if (activeSub) { %>
-          <div class="kpi-row">
-            <div class="kpi"><div class="k-val"><%= activeSub.sessions_used %></div><div class="k-lbl">حصص منفذة</div></div>
-            <div class="kpi"><div class="k-val"><%= Math.max(0, activeSub.sessions_total - activeSub.sessions_used) %></div><div class="k-lbl">حصص متبقية</div></div>
-            <div class="kpi"><div class="k-val"><%= money(activeSub.total) %></div><div class="k-lbl">قيمة الاشتراك</div></div>
-            <div class="kpi"><div class="k-val"><%= money(activeSub.remaining) %></div><div class="k-lbl">المتبقي</div></div>
+        <% if (activeSubs.length) { activeSubs.forEach(function (asub) { %>
+          <div class="card" style="margin-bottom:12px;border:1px solid var(--card-border)">
+            <div class="card-body">
+              <div class="kpi-row">
+                <div class="kpi"><div class="k-val"><%= asub.sessions_used %></div><div class="k-lbl">حصص منفذة</div></div>
+                <div class="kpi"><div class="k-val"><%= Math.max(0, asub.sessions_total - asub.sessions_used) %></div><div class="k-lbl">حصص متبقية</div></div>
+                <div class="kpi"><div class="k-val"><%= money(asub.total) %></div><div class="k-lbl">قيمة الاشتراك</div></div>
+                <div class="kpi"><div class="k-val"><%= money(asub.remaining) %></div><div class="k-lbl">المتبقي</div></div>
+              </div>
+              <div class="detail-grid">
+                <div class="detail-item"><div class="dl">البرنامج</div><div class="dv"><%= asub.program_name || '—' %></div></div>
+                <div class="detail-item"><div class="dl">بداية الاشتراك</div><div class="dv"><%= fmtDate(asub.start_date) %></div></div>
+                <div class="detail-item"><div class="dl">النهاية</div><div class="dv"><%= fmtDate(asub.end_date) %></div></div>
+                <div class="detail-item"><div class="dl">طريقة الدفع</div><div class="dv"><%= asub.payment_method %></div></div>
+                <div class="detail-item"><div class="dl">الحالة</div><div class="dv"><span class="badge badge-success"><%= asub.status %></span></div></div>
+                <div class="detail-item"><div class="dl">الإيصال</div><div class="dv"><%= asub.receipt_no %></div></div>
+              </div>
+              <% if (s.guardian_whatsapp && asub.end_date) { %>
+                <a href="/subscriptions/<%= asub.id %>/whatsapp" class="btn btn-success btn-sm mt-2"><i class="fab fa-whatsapp"></i> تذكير تجديد الاشتراك واتساب</a>
+              <% } %>
+            </div>
           </div>
-          <div class="detail-grid">
-            <div class="detail-item"><div class="dl">البرنامج</div><div class="dv"><%= activeSub.program_name || '—' %></div></div>
-            <div class="detail-item"><div class="dl">بداية الاشتراك</div><div class="dv"><%= fmtDate(activeSub.start_date) %></div></div>
-            <div class="detail-item"><div class="dl">النهاية</div><div class="dv"><%= fmtDate(activeSub.end_date) %></div></div>
-            <div class="detail-item"><div class="dl">طريقة الدفع</div><div class="dv"><%= activeSub.payment_method %></div></div>
-            <div class="detail-item"><div class="dl">الحالة</div><div class="dv"><span class="badge badge-success"><%= activeSub.status %></span></div></div>
-            <div class="detail-item"><div class="dl">الإيصال</div><div class="dv"><%= activeSub.receipt_no %></div></div>
-          </div>
-          <% if (s.guardian_whatsapp && activeSub.end_date) { %>
-            <a href="/subscriptions/<%= activeSub.id %>/whatsapp" class="btn btn-success btn-sm mt-2"><i class="fab fa-whatsapp"></i> تذكير تجديد الاشتراك واتساب</a>
-          <% } %>
-        <% } else { %>
+        <% }); } else { %>
           <div class="empty-state"><i class="fas fa-file-contract"></i><p>لا يوجد اشتراك نشط حالياً</p></div>
-          <a href="/subscriptions/new?swimmer=<%= s.id %>" class="btn btn-primary btn-block"><i class="fas fa-plus"></i> إنشاء اشتراك جديد</a>
         <% } %>
+        <a href="/subscriptions/new?swimmer=<%= s.id %>" class="btn btn-primary btn-block"><i class="fas fa-plus"></i> إنشاء اشتراك جديد</a>
       </div>
     </div>
   </div>

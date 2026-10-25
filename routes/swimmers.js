@@ -390,7 +390,7 @@ function swimmerVal(c, b, avatar, guardianId) {
 }
 
 async function syncSwimmerGroups(d, swimmerId, groupId) {
-  await d.run('DELETE FROM swimmer_group WHERE swimmer_id = ?', swimmerId);
+  /* نسمح للاعب بأكثر من مجموعة (اشتراكات متعددة). نضيف المجموعة الأساسية ولا نمسح المجموعات المرتبطة باشتراكات أخرى. */
   if (groupId) await d.run('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) VALUES (?,?)', swimmerId, groupId);
 }
 
@@ -532,7 +532,8 @@ router.get('/swimmers/:id', async function (req, res) {
     LEFT JOIN groups tg ON tg.id = t.to_group_id LEFT JOIN coaches tc ON tc.id = t.to_coach_id
     LEFT JOIN users u ON u.id = t.created_by
     WHERE t.swimmer_id = ? ORDER BY t.id DESC LIMIT 10`).all(id);
-  const activeSub = subs.find(x => x.status === 'نشط');
+  const activeSubs = subs.filter(x => x.status === 'نشط');
+  const activeSub = activeSubs[0] || null;
   const allGroups = await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL ORDER BY name').all();
   const allCoaches = await db.prepare('SELECT * FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all();
 
@@ -546,7 +547,7 @@ router.get('/swimmers/:id', async function (req, res) {
   res.render('swimmer_profile', {
     title: 'ملف اللاعب',
     active: 'swimmers',
-    s, age, subs, payments, assessments, tests, attRecords, attStats, nextSessions, docs, progress, teamRows, pbs, compResults, history, activeSub,
+    s, age, subs, payments, assessments, tests, attRecords, attStats, nextSessions, docs, progress, teamRows, pbs, compResults, history, activeSub, activeSubs,
     transfers, allGroups, allCoaches,
     schoolInfo, assessTotal, assessCount, assessFinal,
     groupSchedule: parseJSON(s.group_schedule, []),

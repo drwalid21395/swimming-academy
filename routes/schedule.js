@@ -22,14 +22,21 @@ async function syncSubscriptionUsage(swimmerId, groupId, beforeStatus, afterStat
   const before = attendanceCounts(beforeStatus);
   const after = attendanceCounts(afterStatus);
   if (before === after) return;
+  const delta = after ? 1 : -1;
+  /* اختيار الاشتراك الأنسب للخصم: تطابق المجموعة أولاً ثم البرنامج، مع تفضيل الاشتراك اللي عنده حصص متبقية */
+  const gid = Number(groupId) || 0;
   const sub = await db.prepare(`SELECT sub.id FROM subscriptions sub
     LEFT JOIN groups g ON g.id = ?
     WHERE sub.swimmer_id = ? AND sub.status = 'نشط'
       AND (sub.group_id = ? OR (sub.group_id IS NULL AND sub.program_id = g.program_id))
-    ORDER BY sub.id DESC LIMIT 1`).get(Number(groupId) || 0, Number(swimmerId), Number(groupId) || 0);
+    ORDER BY
+      CASE WHEN sub.group_id = ? THEN 0 ELSE 1 END,
+      CASE WHEN sub.sessions_total > sub.sessions_used THEN 0 ELSE 1 END,
+      sub.id DESC
+    LIMIT 1`).get(gid, Number(swimmerId), gid, gid);
   if (!sub) return;
   await db.prepare(`UPDATE subscriptions SET sessions_used = MIN(sessions_total, MAX(0, sessions_used + ?)) WHERE id = ?`)
-    .run(after ? 1 : -1, sub.id);
+    .run(delta, sub.id);
   /* تحديث فوري لحالة الاشتراك بحسب استهلاك الحصص */
   await db.prepare(`UPDATE subscriptions SET status = 'منتهي'
     WHERE id = ? AND status = 'نشط' AND sessions_total > 0 AND sessions_used >= sessions_total`).run(sub.id);
@@ -63,11 +70,17 @@ function sesStatusBadge(st) {
   return `<span class="badge ${r[0]}">${r[1]}</span>`;
 }
 
-/* مزامنة أعضاء المجموعة من عمود group_id في اللاعبين */
+/* مزامنة أعضاء المجموعة: من عمود group_id الأساسي + من الاشتراكات النشطة في نفس المجموعة */
 async function syncGroup(groupId) {
   if (!groupId) return;
   await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) SELECT id, ? FROM swimmers WHERE group_id = ? AND deleted_at IS NULL').run(groupId, groupId);
-  await db.prepare('DELETE FROM swimmer_group WHERE group_id = ? AND swimmer_id NOT IN (SELECT id FROM swimmers WHERE group_id = ? AND deleted_at IS NULL)').run(groupId, groupId);
+  await db.prepare(`INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id)
+    SELECT DISTINCT swimmer_id, ? FROM subscriptions WHERE group_id = ? AND status = 'نشط'`).run(groupId, groupId);
+  await db.prepare(`DELETE FROM swimmer_group WHERE group_id = ? AND swimmer_id NOT IN (
+    SELECT id FROM swimmers WHERE group_id = ? AND deleted_at IS NULL
+    UNION
+    SELECT DISTINCT swimmer_id FROM subscriptions WHERE group_id = ? AND status = 'نشط'
+  )`).run(groupId, groupId, groupId);
 }
 
 /* وقت بدء افتراضي للمجموعة من جدولها */

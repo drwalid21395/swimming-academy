@@ -263,6 +263,7 @@ router.post('/subscriptions/new', async function (req, res) {
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(b.swimmer_id, b.program_id || null, b.group_id || null, context.sportId, b.start_date || today(), b.end_date || null, amounts.sessionsTotal, 0, amounts.type, amounts.unitPrice, amounts.price, Number(b.discount || 0), Number(b.tax || 0), total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), b.is_installment === '1' ? 1 : 0, b.status || 'نشط', b.notes || '', req.currentUser.id);
   await db.prepare('INSERT INTO subscription_history (subscription_id, swimmer_id, action, details, user_name) VALUES (?,?,?,?,?)').run(info.lastInsertRowid, b.swimmer_id, 'إنشاء', 'اشتراك جديد بإجمالي ' + money(total), req.currentUser.full_name);
+  if (b.group_id) await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) VALUES (?,?)').run(b.swimmer_id, b.group_id);
   if (paid > 0) {
     await db.prepare('INSERT INTO payments (subscription_id, swimmer_id, amount, method, receipt_no, paid_date, staff_id, note) VALUES (?,?,?,?,?,?,?,?)')
       .run(info.lastInsertRowid, b.swimmer_id, paid, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), req.currentUser.id, 'دفعة الاشتراك');
@@ -411,9 +412,17 @@ router.post('/subscriptions/:id/edit', async function (req, res) {
   const total = amounts.total;
   const paid = Number(b.paid_amount || 0);
   const remaining = Math.round((total - paid) * 100) / 100;
+  const oldSub = await db.prepare('SELECT swimmer_id, group_id FROM subscriptions WHERE id=?').get(id);
   await db.prepare(`UPDATE subscriptions SET swimmer_id=?, program_id=?, group_id=?, sport_id=?, start_date=?, end_date=?, sessions_total=?, subscription_type=?, price_per_session=?, price=?, discount=?, tax=?, total=?, paid_amount=?, remaining=?, payment_method=?, receipt_no=?, paid_date=?, is_installment=?, status=?, notes=? WHERE id=?`)
     .run(b.swimmer_id, b.program_id || null, b.group_id || null, context.sportId, b.start_date || today(), b.end_date || null, amounts.sessionsTotal, amounts.type, amounts.unitPrice, amounts.price, Number(b.discount || 0), Number(b.tax || 0), total, paid, remaining, b.payment_method || 'نقدي', b.receipt_no || '', b.paid_date || today(), b.is_installment === '1' ? 1 : 0, b.status || 'نشط', b.notes || '', id);
   await db.prepare('INSERT INTO subscription_history (subscription_id, swimmer_id, action, details, user_name) VALUES (?,?,?,?,?)').run(id, b.swimmer_id, 'تعديل', 'تحديث بيانات الاشتراك', req.currentUser.full_name);
+  if (b.group_id && b.group_id != (oldSub ? oldSub.group_id : '')) {
+    await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) VALUES (?,?)').run(b.swimmer_id, b.group_id);
+  }
+  if (oldSub && oldSub.group_id && oldSub.group_id != (b.group_id || '')) {
+    const others = await db.prepare('SELECT COUNT(*) AS c FROM subscriptions WHERE swimmer_id=? AND group_id=? AND status=\'نشط\' AND id != ?').get(oldSub.swimmer_id, oldSub.group_id, id);
+    if (!others || others.c == 0) await db.prepare('DELETE FROM swimmer_group WHERE swimmer_id=? AND group_id=?').run(oldSub.swimmer_id, oldSub.group_id);
+  }
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'subscriptions', id, 'تعديل اشتراك', req);
   try { await syncExpiredSubscriptions(true); } catch (e) { console.error('مزامنة انتهاء الاشتراكات:', e.message); }
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });

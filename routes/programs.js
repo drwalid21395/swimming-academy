@@ -7,7 +7,7 @@ const { activeSport, effectiveSport, sportClause, progClause, groupClause } = re
 const crud = require('../lib/crud');
 const router = express.Router();
 
-const PROGRAM_TYPES_DEFAULT = ['تعليم سباحة', 'تدريب سباحة', 'فرق', 'إنقاذ', 'سلامة في الماء', 'إعداد معلم سباحة', 'معسكر', 'دورة خاصة'];
+const PROGRAM_TYPES_DEFAULT = ['تعليم سباحة', 'تدريب سباحة', 'فرق', 'إنقاذ', 'سلامة في الماء', 'إعداد معلم سباحة', 'معسكر', 'دورة خاصة', 'جيم'];
 const PROGRAM_STATUS = ['متاح', 'مكتمل العدد', 'متوقف', 'منتهي'];
 
 /* أنواع البرامج تأتي من الإعدادات (قابلة للإضافة والتعديل من تبويب «أنواع البرامج») */
