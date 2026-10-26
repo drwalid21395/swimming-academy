@@ -1113,6 +1113,7 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
   .gs-head { flex-wrap: wrap; gap: 6px; }
   .gs-name { flex: 1 1 100%; }
   .gs-actions .btn { width: 100%; justify-content: center; }
+  .gs-table tr[data-type="مستوى"] td.non-level-field { display: none !important; }
 
   /* صفوف الحصص/التقييمات داخل البطاقات */
   .attendance-session { padding: 10px; }

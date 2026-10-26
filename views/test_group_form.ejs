@@ -118,10 +118,25 @@
   .gs-table td, .gs-table th { padding:6px 8px; vertical-align:middle; }
   .gs-actions { padding:8px 12px; text-align:left; }
   .mode-card.selected { border-color:var(--primary)!important; background:rgba(99,102,241,.06); }
-  .lvl-checks { display:flex; flex-wrap:wrap; gap:8px; }
+  .lvl-checks { display:flex; flex-wrap:wrap; gap:8px; align-items:flex-start; }
+  .lvl-chip-wrap { flex:1 1 280px; min-width:0; }
   .lvl-chip { display:inline-flex; align-items:center; gap:6px; padding:8px 12px; border:1px solid var(--card-border); border-radius:8px; cursor:pointer; font-size:13px; background:var(--card-bg, #fff); }
   .lvl-chip:hover { border-color:var(--primary); }
   .lvl-chip input { width:16px; height:16px; accent-color:var(--primary); }
+  .lvl-criteria { padding:10px; background:var(--bg-soft); border:1px solid var(--card-border); border-radius:10px; margin-top:8px; }
+  .crit-list { display:flex; flex-direction:column; gap:10px; }
+  .crit-score { display:grid; grid-template-columns:1fr 140px; gap:10px; align-items:center; }
+  .crit-name { font-size:13px; color:var(--text-soft); }
+  .crit-inputs { display:flex; align-items:center; gap:6px; }
+  .crit-range { flex:1; min-width:0; }
+  .crit-num { width:60px; text-align:center; padding:4px 6px !important; height:32px !important; }
+  .crit-pct { font-size:12px; color:var(--text-muted); }
+  @media (max-width:768px) {
+    .crit-score { grid-template-columns:1fr; gap:6px; }
+    .crit-name { font-weight:600; }
+    .crit-inputs { width:100%; }
+    .crit-num { flex:1; }
+  }
 </style>
 
 <script>
@@ -138,8 +153,33 @@
 
   function levelChecksHtml(idx) {
     return levelsData.map(function (o) {
-      return '<label class="lvl-chip"><input type="checkbox" name="rows[' + idx + '][t_level][]" value="' + esc(String(o.value)) + '"> ' + esc(String(o.label)) + '</label>';
+      return '<div class="lvl-chip-wrap" data-lid="' + esc(String(o.value)) + '">' +
+        '<label class="lvl-chip"><input type="checkbox" name="rows[' + idx + '][t_level][]" value="' + esc(String(o.value)) + '" data-lid="' + esc(String(o.value)) + '"> ' + esc(String(o.label)) + '</label>' +
+        '<div class="lvl-criteria" style="display:none;"></div>' +
+      '</div>';
     }).join('');
+  }
+
+  var criteriaCache = {};
+  function fetchCriteria(levelId) {
+    if (criteriaCache[levelId]) return Promise.resolve(criteriaCache[levelId]);
+    return fetch('/api/assessments/criteria?level_id=' + encodeURIComponent(levelId))
+      .then(function (res) { return res.json(); })
+      .then(function (data) { criteriaCache[levelId] = data || []; return data || []; });
+  }
+
+  function criteriaHtml(idx, levelId, criteria) {
+    if (!criteria || !criteria.length) return '<div class="form-hint">لا توجد مهارات مسجلة لهذا المستوى</div>';
+    return '<div class="crit-list">' + criteria.map(function (c) {
+      return '<div class="crit-score">' +
+        '<label class="crit-name">' + esc(c.name) + '</label>' +
+        '<div class="crit-inputs">' +
+          '<input type="range" min="0" max="100" step="1" class="crit-range" name="rows[' + idx + '][score_' + c.id + ']" value="0" data-target="critnum_' + idx + '_' + c.id + '">' +
+          '<input type="number" min="0" max="100" step="1" class="form-control crit-num" id="critnum_' + idx + '_' + c.id + '" value="0" data-range="rows[' + idx + '][score_' + c.id + ']">' +
+          '<span class="crit-pct">%</span>' +
+        '</div>' +
+      '</div>';
+    }).join('') + '</div>';
   }
 
   function typeOptions(selected) {
@@ -150,17 +190,18 @@
 
   function testRowHtml(sid, idx) {
     var defType = defaultTypeSel ? defaultTypeSel.value : '';
-    return '<tr>' +
+    var isLevel = defType === 'مستوى';
+    return '<tr data-type="' + (isLevel ? 'مستوى' : 'other') + '">' +
       '<td data-label="نوع الاختبار"><input type="hidden" name="rows[' + idx + '][swimmer_id]" value="' + sid + '">' +
         '<select class="form-control t_type_sel" name="rows[' + idx + '][t_type]" style="min-width:110px">' + typeOptions(defType) + '</select>' +
-        '<div class="t-level-pick" style="' + (defType === 'مستوى' ? '' : 'display:none;') + 'margin-top:6px">' +
+        '<div class="t-level-pick" style="' + (isLevel ? '' : 'display:none;') + 'margin-top:6px">' +
           levelChecksHtml(idx) +
         '</div></td>' +
-      '<td data-label="نوع السباق"><input type="text" class="form-control" name="rows[' + idx + '][t_race]" placeholder="اكتب السباق" style="min-width:90px"></td>' +
-      '<td data-label="المسافة"><input type="number" min="0" class="form-control" name="rows[' + idx + '][t_distance]" placeholder="متر"></td>' +
-      '<td data-label="الزمن"><input type="number" min="0" step="0.01" class="form-control" name="rows[' + idx + '][t_time]" placeholder="ثانية"></td>' +
-      '<td data-label="المركز"><input type="number" min="0" class="form-control" name="rows[' + idx + '][t_position]" placeholder="مركز"></td>' +
-      '<td data-label="النتيجة"><select class="form-control" name="rows[' + idx + '][t_passed]"><option value="1">اجتاز</option><option value="0" selected>لم يجتز</option></select></td>' +
+      '<td class="non-level-field" data-label="نوع السباق"><input type="text" class="form-control" name="rows[' + idx + '][t_race]" placeholder="اكتب السباق" style="min-width:90px"></td>' +
+      '<td class="non-level-field" data-label="المسافة"><input type="number" min="0" class="form-control" name="rows[' + idx + '][t_distance]" placeholder="متر"></td>' +
+      '<td class="non-level-field" data-label="الزمن"><input type="number" min="0" step="0.01" class="form-control" name="rows[' + idx + '][t_time]" placeholder="ثانية"></td>' +
+      '<td class="non-level-field" data-label="المركز"><input type="number" min="0" class="form-control" name="rows[' + idx + '][t_position]" placeholder="مركز"></td>' +
+      '<td class="non-level-field" data-label="النتيجة"><select class="form-control" name="rows[' + idx + '][t_passed]"><option value="1">اجتاز</option><option value="0" selected>لم يجتز</option></select></td>' +
       '<td data-label="ملاحظة"><input type="text" class="form-control" name="rows[' + idx + '][t_note]" placeholder="ملاحظة"></td>' +
       '<td><button type="button" class="btn btn-ghost btn-sm del-test-row" title="حذف الاختبار"><i class="fas fa-xmark"></i></button></td>' +
     '</tr>';
@@ -213,12 +254,47 @@
   if (groupSel) groupSel.addEventListener('change', render);
 
   function syncLevelPick(typeSel) {
+    var tr = typeSel && typeSel.closest('tr');
     var pick = typeSel && typeSel.closest('td') ? typeSel.closest('td').querySelector('.t-level-pick') : null;
-    if (pick) pick.style.display = typeSel.value === 'مستوى' ? '' : 'none';
+    var isLevel = typeSel.value === 'مستوى';
+    if (tr) tr.setAttribute('data-type', isLevel ? 'مستوى' : 'other');
+    if (pick) pick.style.display = isLevel ? '' : 'none';
   }
 
   wrap.addEventListener('change', function (e) {
-    if (e.target.classList && e.target.classList.contains('t_type_sel')) syncLevelPick(e.target);
+    if (e.target.classList && e.target.classList.contains('t_type_sel')) {
+      syncLevelPick(e.target);
+      return;
+    }
+    var cb = e.target.closest && e.target.closest('.lvl-chip input[type="checkbox"]');
+    if (cb) {
+      var wrapDiv = cb.closest('.lvl-chip-wrap');
+      var critDiv = wrapDiv ? wrapDiv.querySelector('.lvl-criteria') : null;
+      var idxMatch = cb.name && cb.name.match(/rows\[(\d+)\]/);
+      var idx = idxMatch ? idxMatch[1] : '';
+      if (cb.checked && critDiv) {
+        critDiv.style.display = '';
+        fetchCriteria(cb.value).then(function (criteria) {
+          if (critDiv) critDiv.innerHTML = criteriaHtml(idx, cb.value, criteria);
+        });
+      } else if (critDiv) {
+        critDiv.style.display = 'none';
+        critDiv.innerHTML = '';
+      }
+      return;
+    }
+  });
+
+  wrap.addEventListener('input', function (e) {
+    if (e.target.classList && e.target.classList.contains('crit-range')) {
+      var num = document.getElementById(e.target.getAttribute('data-target'));
+      if (num) num.value = e.target.value;
+    }
+    if (e.target.classList && e.target.classList.contains('crit-num')) {
+      var rangeName = e.target.getAttribute('data-range');
+      var range = rangeName ? document.querySelector('input[name="' + rangeName + '"].crit-range') : null;
+      if (range) range.value = e.target.value;
+    }
   });
 
   var singleTypeSel = document.querySelector('#panelSingle select[name="type"]');

@@ -65,7 +65,7 @@ async function upsertAssessment(swimmerId, levelId, g, b, userId) {
 /* قراءة تقييم (scores) من req.body مقسّمة إلى: مستوى محدد + معايير عامة */
 async function parseScores(b) {
   const critLevel = {};
-  (await db.prepare('SELECT id, level_id FROM assessment_criteria').all()).forEach(c => { critLevel[c.id] = c.level_id; });
+  (await db.prepare('SELECT id, level_id FROM assessment_criteria').all()).forEach(c => { critLevel[c.id] = c.level_id == null ? null : String(c.level_id); });
   const perLevel = {};
   const sharedScores = {};
   Object.keys(b).forEach(k => {
@@ -84,6 +84,26 @@ async function parseScores(b) {
   });
   const shared = { scores: sharedScores, n: Object.keys(sharedScores).length, sum: Object.keys(sharedScores).reduce((s, k) => s + sharedScores[k], 0) };
   return { perLevel, shared };
+}
+
+/* قراءة scores من صف واحد في نموذج اختبار المجموعة */
+async function parseRowScores(row) {
+  const critLevel = {};
+  (await db.prepare('SELECT id, level_id FROM assessment_criteria').all()).forEach(c => { critLevel[c.id] = c.level_id == null ? null : String(c.level_id); });
+  const perLevel = {};
+  Object.keys(row || {}).forEach(k => {
+    const m = /^score_(\d+)$/.exec(k);
+    if (m && row[k] !== undefined && row[k] !== '') {
+      const cid = Number(m[1]);
+      const v = Math.min(100, Math.max(0, Number(row[k])));
+      const lid = critLevel[cid];
+      if (lid != null) {
+        const g = (perLevel[lid] = perLevel[lid] || { scores: {}, n: 0, sum: 0 });
+        g.scores[cid] = v; g.n++; g.sum += v;
+      }
+    }
+  });
+  return perLevel;
 }
 
 /* ============================================================== */
@@ -392,22 +412,32 @@ router.post('/tests/new', async function (req, res) {
   let saved = 0;
   const levelsOf = v => v === undefined || v === null ? [] : (Array.isArray(v) ? v : [v]);
   if (b.group_id) {
-    const grp = await db.prepare('SELECT coach_id FROM groups WHERE id=?').get(Number(b.group_id));
+    const grp = await db.prepare('SELECT coach_id, program_id FROM groups WHERE id=?').get(Number(b.group_id));
     const coachId = (grp && grp.coach_id) || req.currentUser.coach_id || null;
+    const programId = grp ? grp.program_id : null;
     const rowsArr = Array.isArray(b.rows) ? b.rows : (b.rows ? [b.rows] : []);
     for (const r of rowsArr) {
       if (!r || !r.swimmer_id) continue;
       const levels = levelsOf(r.t_level);
-      const base = { swimmerId: r.swimmer_id, coachId, type: r.t_type || 'مستوى', race: r.t_race, date, distance: r.t_distance, time: r.t_time, position: r.t_position, passed: r.t_passed, note: r.t_note, userId: req.currentUser.id };
-      if (base.type === 'مستوى' && levels.length) {
-        for (const lv of levels) { await saveTestResult(Object.assign({}, base, { level: lv })); saved++; }
+      if ((r.t_type || 'مستوى') === 'مستوى' && levels.length) {
+        const perLevel = await parseRowScores(r);
+        for (const lv of levels) {
+          const g = perLevel[String(lv)];
+          if (g && g.n) {
+            const overall = Math.round((g.sum / g.n) * 1000) / 1000;
+            await db.prepare(`INSERT INTO assessments (swimmer_id, coach_id, program_id, level_id, date, scores, overall_percent, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?)`)
+              .run(r.swimmer_id, coachId, programId || null, Number(lv), date, JSON.stringify(g.scores), overall, r.t_note || '', req.currentUser.id);
+            saved++;
+          }
+        }
       } else {
+        const base = { swimmerId: r.swimmer_id, coachId, type: r.t_type || 'مستوى', race: r.t_race, date, distance: r.t_distance, time: r.t_time, position: r.t_position, passed: r.t_passed, note: r.t_note, userId: req.currentUser.id };
         await saveTestResult(Object.assign({}, base, { level: levels[0] || null }));
         saved++;
       }
     }
     if (!saved) {
-      setFlash(res, { type: 'error', message: 'لم تُسجل أي نتائج — أضف اختباراً لواحد من اللاعبين أولاً' });
+      setFlash(res, { type: 'error', message: 'لم تُسجل أي نتائج — أدخل درجات المهارات بعد اختيار المستوى' });
       return res.redirect('/tests/new');
     }
   } else {
