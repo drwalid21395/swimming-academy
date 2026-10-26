@@ -1104,7 +1104,15 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
 
   /* إلغاء أي حد أدنى inline عريض يسبب تجاوزاً على الهاتف */
   [style*="min-width:220px"], [style*="min-width:250px"],
-  [style*="min-width:200px"], [style*="min-width:150px"] { min-width: 0 !important; }
+  [style*="min-width:200px"], [style*="min-width:150px"],
+  [style*="min-width:110px"], [style*="min-width:90px"] { min-width: 0 !important; }
+
+  /* اختيار فردي/جماعي وكروت تسجيل اختبار المجموعة */
+  .mode-selector { flex-wrap: wrap; }
+  .mode-selector .mode-card { flex: 1 1 auto; justify-content: center; }
+  .gs-head { flex-wrap: wrap; gap: 6px; }
+  .gs-name { flex: 1 1 100%; }
+  .gs-actions .btn { width: 100%; justify-content: center; }
 
   /* صفوف الحصص/التقييمات داخل البطاقات */
   .attendance-session { padding: 10px; }
@@ -1238,7 +1246,7 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
 }
 
 
-/* ============================= ������� �����: ���� ������� ============================= */
+/* ============================= ������� �����: ���� ������� ============================= */
 .wk-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
 .wk-day { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
 .wk-day.today { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }

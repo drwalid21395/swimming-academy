@@ -13,7 +13,7 @@
 
       <div class="form-group full">
         <label>طريقة التطبيق</label>
-        <div class="flex gap-2">
+        <div class="flex gap-2 mode-selector">
           <label class="mode-card" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:1px solid var(--card-border);border-radius:10px;">
             <input type="radio" name="mode" value="single" id="modeSingle" checked> <i class="fas fa-user"></i> لاعب واحد
           </label>
@@ -151,17 +151,17 @@
   function testRowHtml(sid, idx) {
     var defType = defaultTypeSel ? defaultTypeSel.value : '';
     return '<tr>' +
-      '<td><input type="hidden" name="rows[' + idx + '][swimmer_id]" value="' + sid + '">' +
+      '<td data-label="نوع الاختبار"><input type="hidden" name="rows[' + idx + '][swimmer_id]" value="' + sid + '">' +
         '<select class="form-control t_type_sel" name="rows[' + idx + '][t_type]" style="min-width:110px">' + typeOptions(defType) + '</select>' +
         '<div class="t-level-pick" style="' + (defType === 'مستوى' ? '' : 'display:none;') + 'margin-top:6px">' +
           levelChecksHtml(idx) +
         '</div></td>' +
-      '<td><input type="text" class="form-control" name="rows[' + idx + '][t_race]" placeholder="اكتب السباق" style="min-width:90px"></td>' +
-      '<td><input type="number" min="0" class="form-control" name="rows[' + idx + '][t_distance]" placeholder="متر"></td>' +
-      '<td><input type="number" min="0" step="0.01" class="form-control" name="rows[' + idx + '][t_time]" placeholder="ثانية"></td>' +
-      '<td><input type="number" min="0" class="form-control" name="rows[' + idx + '][t_position]" placeholder="مركز"></td>' +
-      '<td><select class="form-control" name="rows[' + idx + '][t_passed]"><option value="1">اجتاز</option><option value="0" selected>لم يجتز</option></select></td>' +
-      '<td><input type="text" class="form-control" name="rows[' + idx + '][t_note]" placeholder="ملاحظة"></td>' +
+      '<td data-label="نوع السباق"><input type="text" class="form-control" name="rows[' + idx + '][t_race]" placeholder="اكتب السباق" style="min-width:90px"></td>' +
+      '<td data-label="المسافة"><input type="number" min="0" class="form-control" name="rows[' + idx + '][t_distance]" placeholder="متر"></td>' +
+      '<td data-label="الزمن"><input type="number" min="0" step="0.01" class="form-control" name="rows[' + idx + '][t_time]" placeholder="ثانية"></td>' +
+      '<td data-label="المركز"><input type="number" min="0" class="form-control" name="rows[' + idx + '][t_position]" placeholder="مركز"></td>' +
+      '<td data-label="النتيجة"><select class="form-control" name="rows[' + idx + '][t_passed]"><option value="1">اجتاز</option><option value="0" selected>لم يجتز</option></select></td>' +
+      '<td data-label="ملاحظة"><input type="text" class="form-control" name="rows[' + idx + '][t_note]" placeholder="ملاحظة"></td>' +
       '<td><button type="button" class="btn btn-ghost btn-sm del-test-row" title="حذف الاختبار"><i class="fas fa-xmark"></i></button></td>' +
     '</tr>';
   }
@@ -170,7 +170,7 @@
     return '<div class="gs-card" data-sid="' + sw.id + '">' +
       '<div class="gs-head"><i class="fas fa-user-circle"></i><span class="gs-name">' + esc(sw.full_name) + '</span>' +
       '<span class="gs-sub">' + esc(sw.membership_no || '') + (sw.level_name ? ' · ' + esc(sw.level_name) : '') + '</span></div>' +
-      '<div class="table-wrap"><table class="data-table gs-table"><thead><tr>' +
+      '<div class="table-wrap"><table class="data-table gs-table rtable"><thead><tr>' +
       '<th>نوع الاختبار</th><th>نوع السباق</th><th>المسافة</th><th>الزمن</th><th>المركز</th><th>النتيجة</th><th>ملاحظة</th><th></th>' +
       '</tr></thead><tbody>' + testRowHtml(sw.id, ++rowSeq) + '</tbody></table></div>' +
       '<div class="gs-actions"><button type="button" class="btn btn-ghost btn-sm add-test-row" data-sid="' + sw.id + '"><i class="fas fa-plus"></i> إضافة اختبار</button></div>' +
