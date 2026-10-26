@@ -256,7 +256,7 @@ router.get('/assessments/:id/edit', async function (req, res) {
   Object.keys(saved).forEach(k => { values['score_' + k] = saved[k]; });
   /* تعبئة أحدث تقييم لكل مستوى آخر + المعايير العامة لللاعب (تعديل شامل لكل المستويات) */
   const seen = {};
-  await db.prepare('SELECT * FROM assessments WHERE swimmer_id=? AND level_id IS NOT NULL ORDER BY date DESC, id DESC').all(row.swimmer_id)
+  (await db.prepare('SELECT * FROM assessments WHERE swimmer_id=? AND level_id IS NOT NULL ORDER BY date DESC, id DESC').all(row.swimmer_id))
     .forEach(a => { if (!seen[a.level_id]) { seen[a.level_id] = a; } });
   Object.keys(seen).forEach(lid => {
     if (String(lid) === String(row.level_id)) return;
