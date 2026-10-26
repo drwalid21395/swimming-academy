@@ -458,7 +458,7 @@ router.get('/tests/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'tests')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const row = await db.prepare('SELECT * FROM tests WHERE id=?').get(Number(req.params.id));
   if (!row) return res.redirect('/tests');
-  res.render('form', { form: { title: 'تعديل الاختبار', subtitle: 'تحديث نتيجة الاختبار', icon: 'fa-pen', active: 'tests', action: '/tests/' + row.id + '/edit', fields: testFields(row, activeSport(req)), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/tests', csrf: '' } });
+  res.render('form', { form: { title: 'تعديل الاختبار', subtitle: 'تحديث نتيجة الاختبار', icon: 'fa-pen', active: 'tests', action: '/tests/' + row.id + '/edit', fields: await testFields(row, activeSport(req)), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/tests', csrf: '' } });
 });
 router.post('/tests/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'tests')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
