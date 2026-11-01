@@ -112,20 +112,40 @@ async function parseRowScores(row) {
 
 router.get('/assessments', async function (req, res) {
   if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT 'تقييم' AS kind, a.id AS id, a.date AS date, a.overall_percent AS overall_percent, a.ready_to_advance AS ready_to_advance, a.level_id AS level_id, a.coach_id AS coach_id, a.notes AS notes, a.swimmer_id AS swimmer_id, s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name, l.name AS level_name, NULL AS t_type, NULL AS t_race, NULL AS time_seconds, NULL AS test_status, NULL AS distance_m, NULL AS result_note FROM assessments a
-    LEFT JOIN swimmers s ON s.id = a.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = a.coach_id LEFT JOIN levels l ON l.id = a.level_id WHERE 1=1` + progClause(activeSport(req), 'a') + `
+  /* التقييمات: نجمع صفوف اللاعب الواحد في نفس التاريخ في سطر واحد (كل المستويات معاً) */
+  const rows = await db.prepare(`SELECT 'تقييم' AS kind,
+      COALESCE(MIN(CASE WHEN a.level_id IS NOT NULL THEN a.id END), MIN(a.id)) AS id,
+      a.date AS date,
+      COALESCE(ROUND(AVG(CASE WHEN a.level_id IS NOT NULL THEN a.overall_percent END), 2), ROUND(AVG(a.overall_percent), 2)) AS overall_percent,
+      MAX(a.ready_to_advance) AS ready_to_advance,
+      MAX(a.level_id) AS level_id,
+      MAX(a.coach_id) AS coach_id,
+      MAX(a.notes) AS notes,
+      a.swimmer_id AS swimmer_id,
+      s.full_name AS swimmer_name,
+      s.membership_no,
+      MAX(c.full_name) AS coach_name,
+      GROUP_CONCAT(DISTINCT l.name) AS level_name,
+      COUNT(DISTINCT a.level_id) AS levels_count,
+      NULL AS t_type, NULL AS t_race, NULL AS time_seconds, NULL AS test_status, NULL AS distance_m, NULL AS result_note
+    FROM assessments a
+    LEFT JOIN swimmers s ON s.id = a.swimmer_id AND s.deleted_at IS NULL
+    LEFT JOIN coaches c ON c.id = a.coach_id
+    LEFT JOIN levels l ON l.id = a.level_id
+    WHERE 1=1` + progClause(activeSport(req), 'a') + `
+    GROUP BY a.swimmer_id, a.date
     UNION ALL
-    SELECT 'اختبار' AS kind, t.id AS id, t.date AS date, NULL AS overall_percent, t.passed AS ready_to_advance, NULL AS level_id, t.coach_id AS coach_id, t.result_note AS notes, t.swimmer_id AS swimmer_id, s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name, l.name AS level_name, t.type AS t_type, t.race_type AS t_race, t.time_seconds AS time_seconds, t.status AS test_status, t.distance_m AS distance_m, t.result_note AS result_note FROM tests t
+    SELECT 'اختبار' AS kind, t.id AS id, t.date AS date, NULL AS overall_percent, t.passed AS ready_to_advance, NULL AS level_id, t.coach_id AS coach_id, t.result_note AS notes, t.swimmer_id AS swimmer_id, s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name, l.name AS level_name, 1 AS levels_count, t.type AS t_type, t.race_type AS t_race, t.time_seconds AS time_seconds, t.status AS test_status, t.distance_m AS distance_m, t.result_note AS result_note FROM tests t
     LEFT JOIN swimmers s ON s.id = t.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN levels l ON l.id = t.level_id WHERE 1=1` + swimmerOfClause(activeSport(req), 't') + `
     ORDER BY date DESC`).all();
   const page = {
     title: 'التقييمات الفنية', subtitle: 'تقييم مهارات اللاعبين ونتائج الاختبارات', icon: 'fa-clipboard-check', module: 'assessments', active: 'assessments',
     columns: [
-      { key: 'swimmer_name', label: 'اللاعب', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div></div></div>` },
+      { key: 'swimmer_name', label: 'اللاعب', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">${(row.swimmer_name || 'س').trim().charAt(0)}</div><div><div class="cell-title">${row.swimmer_name || '—'}</div><div class="cell-sub">${row.membership_no || ''}</div>${row.kind === 'تقييم' && row.level_name ? `<div class="cell-sub" style="max-width:260px;white-space:normal;line-height:1.5"><i class="fas fa-layer-group" style="font-size:10px"></i> ${row.level_name}</div>` : ''}</div></div>` },
       { key: 'kind', label: 'النوع', html: row => row.kind === 'اختبار' ? `<span class="badge badge-warning">اختبار · ${row.t_type || ''}</span>` : `<span class="badge badge-primary">تقييم</span>` },
       { key: 't_race', label: 'نوع السباق', html: row => row.kind === 'اختبار' && row.t_race ? `<span class="badge badge-info">${row.t_race}</span>` : '—' },
       { key: 'date', label: 'التاريخ', html: row => fmtDate(row.date) },
-      { key: 'level_name', label: 'المستوى', html: row => row.level_name ? `<span class="badge badge-violet">${row.level_name}</span>` : '<span class="text-soft">—</span>' },
+      { key: 'level_name', label: 'المستوى', html: row => row.kind === 'تقييم' && row.levels_count > 1 ? `<span class="badge badge-violet">${row.levels_count} مستويات</span>` : (row.level_name ? `<span class="badge badge-violet">${row.level_name}</span>` : '<span class="text-soft">—</span>') },
       { key: 'result', label: 'النتيجة', html: row => row.kind === 'اختبار'
         ? `<div><span class="badge ${row.test_status === 'اجتاز' ? 'badge-success' : 'badge-danger'}">${row.test_status || '—'}</span>${row.time_seconds != null ? `<div class="font-12 text-soft">${row.time_seconds}s${row.distance_m ? ' · ' + row.distance_m + 'م' : ''}</div>` : ''}</div>`
         : `<div class="progress-inline"><span class="badge ${row.overall_percent >= 80 ? 'badge-success' : row.overall_percent >= 60 ? 'badge-warning' : 'badge-danger'}">${row.overall_percent || 0}%</span></div>` },
@@ -145,10 +165,10 @@ router.get('/assessments', async function (req, res) {
       { label: 'اللاعب', icon: 'fa-person-swimming', href: '/swimmers/' + row.swimmer_id },
       { label: 'حذف', icon: 'fa-trash', href: '/tests/' + row.id + '/delete', confirm: 'حذف الاختبار؟', cls: 'text-danger' }
     ] : [
-      { label: 'عرض', icon: 'fa-eye', href: '/assessments/' + row.id },
+      ...(row.levels_count > 1 ? [] : [{ label: 'عرض', icon: 'fa-eye', href: '/assessments/' + row.id }]),
       { label: 'اللاعب', icon: 'fa-person-swimming', href: '/swimmers/' + row.swimmer_id },
       { label: 'تعديل', icon: 'fa-pen', href: '/assessments/' + row.id + '/edit' },
-      { label: 'حذف', icon: 'fa-trash', href: '/assessments/' + row.id + '/delete', confirm: 'حذف التقييم؟', cls: 'text-danger' }
+      { label: 'حذف', icon: 'fa-trash', href: '/assessments/' + row.id + '/delete', confirm: 'حذف تقييم اللاعب بكل مستوياته؟', cls: 'text-danger' }
     ]
   };
   res.render('list', { page });
@@ -303,9 +323,16 @@ router.post('/assessments/:id/edit', async function (req, res) {
 });
 router.post('/assessments/:id/delete', async function (req, res) {
   if (!canDel(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  await db.prepare('DELETE FROM assessments WHERE id=?').run(Number(req.params.id));
-  audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'assessments', Number(req.params.id), 'حذف تقييم', req);
-  setFlash(res, { type: 'success', message: 'تم حذف التقييم' });
+  const id = Number(req.params.id);
+  const row = await db.prepare('SELECT swimmer_id, date FROM assessments WHERE id=?').get(id);
+  if (row) {
+    /* حذف تقييم اللاعب بالكامل (كل مستويات نفس التاريخ) */
+    await db.prepare('DELETE FROM assessments WHERE swimmer_id=? AND date=?').run(row.swimmer_id, row.date);
+    audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'assessments', id, 'حذف تقييم اللاعب بكل مستوياته', req);
+    setFlash(res, { type: 'success', message: 'تم حذف تقييم اللاعب بكل مستوياته' });
+  } else {
+    setFlash(res, { type: 'error', message: 'التقييم غير موجود' });
+  }
   res.redirect('/assessments');
 });
 
