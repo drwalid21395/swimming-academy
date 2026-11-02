@@ -71,7 +71,7 @@ router.get('/reports/attendance/daily', async function (req, res) {
     LEFT JOIN coaches c ON c.id = g.coach_id WHERE g.deleted_at IS NULL` + groupClause(activeSport(req)) + ` ORDER BY g.name`).all();
   const groups = [];
   for (const g of groupRows) {
-    const session = await db.prepare(`SELECT * FROM sessions WHERE group_id = ? AND date = ? AND deleted_at IS NULL ORDER BY start_time LIMIT 1`).get(g.id, date);
+    const session = await db.prepare(`SELECT * FROM sessions WHERE date = ? AND deleted_at IS NULL AND (group_id = ? OR EXISTS (SELECT 1 FROM session_groups sg WHERE sg.session_id = sessions.id AND sg.group_id = ?)) ORDER BY start_time LIMIT 1`).get(date, g.id, g.id);
     let members = [];
     if (session) {
       members = await db.prepare(`SELECT s.full_name, s.membership_no, l.name AS level_name, a.status, a.reason

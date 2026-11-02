@@ -21,7 +21,7 @@
         <div class="detail-item"><div class="dl">العنوان</div><div class="dv"><%= s.title || '—' %></div></div>
         <div class="detail-item"><div class="dl">التاريخ</div><div class="dv"><%= fmtDate(s.date) %></div></div>
         <div class="detail-item"><div class="dl">الوقت</div><div class="dv"><%= s.start_time %> — <%= s.end_time || '' %></div></div>
-        <div class="detail-item"><div class="dl">المجموعة</div><div class="dv"><%= s.group_name || '—' %></div></div>
+        <div class="detail-item"><div class="dl">المجموعة</div><div class="dv"><%= (groupNames && groupNames.length ? groupNames.join('، ') : s.group_name) || '—' %></div></div>
         <div class="detail-item"><div class="dl">الكابتن</div><div class="dv"><%= s.coach_name || '—' %></div></div>
         <div class="detail-item"><div class="dl">الحمام</div><div class="dv"><%= s.pool_name || '—' %></div></div>
         <div class="detail-item"><div class="dl">الحالة</div><div class="dv">

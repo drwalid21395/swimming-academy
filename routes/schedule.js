@@ -91,6 +91,37 @@ function groupStartTime(g) {
   return '16:00';
 }
 
+/* مجموعات الحصة (Primary + إضافية) */
+function parseGroupIds(value) {
+  if (value === 'all') return [];
+  if (Array.isArray(value)) return value.map(Number).filter(id => id > 0);
+  if (value) {
+    const n = Number(value);
+    return n > 0 ? [n] : [];
+  }
+  return [];
+}
+
+async function sessionGroupIds(sessionId) {
+  const rows = await db.prepare('SELECT group_id FROM session_groups WHERE session_id = ?').all(sessionId);
+  if (rows.length) return rows.map(r => r.group_id);
+  const s = await db.prepare('SELECT group_id FROM sessions WHERE id = ?').get(sessionId);
+  return s && s.group_id ? [s.group_id] : [];
+}
+
+/* المجموعة المناسبة لكل لاعب داخل الحصة (لخصم الاشتراك) */
+async function sessionGroupForSwimmer(sessionId, swimmerId) {
+  const rows = await db.prepare(`SELECT group_id FROM session_groups WHERE session_id = ? AND group_id IN (SELECT group_id FROM swimmer_group WHERE swimmer_id = ?) ORDER BY group_id LIMIT 1`).all(sessionId, swimmerId);
+  if (rows.length) return rows[0].group_id;
+  const s = await db.prepare('SELECT group_id FROM sessions WHERE id = ?').get(sessionId);
+  return s && s.group_id;
+}
+
+/* مزامنة أعضاء عدة مجموعات */
+async function syncGroups(groupIds) {
+  for (const gid of groupIds) await syncGroup(gid);
+}
+
 /* ============================================================== */
 /*                           الحصص والجداول                        */
 /* ============================================================== */
@@ -104,9 +135,9 @@ router.get('/sessions', async function (req, res) {
     LEFT JOIN groups g ON g.id = se.group_id
     LEFT JOIN coaches c ON c.id = se.coach_id
     LEFT JOIN pools p ON p.id = se.pool_id
-    WHERE 1=1 AND se.deleted_at IS NULL` + groupClause(activeSport(req), 'g');
+    WHERE 1=1 AND se.deleted_at IS NULL` + sessionClause(activeSport(req), 'se');
   const params = [];
-  if (group) { sql += ' AND se.group_id = ?'; params.push(group); }
+  if (group) { sql += ' AND (se.group_id = ? OR EXISTS (SELECT 1 FROM session_groups sg WHERE sg.session_id = se.id AND sg.group_id = ?))'; params.push(group, group); }
   if (coach) { sql += ' AND se.coach_id = ?'; params.push(coach); }
   if (status) { sql += ' AND se.status = ?'; params.push(status); }
   if (q) { sql += ' AND (g.name LIKE ? OR se.title LIKE ?)'; const like = '%' + q + '%'; params.push(like, like); }
@@ -150,8 +181,9 @@ const sessionFields = async function (values, req) {
   const groups = (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL' + groupClause(sid)).all()).map(g => ({ value: g.id, label: g.name }));
   const coaches = (await db.prepare('SELECT * FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches')).all()).map(c => ({ value: c.id, label: c.full_name }));
   const pools = (await db.prepare('SELECT * FROM pools').all()).map(p => ({ value: p.id, label: p.name }));
+  const selectedGroupIds = Array.isArray(values.group_ids) ? values.group_ids.map(String) : (values.group_ids ? [String(values.group_ids)] : (values.group_id ? [String(values.group_id)] : []));
   return [
-    { key: 'group_id', label: 'المجموعة التدريبية', type: 'select', options: groups, required: true, section: 'بيانات الحصة', sectionIcon: 'fa-calendar-days' },
+    { key: 'group_ids', label: 'المجموعات التدريبية', type: 'multiselect', options: groups, required: true, value: selectedGroupIds, section: 'بيانات الحصة', sectionIcon: 'fa-calendar-days' },
     { key: 'title', label: 'عنوان الحصة', type: 'text', hint: 'يُترك فارغاً لإنشائه تلقائياً' },
     { key: 'date', label: 'تاريخ الحصة', type: 'date', required: true },
     { key: 'start_time', label: 'وقت البداية', type: 'time', required: true },
@@ -168,7 +200,7 @@ const sessionFields = async function (values, req) {
 router.get('/sessions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const values = {
-    group_id: req.query.group_id || '',
+    group_ids: req.query.group_id ? [req.query.group_id] : [],
     date: req.query.date || today(),
     start_time: '16:00'
   };
@@ -177,13 +209,22 @@ router.get('/sessions/new', async function (req, res) {
 router.post('/sessions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
-  const group = await db.prepare('SELECT * FROM groups WHERE id = ?').get(b.group_id || 0);
-  const title = b.title || (group ? group.name + ' - ' + b.date : 'حصة تدريبية');
+  const groupIds = parseGroupIds(b.group_ids || b.group_id);
+  if (!groupIds.length) {
+    setFlash(res, { type: 'danger', message: 'يرجى اختيار مجموعة واحدة على الأقل' });
+    return res.redirect('/sessions/new');
+  }
+  const primaryGroup = await db.prepare('SELECT * FROM groups WHERE id = ?').get(groupIds[0]);
+  const title = b.title || (primaryGroup ? primaryGroup.name + ' - ' + b.date : 'حصة تدريبية');
   const info = await db.prepare('INSERT INTO sessions (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, original_date, note, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
-    .run(b.group_id || null, title, b.date, b.start_time || '16:00', b.end_time || null, b.coach_id || (group ? group.coach_id : null), b.pool_id || (group ? group.pool_id : null), b.status || 'scheduled', b.is_compensatory === '1' ? 1 : 0, b.original_date || null, b.note || '', req.currentUser.id);
-  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'sessions', info.lastInsertRowid, 'حصة جديدة: ' + title, req);
-  setFlash(res, { type: 'success', message: 'تم إنشاء الحصة' });
-  res.redirect('/attendance/session/' + info.lastInsertRowid);
+    .run(groupIds[0], title, b.date, b.start_time || '16:00', b.end_time || null, b.coach_id || (primaryGroup ? primaryGroup.coach_id : null), b.pool_id || (primaryGroup ? primaryGroup.pool_id : null), b.status || 'scheduled', b.is_compensatory === '1' ? 1 : 0, b.original_date || null, b.note || '', req.currentUser.id);
+  const sessionId = info.lastInsertRowid;
+  for (const gid of groupIds) {
+    await db.prepare('INSERT OR IGNORE INTO session_groups (session_id, group_id) VALUES (?,?)').run(sessionId, gid);
+  }
+  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'sessions', sessionId, 'حصة جديدة: ' + title + ' (' + groupIds.length + ' مجموعة)', req);
+  setFlash(res, { type: 'success', message: 'تم إنشاء الحصة لـ ' + groupIds.length + ' مجموعة' });
+  res.redirect('/attendance/session/' + sessionId);
 });
 
 /* إضافة حصص لعدة مجموعات دفعة واحدة من شاشة الحضور */
@@ -207,33 +248,27 @@ router.post('/sessions/bulk-new', async function (req, res) {
   let groupIds = [];
   if (b.group_ids === 'all') {
     groupIds = (await db.prepare('SELECT id FROM groups WHERE deleted_at IS NULL' + groupClause(sid)).all()).map(r => r.id);
-  } else if (Array.isArray(b.group_ids)) {
-    groupIds = b.group_ids.map(Number).filter(id => id > 0);
-  } else if (b.group_ids) {
-    const n = Number(b.group_ids); if (n > 0) groupIds.push(n);
+  } else {
+    groupIds = parseGroupIds(b.group_ids);
   }
   if (!groupIds.length) {
     setFlash(res, { type: 'danger', message: 'يرجى اختيار مجموعة واحدة على الأقل' });
     return res.redirect('/sessions/bulk-new?date=' + date);
   }
-  const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches') + ' ORDER BY full_name').all();
-  const pools = await db.prepare('SELECT id, name FROM pools ORDER BY name').all();
-  const coachMap = {}; coaches.forEach(c => coachMap[c.id] = c.full_name);
-  const poolMap = {}; pools.forEach(p => poolMap[p.id] = p.name);
-  const ins = db.prepare('INSERT INTO sessions (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, original_date, note, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
-  let created = 0;
+  const primaryGroup = await db.prepare('SELECT * FROM groups WHERE id = ?').get(groupIds[0]);
+  const title = (primaryGroup ? primaryGroup.name : 'مجموعات') + ' - ' + date + (groupIds.length > 1 ? ' (' + groupIds.length + ' مجموعات)' : '');
+  const start = b.start_time || (primaryGroup ? groupStartTime(primaryGroup) : '16:00');
+  const end = b.end_time || null;
+  const coachId = b.coach_id || (primaryGroup ? primaryGroup.coach_id : null);
+  const poolId = b.pool_id || (primaryGroup ? primaryGroup.pool_id : null);
+  const info = await db.prepare('INSERT INTO sessions (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, original_date, note, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(groupIds[0], title, date, start, end, coachId, poolId, 'scheduled', 0, null, 'أُنشئت من شاشة الحضور', req.currentUser.id);
+  const sessionId = info.lastInsertRowid;
   for (const gid of groupIds) {
-    const g = await db.prepare('SELECT * FROM groups WHERE id = ?').get(gid);
-    if (!g) continue;
-    const start = b.start_time || groupStartTime(g) || '16:00';
-    const end = b.end_time || null;
-    const coachId = b.coach_id || g.coach_id || null;
-    const poolId = b.pool_id || g.pool_id || null;
-    await ins.run(gid, g.name + ' - ' + date, date, start, end, coachId, poolId, 'scheduled', 0, null, 'أُنشئت من شاشة الحضور', req.currentUser.id);
-    created++;
+    await db.prepare('INSERT OR IGNORE INTO session_groups (session_id, group_id) VALUES (?,?)').run(sessionId, gid);
   }
-  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'sessions', 0, 'إنشاء ' + created + ' حصة للمجموعات يوم ' + date, req);
-  setFlash(res, { type: 'success', message: 'تم إنشاء ' + created + ' حصة بنجاح، يمكنك الآن تسجيل الحضور' });
+  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'sessions', sessionId, 'حصة لـ ' + groupIds.length + ' مجموعة يوم ' + date, req);
+  setFlash(res, { type: 'success', message: 'تم إنشاء الحصة لـ ' + groupIds.length + ' مجموعة، يمكنك الآن تسجيل الحضور' });
   res.redirect('/attendance?date=' + date);
 });
 
@@ -242,13 +277,16 @@ router.get('/sessions/:id', async function (req, res) {
   const s = await db.prepare(`SELECT se.*, g.name AS group_name, c.full_name AS coach_name, p.name AS pool_name FROM sessions se
     LEFT JOIN groups g ON g.id = se.group_id LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id WHERE se.id = ?` + sessionClause(activeSport(req), 'se')).get(Number(req.params.id));
   if (!s) return res.redirect('/sessions');
-  await syncGroup(s.group_id);
+  const groupIds = await sessionGroupIds(s.id);
+  await syncGroups(groupIds);
+  const placeholders = groupIds.length ? groupIds.map(() => '?').join(',') : '0';
   const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, a.status AS att_status, a.reason, a.coach_note FROM swimmer_group sg
     JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN attendance a ON a.session_id = ? AND a.swimmer_id = s.id
-    WHERE sg.group_id = ? ORDER BY s.full_name`).all(s.group_id, s.group_id);
+    WHERE sg.group_id IN (${placeholders}) ORDER BY s.full_name`).all(s.id, ...groupIds);
+  const groupNames = groupIds.length ? (await db.prepare(`SELECT name FROM groups WHERE id IN (${placeholders}) ORDER BY name`).all(...groupIds)).map(r => r.name) : [];
   res.render('session_detail', {
     title: 'تفاصيل الحصة', active: 'sessions',
-    s, members,
+    s, members, groupNames,
     attMap: ATT_STATUS,
     page: { canEdit: canEdit(req.currentUser, 'sessions'), canDel: canDel(req.currentUser, 'sessions') }
   });
@@ -258,17 +296,28 @@ router.get('/sessions/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const row = await db.prepare('SELECT * FROM sessions WHERE id = ?').get(Number(req.params.id));
   if (!row) return res.redirect('/sessions');
+  const groupRows = await db.prepare('SELECT group_id FROM session_groups WHERE session_id = ?').all(row.id);
+  row.group_ids = groupRows.length ? groupRows.map(r => r.group_id) : (row.group_id ? [row.group_id] : []);
   res.render('form', { form: { title: 'تعديل الحصة', subtitle: fmtDate(row.date) + ' — ' + (row.title || ''), icon: 'fa-pen', active: 'sessions', action: '/sessions/' + row.id + '/edit', fields: await sessionFields(row, req), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/sessions/' + row.id, csrf: '' } });
 });
 router.post('/sessions/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
   const b = req.body;
-  const group = await db.prepare('SELECT * FROM groups WHERE id = ?').get(b.group_id || 0);
-  const title = b.title || (group ? group.name + ' - ' + b.date : 'حصة تدريبية');
+  const groupIds = parseGroupIds(b.group_ids || b.group_id);
+  if (!groupIds.length) {
+    setFlash(res, { type: 'danger', message: 'يرجى اختيار مجموعة واحدة على الأقل' });
+    return res.redirect('/sessions/' + id + '/edit');
+  }
+  const primaryGroup = await db.prepare('SELECT * FROM groups WHERE id = ?').get(groupIds[0]);
+  const title = b.title || (primaryGroup ? primaryGroup.name + ' - ' + b.date : 'حصة تدريبية');
   await db.prepare('UPDATE sessions SET group_id=?, title=?, date=?, start_time=?, end_time=?, coach_id=?, pool_id=?, status=?, is_compensatory=?, original_date=?, note=? WHERE id=?')
-    .run(b.group_id || null, title, b.date, b.start_time || '16:00', b.end_time || null, b.coach_id || (group ? group.coach_id : null), b.pool_id || (group ? group.pool_id : null), b.status || 'scheduled', b.is_compensatory === '1' ? 1 : 0, b.original_date || null, b.note || '', id);
-  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'sessions', id, 'تعديل حصة', req);
+    .run(groupIds[0], title, b.date, b.start_time || '16:00', b.end_time || null, b.coach_id || (primaryGroup ? primaryGroup.coach_id : null), b.pool_id || (primaryGroup ? primaryGroup.pool_id : null), b.status || 'scheduled', b.is_compensatory === '1' ? 1 : 0, b.original_date || null, b.note || '', id);
+  await db.prepare('DELETE FROM session_groups WHERE session_id = ?').run(id);
+  for (const gid of groupIds) {
+    await db.prepare('INSERT OR IGNORE INTO session_groups (session_id, group_id) VALUES (?,?)').run(id, gid);
+  }
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'sessions', id, 'تعديل حصة (' + groupIds.length + ' مجموعة)', req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/sessions/' + id);
 });
@@ -300,7 +349,7 @@ router.get('/attendance', async function (req, res) {
         (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status = 'نشط') DESC, sub.id DESC LIMIT 1) AS sub_end
       FROM swimmer_group sg JOIN swimmers s ON s.id = sg.swimmer_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(g.id);
     members.forEach(m => { m.sub = subBadge(m.sub_end); });
-    const session = await db.prepare(`SELECT * FROM sessions WHERE group_id = ? AND date = ? AND deleted_at IS NULL ORDER BY start_time LIMIT 1`).get(g.id, date);
+    const session = await db.prepare(`SELECT * FROM sessions WHERE date = ? AND deleted_at IS NULL AND (group_id = ? OR EXISTS (SELECT 1 FROM session_groups sg WHERE sg.session_id = sessions.id AND sg.group_id = ?)) ORDER BY start_time LIMIT 1`).get(date, g.id, g.id);
     const attMap = {};
     if (session) (await db.prepare('SELECT swimmer_id, status FROM attendance WHERE session_id = ?').all(session.id)).forEach(function (a) { attMap[a.swimmer_id] = a.status; });
     groups.push({ ...g, members, session, attMap });
@@ -323,16 +372,19 @@ router.get('/attendance/session/:id', async function (req, res) {
   const s = await db.prepare(`SELECT se.*, g.name AS group_name, c.full_name AS coach_name, p.name AS pool_name FROM sessions se
     LEFT JOIN groups g ON g.id = se.group_id LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id WHERE se.id = ?` + sessionClause(activeSport(req), 'se')).get(id);
   if (!s) return res.redirect('/attendance');
-  await syncGroup(s.group_id);
+  const groupIds = await sessionGroupIds(s.id);
+  await syncGroups(groupIds);
+  const placeholders = groupIds.length ? groupIds.map(() => '?').join(',') : '0';
   const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, s.birth_date, a.status AS att_status, a.reason, a.coach_note, a.id AS att_id,
       (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status = 'نشط') DESC, sub.id DESC LIMIT 1) AS sub_end
     FROM swimmer_group sg
     JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN attendance a ON a.session_id = ? AND a.swimmer_id = s.id
-    WHERE sg.group_id = ? ORDER BY s.full_name`).all(id, s.group_id);
+    WHERE sg.group_id IN (${placeholders}) ORDER BY s.full_name`).all(id, ...groupIds);
   members.forEach(m => { m.sub = subBadge(m.sub_end); });
+  const groupNames = groupIds.length ? (await db.prepare(`SELECT name FROM groups WHERE id IN (${placeholders}) ORDER BY name`).all(...groupIds)).map(r => r.name) : [];
   res.render('attendance_session', {
     title: 'تسجيل الحضور', active: 'attendance',
-    s, members, date: today(), today: today(), money,
+    s, members, groupNames, date: today(), today: today(), money,
     page: { canEdit: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance') },
     canSave: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance')
   });
@@ -343,14 +395,15 @@ router.post('/attendance/save', async function (req, res) {
   if (!canEdit(req.currentUser, 'attendance') && !canAdd(req.currentUser, 'attendance')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
   const { session_id, swimmer_id, status, reason, coach_note } = req.body;
   if (!session_id || !swimmer_id) return res.status(400).json({ ok: false, error: 'بيانات ناقصة' });
-  const session = await db.prepare('SELECT group_id FROM sessions WHERE id = ?').get(session_id);
+  const session = await db.prepare('SELECT id FROM sessions WHERE id = ?').get(session_id);
   if (!session) return res.status(400).json({ ok: false, error: 'الحصة غير موجودة' });
   const previous = await db.prepare('SELECT status FROM attendance WHERE session_id = ? AND swimmer_id = ?').get(session_id, swimmer_id);
   const nextStatus = status || 'present';
   await db.prepare(`INSERT INTO attendance (session_id, swimmer_id, status, reason, coach_note) VALUES (?,?,?,?,?)
     ON CONFLICT(session_id, swimmer_id) DO UPDATE SET status=excluded.status, reason=excluded.reason, coach_note=excluded.coach_note`)
     .run(session_id, swimmer_id, nextStatus, reason || '', coach_note || '');
-  await syncSubscriptionUsage(swimmer_id, session.group_id, previous && previous.status, nextStatus);
+  const groupId = await sessionGroupForSwimmer(session_id, swimmer_id);
+  await syncSubscriptionUsage(swimmer_id, groupId, previous && previous.status, nextStatus);
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'attendance', session_id, 'تحديث حضور لاعب #' + swimmer_id, req);
   res.json({ ok: true });
 });
@@ -359,16 +412,19 @@ router.post('/attendance/save', async function (req, res) {
 router.post('/attendance/mark-all', async function (req, res) {
   if (!canEdit(req.currentUser, 'attendance') && !canAdd(req.currentUser, 'attendance')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
   const { session_id, status } = req.body;
-  const s = await db.prepare('SELECT group_id FROM sessions WHERE id = ?').get(session_id || 0);
+  const s = await db.prepare('SELECT id FROM sessions WHERE id = ?').get(session_id || 0);
   if (!s) return res.status(400).json({ ok: false, error: 'الحصة غير موجودة' });
-  await syncGroup(s.group_id);
-  const members = await db.prepare('SELECT swimmer_id FROM swimmer_group WHERE group_id = ?').all(s.group_id);
+  const groupIds = await sessionGroupIds(s.id);
+  await syncGroups(groupIds);
+  const placeholders = groupIds.length ? groupIds.map(() => '?').join(',') : '0';
+  const members = await db.prepare(`SELECT swimmer_id FROM swimmer_group WHERE group_id IN (${placeholders})`).all(...groupIds);
   const nextStatus = status || 'present';
   for (const m of members) {
     const previous = await db.prepare('SELECT status FROM attendance WHERE session_id = ? AND swimmer_id = ?').get(session_id, m.swimmer_id);
     await db.prepare(`INSERT INTO attendance (session_id, swimmer_id, status) VALUES (?,?,?)
       ON CONFLICT(session_id, swimmer_id) DO UPDATE SET status=excluded.status`).run(session_id, m.swimmer_id, nextStatus);
-    await syncSubscriptionUsage(m.swimmer_id, s.group_id, previous && previous.status, nextStatus);
+    const groupId = await sessionGroupForSwimmer(session_id, m.swimmer_id);
+    await syncSubscriptionUsage(m.swimmer_id, groupId, previous && previous.status, nextStatus);
   }
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'attendance', session_id, 'حضور جماعي: ' + status, req);
   res.json({ ok: true, count: members.length });
@@ -426,9 +482,11 @@ router.get('/sessions/:id/cancel', async function (req, res) {
     LEFT JOIN pools p ON p.id = se.pool_id
     WHERE se.id = ?` + sessionClause(activeSport(req), 'se')).get(id);
   if (!s) return res.redirect('/sessions');
-  const members = s.group_id
+  const groupIds = await sessionGroupIds(s.id);
+  const placeholders = groupIds.length ? groupIds.map(() => '?').join(',') : '0';
+  const members = groupIds.length
     ? await db.prepare(`SELECT s.id, s.full_name, s.membership_no FROM swimmer_group sg
-        JOIN swimmers s ON s.id = sg.swimmer_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(s.group_id)
+        JOIN swimmers s ON s.id = sg.swimmer_id WHERE sg.group_id IN (${placeholders}) ORDER BY s.full_name`).all(...groupIds)
     : [];
   const groups = await db.prepare('SELECT id, name FROM groups WHERE deleted_at IS NULL' + groupClause(activeSport(req)) + ' ORDER BY name').all();
   const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'coaches') + ' ORDER BY full_name').all();
@@ -466,8 +524,9 @@ router.post('/sessions/:id/cancel', async function (req, res) {
   /* 2) الحصص التعويضية */
   const createdIds = [];
   let createdCount = 0;
+  const sessionGroupIdsList = await sessionGroupIds(s.id);
   if (b.add_comp === '1') {
-    const groupIds = toIds(b.groups).length ? toIds(b.groups) : (s.group_id ? [s.group_id] : []);
+    const compGroupIds = toIds(b.groups).length ? toIds(b.groups) : sessionGroupIdsList;
     const days = Array.isArray(b.days)
       ? b.days.filter(d => d && (d.date || d.start || d.end))
       : [];
@@ -475,7 +534,7 @@ router.post('/sessions/:id/cancel', async function (req, res) {
     const compPool = Number(b.comp_pool_id) || s.pool_id || null;
     const ins = db.prepare(`INSERT INTO sessions (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, original_date, note, created_by)
       VALUES (?,?,?,?,?,?,?,'scheduled',1,?,?,?)`);
-    for (const gid of groupIds) {
+    for (const gid of compGroupIds) {
       const g = await db.prepare('SELECT name FROM groups WHERE id = ?').get(gid);
       for (const d of days) {
         if (!d.date) continue;
@@ -493,8 +552,9 @@ router.post('/sessions/:id/cancel', async function (req, res) {
   let swimmerIds = [];
   if (b.scope === 'selected') {
     swimmerIds = toIds(b.swimmers);
-  } else if (s.group_id) {
-    swimmerIds = (await db.prepare('SELECT swimmer_id FROM swimmer_group WHERE group_id = ?').all(s.group_id)).map(r => r.swimmer_id);
+  } else if (sessionGroupIdsList.length) {
+    const placeholders = sessionGroupIdsList.map(() => '?').join(',');
+    swimmerIds = (await db.prepare(`SELECT swimmer_id FROM swimmer_group WHERE group_id IN (${placeholders})`).all(...sessionGroupIdsList)).map(r => r.swimmer_id);
   }
 
   /* 4) مدّ تاريخ انتهاء الاشتراك بعدد الأيام المحدد */

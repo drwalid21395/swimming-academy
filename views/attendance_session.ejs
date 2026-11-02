@@ -2,7 +2,7 @@
 <div class="page-head">
   <div>
     <div class="page-title"><i class="fas fa-clipboard-user"></i> تسجيل الحضور</div>
-    <div class="page-sub"><b><%= s.group_name %></b> · <%= fmtDate(s.date) %> · <%= s.start_time %> — <%= s.end_time || '' %> · <%= s.coach_name || '—' %></div>
+    <div class="page-sub"><b><%= (groupNames && groupNames.length ? groupNames.join('، ') : s.group_name) || '—' %></b> · <%= fmtDate(s.date) %> · <%= s.start_time %> — <%= s.end_time || '' %> · <%= s.coach_name || '—' %></div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1">

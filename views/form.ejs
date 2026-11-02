@@ -32,6 +32,17 @@
                     <option value="<%= o.value %>" <%- o.coach ? 'data-coach="' + o.coach + '"' : '' %> <%= String(v) === String(o.value) ? 'selected' : '' %>><%= o.label %></option>
                   <% }); %>
                 </select>
+              <% } else if (f.type === 'multiselect') { %>
+                <% const selectedArr = Array.isArray(v) ? v.map(String) : (v ? [String(v)] : []); %>
+                <div class="flex flex-wrap gap-1">
+                  <% (typeof f.options === 'function' ? f.options(form.values) : (f.options || [])).forEach(function (o) { %>
+                    <label class="check-chip">
+                      <input type="checkbox" name="<%= f.key %>[]" value="<%= o.value %>" <%= selectedArr.includes(String(o.value)) ? 'checked' : '' %>>
+                      <div class="chip-box"><i class="fas fa-check"></i></div>
+                      <span class="chip-label"><%= o.label %></span>
+                    </label>
+                  <% }); %>
+                </div>
               <% } else if (f.type === 'checkbox') { %>
                 <label class="flex items-center gap-1" style="cursor:pointer; padding-top:8px;">
                   <input type="hidden" name="<%= f.key %>" value="0">
