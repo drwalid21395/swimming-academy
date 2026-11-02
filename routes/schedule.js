@@ -186,6 +186,57 @@ router.post('/sessions/new', async function (req, res) {
   res.redirect('/attendance/session/' + info.lastInsertRowid);
 });
 
+/* إضافة حصص لعدة مجموعات دفعة واحدة من شاشة الحضور */
+router.get('/sessions/bulk-new', async function (req, res) {
+  if (!canAdd(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const sid = activeSport(req);
+  const groups = await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL' + groupClause(sid) + ' ORDER BY name').all();
+  const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches') + ' ORDER BY full_name').all();
+  const pools = await db.prepare('SELECT id, name FROM pools ORDER BY name').all();
+  res.render('sessions_bulk_new', {
+    title: 'إضافة حصص للمجموعات', active: 'attendance',
+    date: req.query.date || today(), start_time: '16:00', end_time: '',
+    groups, coaches, pools, groupStartTime
+  });
+});
+router.post('/sessions/bulk-new', async function (req, res) {
+  if (!canAdd(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const b = req.body;
+  const sid = activeSport(req);
+  const date = b.date || today();
+  let groupIds = [];
+  if (b.group_ids === 'all') {
+    groupIds = (await db.prepare('SELECT id FROM groups WHERE deleted_at IS NULL' + groupClause(sid)).all()).map(r => r.id);
+  } else if (Array.isArray(b.group_ids)) {
+    groupIds = b.group_ids.map(Number).filter(id => id > 0);
+  } else if (b.group_ids) {
+    const n = Number(b.group_ids); if (n > 0) groupIds.push(n);
+  }
+  if (!groupIds.length) {
+    setFlash(res, { type: 'danger', message: 'يرجى اختيار مجموعة واحدة على الأقل' });
+    return res.redirect('/sessions/bulk-new?date=' + date);
+  }
+  const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches') + ' ORDER BY full_name').all();
+  const pools = await db.prepare('SELECT id, name FROM pools ORDER BY name').all();
+  const coachMap = {}; coaches.forEach(c => coachMap[c.id] = c.full_name);
+  const poolMap = {}; pools.forEach(p => poolMap[p.id] = p.name);
+  const ins = db.prepare('INSERT INTO sessions (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, original_date, note, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
+  let created = 0;
+  for (const gid of groupIds) {
+    const g = await db.prepare('SELECT * FROM groups WHERE id = ?').get(gid);
+    if (!g) continue;
+    const start = b.start_time || groupStartTime(g) || '16:00';
+    const end = b.end_time || null;
+    const coachId = b.coach_id || g.coach_id || null;
+    const poolId = b.pool_id || g.pool_id || null;
+    await ins.run(gid, g.name + ' - ' + date, date, start, end, coachId, poolId, 'scheduled', 0, null, 'أُنشئت من شاشة الحضور', req.currentUser.id);
+    created++;
+  }
+  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'sessions', 0, 'إنشاء ' + created + ' حصة للمجموعات يوم ' + date, req);
+  setFlash(res, { type: 'success', message: 'تم إنشاء ' + created + ' حصة بنجاح، يمكنك الآن تسجيل الحضور' });
+  res.redirect('/attendance?date=' + date);
+});
+
 router.get('/sessions/:id', async function (req, res) {
   if (!canView(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const s = await db.prepare(`SELECT se.*, g.name AS group_name, c.full_name AS coach_name, p.name AS pool_name FROM sessions se

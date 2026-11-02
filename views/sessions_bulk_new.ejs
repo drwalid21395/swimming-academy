@@ -1,0 +1,109 @@
+<%- include('partials/layout_top', { title: title, active: 'attendance' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-calendar-plus"></i> إضافة حصص للمجموعات</div>
+    <div class="page-sub">اختر مجموعة واحدة أو أكثر لإنشاء حصة لكل منها، ثم سجّل الحضور والغياب</div>
+  </div>
+  <a href="/attendance?date=<%= date %>" class="btn btn-outline"><i class="fas fa-arrow-right"></i> الحضور اليومي</a>
+</div>
+
+<%- include('partials/schedule_tabs', { activeTab: 'attendance' }) %>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-calendar-days"></i> بيانات الحصص</h3></div>
+    <div class="card-body">
+      <form method="POST" action="/sessions/bulk-new" novalidate>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>تاريخ الحصة <span class="req">*</span></label>
+            <input type="date" name="date" class="form-control" value="<%= date %>" required>
+          </div>
+          <div class="form-group">
+            <label>وقت البداية <span class="req">*</span></label>
+            <input type="time" name="start_time" class="form-control" value="<%= start_time %>" required>
+          </div>
+          <div class="form-group">
+            <label>وقت النهاية</label>
+            <input type="time" name="end_time" class="form-control" value="<%= end_time %>">
+          </div>
+          <div class="form-group">
+            <label>الكابتن <span class="text-soft font-11">(اختياري، يُأخذ من المجموعة إن لم تختر)</span></label>
+            <select name="coach_id" class="form-control">
+              <option value="">— تلقائي من المجموعة —</option>
+              <% coaches.forEach(function(c){ %><option value="<%= c.id %>"><%= c.full_name %></option><% }); %>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>حمام السباحة <span class="text-soft font-11">(اختياري، يُأخذ من المجموعة إن لم تختر)</span></label>
+            <select name="pool_id" class="form-control">
+              <option value="">— تلقائي من المجموعة —</option>
+              <% pools.forEach(function(p){ %><option value="<%= p.id %>"><%= p.name %></option><% }); %>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group full" style="margin-top:16px">
+          <label>المجموعات <span class="req">*</span></label>
+          <div class="flex gap-1" style="margin-bottom:10px;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost btn-sm" id="selectAllGroups"><i class="fas fa-check-double"></i> اختيار الكل</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="clearAllGroups"><i class="fas fa-eraser"></i> إلغاء التحديد</button>
+            <span class="text-soft font-12" style="align-self:center">تم اختيار <b id="selectedCount">0</b> مجموعة</span>
+          </div>
+          <% if (groups.length) { %>
+            <div class="flex flex-wrap gap-1" style="max-height:320px;overflow:auto;padding:4px">
+              <% groups.forEach(function(g){ %>
+                <label class="check-chip">
+                  <input type="checkbox" name="group_ids[]" value="<%= g.id %>" data-group-check>
+                  <div class="chip-box"><i class="fas fa-check"></i></div>
+                  <span class="chip-label"><%= g.name %></span>
+                </label>
+              <% }); %>
+            </div>
+          <% } else { %>
+            <div class="empty-state"><i class="fas fa-people-group"></i><p>لا توجد مجموعات متاحة</p></div>
+          <% } %>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-lg" id="bulkSubmit" disabled><i class="fas fa-plus"></i> إنشاء الحصص</button>
+          <a href="/attendance?date=<%= date %>" class="btn btn-outline btn-lg"><i class="fas fa-xmark"></i> إلغاء</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3><i class="fas fa-circle-info"></i> ملاحظات</h3></div>
+    <div class="card-body">
+      <ul class="font-14" style="line-height:2">
+        <li>إذا لم تختر كابتن أو حمام سيُستخدم الإعداد الافتراضي لكل مجموعة.</li>
+        <li>إذا تركت وقت النهاية فارغًا سيتم إنشاء الحصة بنفس وقت البداية.</li>
+        <li>بعد الإنشاء ستنتقل إلى شاشة الحضور والغياب لتسجيل الحضور لكل مجموعة.</li>
+        <li>يمكنك اختيار مجموعة واحدة أو جميع المجموعات دفعة واحدة.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var checks = document.querySelectorAll('[data-group-check]');
+  var countEl = document.getElementById('selectedCount');
+  var submitBtn = document.getElementById('bulkSubmit');
+  function update() {
+    var n = document.querySelectorAll('[data-group-check]:checked').length;
+    if (countEl) countEl.textContent = n;
+    if (submitBtn) submitBtn.disabled = n === 0;
+  }
+  document.getElementById('selectAllGroups').addEventListener('click', function () {
+    checks.forEach(function (c) { c.checked = true; }); update();
+  });
+  document.getElementById('clearAllGroups').addEventListener('click', function () {
+    checks.forEach(function (c) { c.checked = false; }); update();
+  });
+  checks.forEach(function (c) { c.addEventListener('change', update); });
+  update();
+})();
+</script>
+<%- include('partials/layout_bottom') %>
