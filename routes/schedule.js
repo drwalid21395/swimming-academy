@@ -118,6 +118,7 @@ router.get('/sessions', async function (req, res) {
 
   const page = {
     title: 'الحصص والجداول', subtitle: 'إدارة الحصص التدريبية ومواعيد المجموعات', icon: 'fa-calendar-days', module: 'sessions', active: 'sessions',
+    tabs: true, activeTab: 'sessions',
     columns: [
       { key: 'date', label: 'التاريخ', html: row => `<div><b>${fmtDate(row.date)}</b><div class="cell-sub">${row.start_time} — ${row.end_time || ''}</div></div>` },
       { key: 'group_name', label: 'المجموعة', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#0ea5e9,#2563eb)">${(row.group_name || 'م').trim().charAt(0)}</div><div><div class="cell-title">${row.group_name || '—'}</div><div class="cell-sub">${row.pool_name || ''}</div></div></div>` },
@@ -166,7 +167,12 @@ const sessionFields = async function (values, req) {
 
 router.get('/sessions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  res.render('form', { form: { title: 'حصة جديدة', subtitle: 'جدولة حصة تدريبية', icon: 'fa-plus', active: 'sessions', action: '/sessions/new', fields: await sessionFields({ date: today(), start_time: '16:00' }, req), values: {}, submitLabel: 'إنشاء الحصة', cancelUrl: '/sessions', csrf: '' } });
+  const values = {
+    group_id: req.query.group_id || '',
+    date: req.query.date || today(),
+    start_time: '16:00'
+  };
+  res.render('form', { form: { title: 'حصة جديدة', subtitle: 'جدولة حصة تدريبية', icon: 'fa-plus', active: 'sessions', action: '/sessions/new', fields: await sessionFields(values, req), values, submitLabel: 'إنشاء الحصة', cancelUrl: '/sessions', csrf: '' } });
 });
 router.post('/sessions/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -256,6 +262,7 @@ router.get('/attendance', async function (req, res) {
     late: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='late'` + gScope).get(date)).c
   };
   res.render('attendance', { title: 'الحضور والغياب', active: 'attendance', groups, daily, date, today: today(), canSave: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance'),
+    canAddSession: canAdd(req.currentUser, 'sessions'),
     yday: addDays(today(), -1), dyday: addDays(today(), -2), tomorrow: addDays(today(), 1), isPast: date < today() });
 });
 

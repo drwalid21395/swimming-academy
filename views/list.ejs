@@ -23,6 +23,8 @@
   </div>
 </div>
 
+<% if (page.tabs) { %><%- include('partials/schedule_tabs', { activeTab: page.activeTab || 'sessions' }) %><% } %>
+
 <% if (bulk) { %>
 <div class="bulk-bar" data-bulk-url="<%= page.bulkUrl %>">
   <span class="bulk-count"><i class="fas fa-check-double"></i> تم تحديد <b data-bulk-count>0</b> من <%= page.rows.length %></span>

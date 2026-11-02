@@ -14,9 +14,12 @@
       <input type="date" name="date" class="form-control" value="<%= date %>">
       <button class="btn btn-outline" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
     </form>
+    <% if (canAddSession) { %><a href="/sessions/new?date=<%= date %>" class="btn btn-outline" title="إضافة حصة ثم تسجيل حضورها"><i class="fas fa-plus"></i> حصة جديدة</a><% } %>
     <a href="/reports/attendance/daily?date=<%= date %>" class="btn btn-primary" title="طباعة / تحميل PDF لهذا اليوم"><i class="fas fa-file-pdf"></i> طباعة PDF</a>
   </div>
 </div>
+
+<%- include('partials/schedule_tabs', { activeTab: 'attendance' }) %>
 
 <div class="kpi-row">
   <div class="kpi"><div class="k-val text-success"><%= daily.present %></div><div class="k-lbl">حاضر</div></div>

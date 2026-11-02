@@ -143,8 +143,7 @@
         { sec: 'الأنشطة والموقع' },
         { url: '/sports', label: 'الألعاب الرياضية', icon: 'fa-medal', module: 'sports' },
         { sec: 'الجداول والحضور' },
-        { url: '/sessions', label: 'الحصص والجداول', icon: 'fa-calendar-days', module: 'sessions' },
-        { url: '/attendance', label: 'الحضور والغياب', icon: 'fa-clipboard-user', module: 'attendance' },
+        { url: '/sessions', label: 'الحصص والحضور', icon: 'fa-calendar-check', module: 'sessions', modules: ['sessions', 'attendance'] },
         { sec: 'التدريب الخاص' },
         { url: '/private-training', label: 'التدريب الخاص', icon: 'fa-dumbbell', module: 'privateTraining' },
         { url: '/water-rentals', label: 'حجز إيجار الميه', icon: 'fa-water', module: 'waterRentals' },
@@ -187,7 +186,7 @@
       ]; %>
       <% let section = ''; %>
       <% const curPath = (typeof currentPath !== 'undefined') ? currentPath : ''; %>
-      <% const activeMap = { trainerAttendance: '/trainer-attendance', staffAttendance: '/staff-attendance', payroll: '/payroll', coachPayments: '/coach-payments', dashboard: '/', swimmers: '/swimmers', guardians: '/guardians', coaches: '/coaches', staff: '/staff', programs: '/programs', levels: '/levels', groups: '/groups', sessions: '/sessions', attendance: '/attendance', privateTraining: '/private-training', waterRentals: '/water-rentals', assessments: '/assessments', tests: '/tests', teams: '/teams', competitions: '/competitions', subscriptions: '/subscriptions', payments: '/payments', revenues: '/revenues', expenses: '/expenses', incoming: '/incoming', outgoing: '/outgoing', documents: '/documents', notifications: '/notifications', complaints: '/complaints', reservations: '/reservations', sports: '/sports', reports: '/reports', branches: '/branches', pools: '/pools', schools: '/schools', users: '/users', settings: '/settings', auditLog: '/audit-log', ai_replies: '/ai-replies' }; %>
+      <% const activeMap = { trainerAttendance: '/trainer-attendance', staffAttendance: '/staff-attendance', payroll: '/payroll', coachPayments: '/coach-payments', dashboard: '/', swimmers: '/swimmers', guardians: '/guardians', coaches: '/coaches', staff: '/staff', programs: '/programs', levels: '/levels', groups: '/groups', sessions: '/sessions', attendance: '/sessions', privateTraining: '/private-training', waterRentals: '/water-rentals', assessments: '/assessments', tests: '/tests', teams: '/teams', competitions: '/competitions', subscriptions: '/subscriptions', payments: '/payments', revenues: '/revenues', expenses: '/expenses', incoming: '/incoming', outgoing: '/outgoing', documents: '/documents', notifications: '/notifications', complaints: '/complaints', reservations: '/reservations', sports: '/sports', reports: '/reports', branches: '/branches', pools: '/pools', schools: '/schools', users: '/users', settings: '/settings', auditLog: '/audit-log', ai_replies: '/ai-replies' }; %>
       <% function isNavActive(url) { if (url === '/') return curPath === '/'; return curPath === url || curPath.indexOf(url + '/') === 0; } %>
       <% let bestUrl = ''; nav.forEach(function (it) { if (it.url && isNavActive(it.url) && it.url.length > bestUrl.length) bestUrl = it.url; }); %>
       <% const inNav = bestUrl !== ''; %>
@@ -195,7 +194,7 @@
       <% nav.forEach(function (item) { %>
         <% if (item.sec) { section = item.sec; %>
           <div class="nav-section"><%= item.sec %></div>
-        <% } else if (canView(user, item.module)) { %>
+        <% } else if (item.modules ? item.modules.some(function (m) { return canView(user, m); }) : canView(user, item.module)) { %>
           <a href="<%= item.url %>" class="nav-item <%= (inNav ? item.url === bestUrl : (activeUrl && item.url === activeUrl)) ? 'active' : '' %>">
             <i class="fas <%= item.icon %>"></i><span><%= item.label %></span>
             <% if (item.module === 'notifications' && typeof unreadCount !== 'undefined' && unreadCount > 0) { %><span class="nav-badge"><%= unreadCount %></span><% } %>
