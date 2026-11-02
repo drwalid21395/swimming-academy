@@ -1,0 +1,132 @@
+<%- include('../partials/layout_top', { title: title, active: 'waterRentals' }) %>
+<% function val(k, d) { var v = rental[k]; return (v === undefined || v === null || v === '') ? (d === undefined ? '' : d) : v; } %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas <%= isEdit ? 'fa-pen' : 'fa-plus' %>"></i> <%= title %></div>
+    <div class="page-sub">حدّد عدد حصص الاشتراك والسعر وبيانات الكابتن — ينتهي الاشتراك تلقائياً باكتمال الحصص</div>
+  </div>
+  <div class="spacer"></div>
+  <a href="<%= isEdit ? '/water-rentals/' + rental.id : '/water-rentals' %>" class="btn btn-outline"><i class="fas fa-arrow-right"></i> رجوع</a>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <form method="POST" action="<%= action %>" novalidate>
+      <div class="form-grid">
+        <div class="full form-section-title"><i class="fas fa-user"></i> بيانات العميل</div>
+        <div class="form-group">
+          <label>اسم العميل <span class="text-danger">*</span></label>
+          <input type="text" name="customer_name" class="form-control" value="<%= val('customer_name') %>" required placeholder="اسم المستأجر">
+        </div>
+        <div class="form-group">
+          <label>رقم الهاتف</label>
+          <input type="text" name="phone" class="form-control" dir="ltr" value="<%= val('phone') %>" placeholder="01xxxxxxxxx">
+        </div>
+        <div class="form-group">
+          <label>الفرع</label>
+          <select name="branch_id" class="form-control">
+            <option value="">— اختر الفرع —</option>
+            <% branches.forEach(function (b) { %><option value="<%= b.id %>" <%= Number(rental.branch_id) === Number(b.id) ? 'selected' : '' %>><%= b.name %></option><% }); %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>حمام السباحة / المكان</label>
+          <select name="pool_id" class="form-control">
+            <option value="">— اختر المكان —</option>
+            <% pools.forEach(function (p) { %><option value="<%= p.id %>" <%= Number(rental.pool_id) === Number(p.id) ? 'selected' : '' %>><%= p.name %></option><% }); %>
+          </select>
+        </div>
+
+        <div class="full form-section-title"><i class="fas fa-ticket"></i> الاشتراك والسعر</div>
+        <div class="form-group">
+          <label>عدد حصص الاشتراك <span class="text-danger">*</span></label>
+          <input type="number" min="1" name="sessions_total" class="form-control" value="<%= val('sessions_total', 8) %>" required>
+        </div>
+        <div class="form-group">
+          <label>سعر الاشتراك (ج.م)</label>
+          <input type="number" min="0" step="0.01" name="price" id="rentalPrice" class="form-control" value="<%= val('price', 0) %>">
+        </div>
+        <div class="form-group">
+          <label>المبلغ المدفوع (ج.م)</label>
+          <input type="number" min="0" step="0.01" name="paid_amount" id="rentalPaid" class="form-control" value="<%= val('paid_amount', 0) %>">
+        </div>
+        <div class="form-group">
+          <label>المتبقي (يُحسب تلقائياً)</label>
+          <input type="text" id="rentalRemaining" class="form-control" value="" readonly>
+        </div>
+        <div class="form-group">
+          <label>تاريخ البداية</label>
+          <input type="date" name="start_date" class="form-control" value="<%= val('start_date', today) %>">
+        </div>
+        <div class="form-group">
+          <label>تاريخ النهاية</label>
+          <input type="date" name="end_date" class="form-control" value="<%= val('end_date') %>">
+        </div>
+
+        <div class="full form-section-title"><i class="fas fa-user-tie"></i> بيانات الكابتن</div>
+        <div class="form-group">
+          <label>الكابتن</label>
+          <select name="coach_id" id="rentalCoach" class="form-control">
+            <option value="">— اختر الكابتن —</option>
+            <% coaches.forEach(function (c) { %><option value="<%= c.id %>" data-name="<%= c.full_name || '' %>" data-phone="<%= c.phone || '' %>" <%= Number(rental.coach_id) === Number(c.id) ? 'selected' : '' %>><%= c.full_name %></option><% }); %>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>اسم الكابتن</label>
+          <input type="text" name="coach_name" id="rentalCoachName" class="form-control" value="<%= val('coach_name') %>" placeholder="يُملأ تلقائياً من الاختيار">
+        </div>
+        <div class="form-group">
+          <label>هاتف الكابتن</label>
+          <input type="text" name="coach_phone" id="rentalCoachPhone" class="form-control" dir="ltr" value="<%= val('coach_phone') %>" placeholder="01xxxxxxxxx">
+        </div>
+
+        <div class="full form-section-title"><i class="fas fa-clock"></i> المواعيد والملاحظات</div>
+        <div class="form-group">
+          <label>وقت البداية</label>
+          <input type="time" name="start_time" class="form-control" value="<%= val('start_time') %>">
+        </div>
+        <div class="form-group">
+          <label>وقت النهاية</label>
+          <input type="time" name="end_time" class="form-control" value="<%= val('end_time') %>">
+        </div>
+        <div class="form-group full">
+          <label>ملاحظات</label>
+          <textarea name="notes" class="form-control" rows="3" placeholder="أي تفاصيل إضافية عن الحجز"><%= val('notes') %></textarea>
+        </div>
+      </div>
+      <div class="flex gap-1" style="margin-top:18px;flex-wrap:wrap">
+        <button type="submit" class="btn btn-primary"><i class="fas fa-floppy-disk"></i> <%= isEdit ? 'حفظ التعديلات' : 'إنشاء الحجز' %></button>
+        <a href="<%= isEdit ? '/water-rentals/' + rental.id : '/water-rentals' %>" class="btn btn-outline">إلغاء</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  var coachSel = document.getElementById('rentalCoach');
+  var nameInp = document.getElementById('rentalCoachName');
+  var phoneInp = document.getElementById('rentalCoachPhone');
+  if (coachSel) {
+    coachSel.addEventListener('change', function () {
+      var opt = coachSel.options[coachSel.selectedIndex];
+      if (!opt || !opt.value) return;
+      if (nameInp) nameInp.value = opt.getAttribute('data-name') || '';
+      if (phoneInp) phoneInp.value = opt.getAttribute('data-phone') || '';
+    });
+  }
+  var price = document.getElementById('rentalPrice');
+  var paid = document.getElementById('rentalPaid');
+  var rem = document.getElementById('rentalRemaining');
+  function calc() {
+    if (!rem) return;
+    var p = Number(price && price.value) || 0;
+    var d = Number(paid && paid.value) || 0;
+    rem.value = (Math.round((p - d) * 100) / 100).toFixed(2) + ' ج.م';
+  }
+  if (price) price.addEventListener('input', calc);
+  if (paid) paid.addEventListener('input', calc);
+  calc();
+})();
+</script>
+<%- include('../partials/layout_bottom') %>

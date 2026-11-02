@@ -26,6 +26,7 @@ const MODULE_LABELS = {
   incoming: 'الوارد', outgoing: 'الصادر', documents: 'المستندات', notifications: 'الإشعارات', complaints: 'الشكاوى والطلبات',
   reservations: 'حجوزات الموقع',
   sports: 'الألعاب الرياضية',
+  waterRentals: 'حجز إيجار الميه',
   reports: 'التقارير', branches: 'الفروع', pools: 'حمامات السباحة', users: 'المستخدمون والصلاحيات', settings: 'إعدادات النظام',
   auditLog: 'سجل النشاط', site: 'الموقع التعريفي',
   trainerAttendance: 'حضور المدربين', staffAttendance: 'حضور الموظفين', payroll: 'المستحقات والرواتب'
@@ -33,7 +34,7 @@ const MODULE_LABELS = {
 const MODULE_GROUPS = [
   ['الأعضاء والتسجيل', ['swimmers', 'guardians', 'coaches', 'staff']],
   ['البرامج التدريبية', ['programs', 'levels', 'groups']],
-  ['الجداول والحضور', ['sessions', 'attendance']],
+  ['الجداول والحضور', ['sessions', 'attendance', 'waterRentals']],
   ['الجوانب الفنية', ['assessments', 'tests', 'teams', 'competitions']],
   ['المالية', ['subscriptions', 'payments', 'revenues', 'expenses', 'coachPayments']],
   ['الحضور والمستحقات', ['trainerAttendance', 'staffAttendance', 'payroll']],

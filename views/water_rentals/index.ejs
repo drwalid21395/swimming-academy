@@ -1,0 +1,102 @@
+<%- include('../partials/layout_top', { title: 'حجز إيجار الميه', active: 'waterRentals' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-water"></i> حجز إيجار الميه</div>
+    <div class="page-sub">اشتراكات إيجار الميه — عدد الحصص والسعر وبيانات الكابتن، مع حضور وغياب خاص بكل حجز</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1" style="flex-wrap:wrap">
+    <a href="/water-rentals" class="btn btn-outline"><i class="fas fa-rotate"></i> تحديث</a>
+    <% if (canAdd) { %>
+      <a href="/water-rentals/new" class="btn btn-primary"><i class="fas fa-plus"></i> حجز جديد</a>
+    <% } %>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="k-val text-primary"><%= kpi.total %></div><div class="k-lbl">إجمالي الحجوزات</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= kpi.active %></div><div class="k-lbl">اشتراكات نشطة</div></div>
+  <div class="kpi"><div class="k-val"><%= kpi.sessions %></div><div class="k-lbl">إجمالي الحصص</div></div>
+  <div class="kpi"><div class="k-val text-warning"><%= kpi.used %></div><div class="k-lbl">حصص مسجلة</div></div>
+  <div class="kpi"><div class="k-val text-primary"><%= money(kpi.revenue) %></div><div class="k-lbl">إجمالي السعر</div></div>
+  <div class="kpi"><div class="k-val text-danger"><%= money(kpi.remaining) %></div><div class="k-lbl">المتبقي ماليًا</div></div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <i class="fas fa-list"></i> قائمة الحجوزات
+    <div class="spacer"></div>
+    <form method="GET" action="/water-rentals" class="flex gap-1" style="flex-wrap:wrap;align-items:center">
+      <select name="status" class="form-control" style="min-width:150px" onchange="this.form.submit()">
+        <option value="">كل الحالات</option>
+        <option value="نشط" <%= status === 'نشط' ? 'selected' : '' %>>نشط</option>
+        <option value="منتهي" <%= status === 'منتهي' ? 'selected' : '' %>>منتهي</option>
+        <option value="ملغي" <%= status === 'ملغي' ? 'selected' : '' %>>ملغي</option>
+      </select>
+      <input type="search" name="q" value="<%= q %>" class="form-control" placeholder="بحث بالاسم أو الهاتف أو الكابتن" style="min-width:200px">
+      <button class="btn btn-outline" type="submit"><i class="fas fa-search"></i> بحث</button>
+    </form>
+  </div>
+  <div class="card-body" style="padding:0">
+    <div class="table-wrap">
+      <table class="data-table rtable">
+        <thead>
+          <tr>
+            <th class="sortable">العميل<span class="sort-ind"></span></th>
+            <th>الهاتف</th>
+            <th class="sortable">الكابتن<span class="sort-ind"></span></th>
+            <th class="sortable">الحصص<span class="sort-ind"></span></th>
+            <th class="sortable">السعر<span class="sort-ind"></span></th>
+            <th>المدفوع</th>
+            <th>المتبقي</th>
+            <th>المكان</th>
+            <th class="sortable">الحالة<span class="sort-ind"></span></th>
+            <th>إجراءات</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (!rows.length) { %>
+            <tr><td colspan="10" class="text-center text-muted" style="padding:26px">لا توجد حجوزات إيجار ميه بعد</td></tr>
+          <% } %>
+          <% rows.forEach(function (r) { var total = Number(r.sessions_total || 0); var used = Number(r.sessions_used || 0); var pc = total > 0 ? Math.min(100, Math.round(used / total * 100)) : 0; %>
+            <tr>
+              <td data-label="العميل">
+                <div class="fw-700"><a href="/water-rentals/<%= r.id %>"><%= r.customer_name %></a></div>
+                <div class="cell-sub"><%= r.start_date ? fmtDate(r.start_date) : '—' %></div>
+              </td>
+              <td data-label="الهاتف"><span dir="ltr"><%= r.phone || '—' %></span></td>
+              <td data-label="الكابتن">
+                <div><%= r.coach_name || r.coach_full_name || '—' %></div>
+                <% if (r.coach_phone) { %><div class="cell-sub" dir="ltr"><%= r.coach_phone %></div><% } %>
+              </td>
+              <td data-label="الحصص">
+                <div class="fw-700"><%= used %> / <%= total %></div>
+                <div class="pk-bar"><span style="width:<%= pc %>%"></span></div>
+              </td>
+              <td data-label="السعر"><span class="fw-700 text-primary"><%= money(r.price) %></span></td>
+              <td data-label="المدفوع"><%= money(r.paid_amount) %></td>
+              <td data-label="المتبقي"><%= money(r.remaining) %></td>
+              <td data-label="المكان">
+                <div><%= r.pool_name || '—' %></div>
+                <% if (r.branch_name) { %><div class="cell-sub"><%= r.branch_name %></div><% } %>
+              </td>
+              <td data-label="الحالة"><%- statusBadge(r.status) %></td>
+              <td data-label="إجراءات" class="rt-actions">
+                <div class="table-actions">
+                  <a href="/water-rentals/<%= r.id %>" class="btn btn-ghost btn-sm" title="عرض"><i class="fas fa-eye"></i></a>
+                  <% if (canEdit) { %><a href="/water-rentals/<%= r.id %>/edit" class="btn btn-ghost btn-sm" title="تعديل"><i class="fas fa-pen"></i></a><% } %>
+                  <% if (canDel) { %>
+                    <form method="POST" action="/water-rentals/<%= r.id %>/delete" style="display:inline;margin:0">
+                      <button type="submit" class="btn btn-ghost btn-sm" title="حذف" data-confirm="حذف هذا الحجز وكل سجل الحضور الخاص به؟"><i class="fas fa-trash"></i></button>
+                    </form>
+                  <% } %>
+                </div>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<%- include('../partials/layout_bottom') %>

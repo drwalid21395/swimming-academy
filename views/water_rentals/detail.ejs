@@ -1,0 +1,142 @@
+<%- include('../partials/layout_top', { title: title, active: 'waterRentals' }) %>
+<% var total = Number(rental.sessions_total || 0); var left = Math.max(0, total - used); var pctUsed = total > 0 ? Math.min(100, Math.round(used / total * 100)) : 0; %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-water"></i> <%= rental.customer_name %></div>
+    <div class="page-sub">
+      <a href="/water-rentals" class="text-muted"><i class="fas fa-arrow-right"></i> كل الحجوزات</a>
+      <span class="text-muted"> • </span>
+      <span class="text-muted" dir="ltr"><%= rental.phone || 'لا يوجد هاتف' %></span>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1" style="flex-wrap:wrap">
+    <% if (canEdit) { %><a href="/water-rentals/<%= rental.id %>/edit" class="btn btn-primary"><i class="fas fa-pen"></i> تعديل</a><% } %>
+    <% if (canDel) { %>
+      <form method="POST" action="/water-rentals/<%= rental.id %>/delete" style="margin:0">
+        <button type="submit" class="btn btn-outline-danger" data-confirm="حذف هذا الحجز وكل سجل الحضور الخاص به؟"><i class="fas fa-trash"></i> حذف</button>
+      </form>
+    <% } %>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="k-val"><%= total %></div><div class="k-lbl">إجمالي الحصص</div></div>
+  <div class="kpi"><div class="k-val text-warning"><%= used %></div><div class="k-lbl">حصص مسجلة</div></div>
+  <div class="kpi"><div class="k-val <%= left > 0 ? 'text-success' : 'text-danger' %>"><%= left %></div><div class="k-lbl">حصص متبقية</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= present %></div><div class="k-lbl">حضور</div></div>
+  <div class="kpi"><div class="k-val text-danger"><%= absent %></div><div class="k-lbl">غياب</div></div>
+  <div class="kpi"><div class="k-val"><%- statusBadge(rental.status) %></div><div class="k-lbl">حالة الاشتراك</div></div>
+</div>
+
+<div class="card">
+  <div class="card-header"><i class="fas fa-circle-info"></i> بيانات الاشتراك والكابتن</div>
+  <div class="card-body">
+    <div class="detail-grid">
+      <div class="detail-item"><div class="dl">اسم العميل</div><div class="dv"><%= rental.customer_name %></div></div>
+      <div class="detail-item"><div class="dl">الهاتف</div><div class="dv" dir="ltr"><%= rental.phone || '—' %></div></div>
+      <div class="detail-item"><div class="dl">الكابتن</div><div class="dv"><%= rental.coach_name || rental.coach_full_name || '—' %></div></div>
+      <div class="detail-item"><div class="dl">هاتف الكابتن</div><div class="dv" dir="ltr"><%= rental.coach_phone || '—' %></div></div>
+      <div class="detail-item"><div class="dl">الفرع</div><div class="dv"><%= rental.branch_name || '—' %></div></div>
+      <div class="detail-item"><div class="dl">حمام السباحة</div><div class="dv"><%= rental.pool_name || '—' %></div></div>
+      <div class="detail-item"><div class="dl">الفترة</div><div class="dv"><%= rental.start_date ? fmtDate(rental.start_date) : '—' %> <span class="text-muted">إلى</span> <%= rental.end_date ? fmtDate(rental.end_date) : '—' %></div></div>
+      <div class="detail-item"><div class="dl">الموعد اليومي</div><div class="dv"><%= rental.start_time || '—' %> <span class="text-muted">—</span> <%= rental.end_time || '—' %></div></div>
+      <div class="detail-item"><div class="dl">سعر الاشتراك</div><div class="dv fw-700 text-primary"><%= money(rental.price) %></div></div>
+      <div class="detail-item"><div class="dl">المدفوع</div><div class="dv"><%= money(rental.paid_amount) %></div></div>
+      <div class="detail-item"><div class="dl">المتبقي ماليًا</div><div class="dv text-danger fw-700"><%= money(rental.remaining) %></div></div>
+      <div class="detail-item"><div class="dl">ملاحظات</div><div class="dv"><%= rental.notes || '—' %></div></div>
+    </div>
+    <div class="pk-bar" style="margin-top:14px"><span style="width:<%= pctUsed %>%"></span></div>
+    <div class="font-12 text-muted" style="margin-top:6px">تم استهلاك <%= used %> من <%= total %> حصة (<%= pctUsed %>%)</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><i class="fas fa-clipboard-user"></i> الحضور والغياب — خاص بهذا الحجز</div>
+  <div class="card-body">
+    <% if (canEdit && rental.status !== 'ملغي' && left > 0) { %>
+      <form method="POST" action="/water-rentals/<%= rental.id %>/attendance" class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+        <div class="form-group" style="margin:0">
+          <label class="font-11 text-muted">التاريخ</label>
+          <input type="date" name="date" class="form-control" value="<%= today %>" required>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="font-11 text-muted">الحالة</label>
+          <select name="status" class="form-control">
+            <option value="present">حاضر</option>
+            <option value="absent">غائب</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;min-width:180px">
+          <label class="font-11 text-muted">ملاحظة</label>
+          <input type="text" name="note" class="form-control" placeholder="اختياري">
+        </div>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> تسجيل حصة</button>
+      </form>
+    <% } else if (rental.status === 'ملغي') { %>
+      <div class="alert-item alert-danger"><i class="fas fa-ban"></i><div>الحجز ملغي — أعد تفعيله أولاً لتسجيل الحضور.</div></div>
+    <% } else if (left <= 0) { %>
+      <div class="alert-item alert-warn"><i class="fas fa-circle-check"></i><div>تم استهلاك كل حصص الاشتراك. أضف حصصاً جديدة للاستمرار.</div></div>
+    <% } %>
+
+    <div class="table-wrap">
+      <table class="data-table rtable">
+        <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th>الحالة</th><th>ملاحظة</th><th>إجراءات</th></tr></thead>
+        <tbody>
+          <% if (!attendance.length) { %>
+            <tr><td colspan="4" class="text-center text-muted" style="padding:24px">لا يوجد سجل حضور بعد</td></tr>
+          <% } %>
+          <% attendance.forEach(function (a) { %>
+            <tr>
+              <td data-label="التاريخ"><%= fmtDate(a.date) %></td>
+              <td data-label="الحالة"><%- attBadge(a.status) %></td>
+              <td data-label="ملاحظة"><%= a.note || '—' %></td>
+              <td data-label="إجراءات" class="rt-actions">
+                <div class="table-actions">
+                  <% if (canEdit) { %>
+                    <form method="POST" action="/water-rentals/<%= rental.id %>/attendance/<%= a.id %>/toggle" style="margin:0">
+                      <button type="submit" class="btn btn-ghost btn-sm" title="تبديل حاضر/غائب"><i class="fas fa-arrows-rotate"></i></button>
+                    </form>
+                  <% } %>
+                  <% if (canDel) { %>
+                    <form method="POST" action="/water-rentals/<%= rental.id %>/attendance/<%= a.id %>/delete" style="margin:0">
+                      <button type="submit" class="btn btn-ghost btn-sm" title="حذف السجل" data-confirm="حذف هذا السجل وإعادة حصة للاشتراك؟"><i class="fas fa-trash"></i></button>
+                    </form>
+                  <% } %>
+                </div>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<% if (canEdit) { %>
+<div class="card">
+  <div class="card-header"><i class="fas fa-gears"></i> إدارة الاشتراك</div>
+  <div class="card-body flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
+    <form method="POST" action="/water-rentals/<%= rental.id %>/extend" class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end;margin:0">
+      <div class="form-group" style="margin:0">
+        <label class="font-11 text-muted">إضافة حصص للاشتراك</label>
+        <input type="number" min="1" name="sessions_extra" class="form-control" style="width:130px" placeholder="عدد الحصص" required>
+      </div>
+      <button type="submit" class="btn btn-outline"><i class="fas fa-plus"></i> تمديد الحصص</button>
+    </form>
+    <div class="spacer"></div>
+    <% if (rental.status === 'ملغي') { %>
+      <form method="POST" action="/water-rentals/<%= rental.id %>/status" style="margin:0">
+        <input type="hidden" name="action" value="restore">
+        <button type="submit" class="btn btn-primary"><i class="fas fa-circle-play"></i> إعادة تفعيل</button>
+      </form>
+    <% } else { %>
+      <form method="POST" action="/water-rentals/<%= rental.id %>/status" style="margin:0">
+        <input type="hidden" name="action" value="cancel">
+        <button type="submit" class="btn btn-outline-danger" data-confirm="إلغاء هذا الحجز؟"><i class="fas fa-ban"></i> إلغاء الحجز</button>
+      </form>
+    <% } %>
+  </div>
+</div>
+<% } %>
+<%- include('../partials/layout_bottom') %>
