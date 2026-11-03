@@ -446,6 +446,13 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
 .check-chip input:checked ~ .chip-label { color: var(--primary); font-weight: 700; }
 .check-chip:has(input:checked) { border-color: var(--primary); background: var(--primary-soft); }
 
+/* ============================= قائمة اختيار متعدد منسدلة ============================= */
+.multi-dropdown { position: relative; }
+.multi-dropdown [data-toggle] { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.multi-dropdown-menu { margin-top: 6px; padding: 10px 12px; border: 1px solid var(--card-border); border-radius: 10px; background: var(--card); box-shadow: 0 6px 20px rgba(15,23,42,.08); max-height: 320px; overflow-y: auto; }
+.multi-dropdown-menu .check-chip { flex: 1 1 auto; min-width: 120px; }
+.multi-dropdown-menu .check-chip.w-full { flex: 1 1 100%; min-width: 100%; }
+
 /* ============================= البحث والفلاتر ============================= */
 .filters-bar {
   display: flex; align-items: center; gap: 10px;

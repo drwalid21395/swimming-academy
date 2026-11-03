@@ -45,20 +45,28 @@
 
         <div class="form-group full" style="margin-top:16px">
           <label>المجموعات <span class="req">*</span></label>
-          <div class="flex gap-1" style="margin-bottom:10px;flex-wrap:wrap">
-            <button type="button" class="btn btn-ghost btn-sm" id="selectAllGroups"><i class="fas fa-check-double"></i> اختيار الكل</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="clearAllGroups"><i class="fas fa-eraser"></i> إلغاء التحديد</button>
-            <span class="text-soft font-12" style="align-self:center">تم اختيار <b id="selectedCount">0</b> مجموعة</span>
-          </div>
           <% if (groups.length) { %>
-            <div class="flex flex-wrap gap-1" style="max-height:320px;overflow:auto;padding:4px">
-              <% groups.forEach(function(g){ %>
-                <label class="check-chip">
-                  <input type="checkbox" name="group_ids[]" value="<%= g.id %>" data-group-check>
-                  <div class="chip-box"><i class="fas fa-check"></i></div>
-                  <span class="chip-label"><%= g.name %></span>
+            <div class="multi-dropdown" data-multi-dropdown="bulk_groups">
+              <button type="button" class="form-control" data-toggle style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                <span data-label>— اختر من القائمة —</span>
+                <i class="fas fa-chevron-down font-12"></i>
+              </button>
+              <div class="multi-dropdown-menu" data-menu style="display:none">
+                <label class="check-chip w-full" style="margin-bottom:8px;border-bottom:1px solid var(--card-border);border-radius:0;padding-bottom:8px">
+                  <input type="checkbox" data-select-all>
+                  <div class="chip-box"><i class="fas fa-check-double"></i></div>
+                  <span class="chip-label"><b>اختيار الكل</b></span>
                 </label>
-              <% }); %>
+                <div class="flex flex-wrap gap-1">
+                  <% groups.forEach(function(g){ %>
+                    <label class="check-chip">
+                      <input type="checkbox" name="group_ids[]" value="<%= g.id %>">
+                      <div class="chip-box"><i class="fas fa-check"></i></div>
+                      <span class="chip-label"><%= g.name %></span>
+                    </label>
+                  <% }); %>
+                </div>
+              </div>
             </div>
           <% } else { %>
             <div class="empty-state"><i class="fas fa-people-group"></i><p>لا توجد مجموعات متاحة</p></div>
@@ -66,7 +74,7 @@
         </div>
 
         <div class="form-actions">
-          <button type="submit" class="btn btn-primary btn-lg" id="bulkSubmit" disabled><i class="fas fa-plus"></i> إنشاء الحصص</button>
+          <button type="submit" class="btn btn-primary btn-lg" id="bulkSubmit"><i class="fas fa-plus"></i> إنشاء الحصة</button>
           <a href="/attendance?date=<%= date %>" class="btn btn-outline btn-lg"><i class="fas fa-xmark"></i> إلغاء</a>
         </div>
       </form>
@@ -88,21 +96,14 @@
 
 <script>
 (function () {
-  var checks = document.querySelectorAll('[data-group-check]');
-  var countEl = document.getElementById('selectedCount');
-  var submitBtn = document.getElementById('bulkSubmit');
+  var wrap = document.querySelector('[data-multi-dropdown="bulk_groups"]');
+  var submit = document.getElementById('bulkSubmit');
+  if (!wrap || !submit) return;
   function update() {
-    var n = document.querySelectorAll('[data-group-check]:checked').length;
-    if (countEl) countEl.textContent = n;
-    if (submitBtn) submitBtn.disabled = n === 0;
+    var n = wrap.querySelectorAll('input[name="group_ids[]"]:checked').length;
+    submit.disabled = n === 0;
   }
-  document.getElementById('selectAllGroups').addEventListener('click', function () {
-    checks.forEach(function (c) { c.checked = true; }); update();
-  });
-  document.getElementById('clearAllGroups').addEventListener('click', function () {
-    checks.forEach(function (c) { c.checked = false; }); update();
-  });
-  checks.forEach(function (c) { c.addEventListener('change', update); });
+  wrap.querySelectorAll('input[type="checkbox"]').forEach(function (c) { c.addEventListener('change', update); });
   update();
 })();
 </script>

@@ -16,11 +16,48 @@
 <% if (typeof pageScripts !== 'undefined' && pageScripts) { pageScripts.forEach(function (s) { %><script src="<%= s %>"></script><% }); } %>
 <% if (typeof inlineScript !== 'undefined' && inlineScript) { %><script><%= inlineScript %></script><% } %>
 <script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function () {
-      navigator.serviceWorker.register('/sw.js').catch(function () {});
+(function () {
+  document.querySelectorAll('[data-multi-dropdown]').forEach(function (wrap) {
+    var toggle = wrap.querySelector('[data-toggle]');
+    var menu = wrap.querySelector('[data-menu]');
+    var selectAll = wrap.querySelector('[data-select-all]');
+    var label = wrap.querySelector('[data-label]');
+    function updateLabel() {
+      var checked = wrap.querySelectorAll('input[name][type="checkbox"]:checked');
+      if (label) label.textContent = checked.length ? (checked.length + ' محدد') : '— اختر من القائمة —';
+    }
+    function getGroupChecks() {
+      return Array.from(wrap.querySelectorAll('input[name][type="checkbox"]')).filter(function (c) { return c !== selectAll; });
+    }
+    if (toggle && menu) {
+      toggle.addEventListener('click', function () {
+        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+      });
+      document.addEventListener('click', function (e) {
+        if (!wrap.contains(e.target)) menu.style.display = 'none';
+      });
+    }
+    if (selectAll) {
+      selectAll.addEventListener('change', function () {
+        getGroupChecks().forEach(function (c) { c.checked = selectAll.checked; });
+        updateLabel();
+      });
+    }
+    wrap.querySelectorAll('input[name][type="checkbox"]').forEach(function (c) {
+      if (c === selectAll) return;
+      c.addEventListener('change', function () {
+        if (selectAll) selectAll.checked = getGroupChecks().every(function (x) { return x.checked; });
+        updateLabel();
+      });
     });
-  }
+    updateLabel();
+  });
+})();
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function () {});
+  });
+}
 </script>
 </body>
 </html>

@@ -34,14 +34,28 @@
                 </select>
               <% } else if (f.type === 'multiselect') { %>
                 <% const selectedArr = Array.isArray(v) ? v.map(String) : (v ? [String(v)] : []); %>
-                <div class="flex flex-wrap gap-1">
-                  <% (typeof f.options === 'function' ? f.options(form.values) : (f.options || [])).forEach(function (o) { %>
-                    <label class="check-chip">
-                      <input type="checkbox" name="<%= f.key %>[]" value="<%= o.value %>" <%= selectedArr.includes(String(o.value)) ? 'checked' : '' %>>
-                      <div class="chip-box"><i class="fas fa-check"></i></div>
-                      <span class="chip-label"><%= o.label %></span>
+                <% const opts = (typeof f.options === 'function' ? f.options(form.values) : (f.options || [])); %>
+                <div class="multi-dropdown" data-multi-dropdown="<%= f.key %>">
+                  <button type="button" class="form-control" data-toggle style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                    <span data-label><%= selectedArr.length ? (selectedArr.length + ' محدد') : '— اختر من القائمة —' %></span>
+                    <i class="fas fa-chevron-down font-12"></i>
+                  </button>
+                  <div class="multi-dropdown-menu" data-menu style="display:none">
+                    <label class="check-chip w-full" style="margin-bottom:8px;border-bottom:1px solid var(--card-border);border-radius:0;padding-bottom:8px">
+                      <input type="checkbox" data-select-all>
+                      <div class="chip-box"><i class="fas fa-check-double"></i></div>
+                      <span class="chip-label"><b>اختيار الكل</b></span>
                     </label>
-                  <% }); %>
+                    <div class="flex flex-wrap gap-1">
+                      <% opts.forEach(function (o) { %>
+                        <label class="check-chip">
+                          <input type="checkbox" name="<%= f.key %>[]" value="<%= o.value %>" <%= selectedArr.includes(String(o.value)) ? 'checked' : '' %>>
+                          <div class="chip-box"><i class="fas fa-check"></i></div>
+                          <span class="chip-label"><%= o.label %></span>
+                        </label>
+                      <% }); %>
+                    </div>
+                  </div>
                 </div>
               <% } else if (f.type === 'checkbox') { %>
                 <label class="flex items-center gap-1" style="cursor:pointer; padding-top:8px;">
