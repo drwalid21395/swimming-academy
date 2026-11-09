@@ -215,8 +215,12 @@ const swimmerFields = async function (values, req) {
   const blood = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(v => ({ value: v, label: v }));
   let guardianName = '';
   if (values && values.guardian_id) {
-    const g = await db.prepare('SELECT full_name, phone FROM guardians WHERE id = ?').get(values.guardian_id);
-    if (g) { guardianName = g.full_name; if (!values.guardian_phone) values.guardian_phone = g.phone; }
+    const g = await db.prepare('SELECT full_name, phone, relation FROM guardians WHERE id = ?').get(values.guardian_id);
+    if (g) {
+      guardianName = g.full_name;
+      if (!values.guardian_phone) values.guardian_phone = g.phone;
+      if (!values.guardian_relation) values.guardian_relation = g.relation;
+    }
   }
   const schoolList = (await db.prepare('SELECT * FROM schools ORDER BY name').all()).map(s => ({ value: s.name, label: s.name + (s.type && s.type !== 'مدرسة' ? ' (' + s.type + ')' : '') }));
   if (values && values.school && !schoolList.some(o => o.value === values.school)) schoolList.unshift({ value: values.school, label: values.school + ' (أخرى)' });
@@ -370,14 +374,44 @@ router.get('/swimmers/new', async function (req, res) {
 
 const SW_FK_COLS = ['guardian_id', 'level_id', 'group_id', 'coach_id', 'program_id'];
 
-async function resolveGuardian(d, b) {
-  const name = (b.guardian_name || '').trim();
-  if (b.guardian_id) return Number(b.guardian_id);
+/* ربط اللاعب بولي أمر ومزامنة بياناته:
+   - عند تعديل لاعب مرتبط بولي أمر، تُحدَّث بيانات سجل ولي الأمر نفسه (الاسم/الهاتف/القرابة)
+     حتى لا تختلف بيانات ولي الأمر بين شاشة اللاعب وشاشة أولياء الأمور.
+   - عند الإضافة يُبحث عن ولي أمر بنفس الاسم أو يُنشأ جديد.
+   الحقول الفارغة لا تمسح القيمة المحفوظة. */
+async function resolveGuardian(d, b, linkedGuardianId) {
+  const name = String(b.guardian_name || '').trim();
+  const phone = String(b.guardian_phone || '').trim();
+  const relation = String(b.guardian_relation || '').trim();
+  let guardianId = Number(b.guardian_id) || Number(linkedGuardianId) || 0;
+
+  if (guardianId) {
+    const g = await d.get('SELECT id FROM guardians WHERE id = ?', guardianId);
+    if (g) {
+      await d.run(`UPDATE guardians SET
+          full_name = CASE WHEN ? <> '' THEN ? ELSE full_name END,
+          phone = CASE WHEN ? <> '' THEN ? ELSE phone END,
+          relation = CASE WHEN ? <> '' THEN ? ELSE relation END
+        WHERE id = ?`,
+        name, name, phone, phone, relation, relation, guardianId);
+      return guardianId;
+    }
+  }
+
   if (!name) return null;
+
   const existing = await d.get('SELECT id FROM guardians WHERE full_name = ? AND deleted_at IS NULL', name);
-  if (existing) return existing.id;
+  if (existing) {
+    await d.run(`UPDATE guardians SET
+        phone = CASE WHEN ? <> '' THEN ? ELSE phone END,
+        relation = CASE WHEN ? <> '' THEN ? ELSE relation END
+      WHERE id = ?`,
+      phone, phone, relation, relation, existing.id);
+    return existing.id;
+  }
+
   const info = await d.run('INSERT INTO guardians (full_name, relation, phone) VALUES (?,?,?)',
-    name, b.guardian_relation || 'أب', b.guardian_phone || null);
+    name, relation || 'أب', phone || null);
   return info.lastInsertRowid;
 }
 
@@ -452,7 +486,7 @@ router.post('/swimmers/:id/edit', uploadAndStore('avatar'), async function (req,
   const id = Number(req.params.id);
   const b = req.body;
   const old = await db.prepare('SELECT avatar, guardian_id FROM swimmers WHERE id = ?').get(id);
-  const guardianId = await resolveGuardian(db, b);
+  const guardianId = await resolveGuardian(db, b, old ? old.guardian_id : null);
   let avatar = old ? old.avatar : null;
   if (req.file) {
     if (old && old.avatar) removeUploaded(old.avatar);
