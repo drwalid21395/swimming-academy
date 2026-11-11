@@ -48,6 +48,16 @@ crud(router, '/guardians', {
     { key: 'notes', label: 'ملاحظات', type: 'textarea', full: true }
   ],
   search: ['full_name', 'phone'],
+  /* تطبيع الحقول النصية: الفراغ يُحفظ NULL حتى لا يحجب رقم الهاتف عند البحث عن رقم واتساب */
+  beforeSave: function (b) {
+    const out = {};
+    ['full_name', 'phone', 'whatsapp', 'email', 'address', 'national_id', 'relation', 'notes'].forEach(function (k) {
+      if (b[k] === undefined) return;
+      const v = String(b[k]).trim();
+      out[k] = v === '' ? (k === 'full_name' ? '' : null) : v;
+    });
+    return out;
+  },
   view: true,
   viewTitle: row => 'وليّ أمر — ' + row.full_name,
   bulkActions: user => canDel(user, 'guardians') ? [

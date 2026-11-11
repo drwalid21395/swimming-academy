@@ -92,7 +92,7 @@ function subscriptionAmounts(b) {
 /* ============================================================== */
 router.get('/subscriptions', async function (req, res) {
   if (!canView(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT sub.*, s.full_name AS swimmer_name, s.membership_no, p.name AS program_name, g.name AS group_name, sp.name AS sport_name, gu.whatsapp AS guardian_whatsapp FROM subscriptions sub
+  const rows = await db.prepare(`SELECT sub.*, s.full_name AS swimmer_name, s.membership_no, p.name AS program_name, g.name AS group_name, sp.name AS sport_name, COALESCE(NULLIF(TRIM(gu.whatsapp), ''), NULLIF(TRIM(gu.phone), '')) AS guardian_whatsapp FROM subscriptions sub
     LEFT JOIN swimmers s ON s.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id LEFT JOIN sports sp ON sp.id = COALESCE(sub.sport_id, p.sport_id, s.sport_id) LEFT JOIN guardians gu ON gu.id = s.guardian_id WHERE 1=1` + subscriptionSportClause(activeSport(req), 'sub') + ` ORDER BY sub.created_at DESC`).all();
   const page = {
     title: 'الاشتراكات', subtitle: 'اشتراكات اللاعبين في البرامج', icon: 'fa-file-contract', module: 'subscriptions', active: 'subscriptions',
@@ -231,7 +231,7 @@ router.post('/subscriptions/one-time', async function (req, res) {
     await tx.commit();
     audit(req.currentUser.id, req.currentUser.full_name, 'add', 'subscriptions', info.lastInsertRowid, 'اشتراك لمرة واحدة', req);
     try { await syncExpiredSubscriptions(true); } catch (e) { console.error('مزامنة انتهاء الاشتراكات:', e.message); }
-    const guard = await db.prepare('SELECT COALESCE(whatsapp, phone) AS phone FROM guardians WHERE id = ?').get(guardianId || 0);
+    const guard = await db.prepare("SELECT COALESCE(NULLIF(TRIM(whatsapp), ''), NULLIF(TRIM(phone), '')) AS phone FROM guardians WHERE id = ?").get(guardianId || 0);
     if (guard && guard.phone) return res.redirect('/subscriptions/' + info.lastInsertRowid + '/receipt?confirm=1');
     setFlash(res, { type: 'success', message: 'تم تسجيل الاشتراك لمرة واحدة' });
     return res.redirect('/subscriptions/' + info.lastInsertRowid);
@@ -276,7 +276,7 @@ router.post('/subscriptions/new', async function (req, res) {
   /* إتمام الاشتراك: نعرض لولي الأمر إيصالاً بتفاصيل الاشتراك عبر واتساب، مع تأكيد قبل الإرسال.
      نقرأ رقم ولي الأمر، وإن وُجد نُظهر شاشة تأكيد للمعاينة قبل أي إرسال. */
   const subId = info.lastInsertRowid;
-  const guard = await db.prepare('SELECT gu.full_name AS guardian_name, COALESCE(gu.whatsapp, gu.phone) AS phone FROM swimmers sw LEFT JOIN guardians gu ON gu.id = sw.guardian_id WHERE sw.id = ?').get(b.swimmer_id);
+  const guard = await db.prepare("SELECT gu.full_name AS guardian_name, COALESCE(NULLIF(TRIM(gu.whatsapp), ''), NULLIF(TRIM(gu.phone), '')) AS phone FROM swimmers sw LEFT JOIN guardians gu ON gu.id = sw.guardian_id WHERE sw.id = ?").get(b.swimmer_id);
   const guardianPhone = guard ? String(guard.phone || '').trim() : '';
   if (guardianPhone) {
     return res.redirect('/subscriptions/' + subId + '/receipt?confirm=1');
@@ -300,7 +300,7 @@ router.get('/subscriptions/:id', async function (req, res) {
 router.get('/subscriptions/:id/whatsapp', async function (req, res) {
   if (!canView(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
-  const sub = await db.prepare(`SELECT sub.*, sw.full_name AS swimmer_name, g.full_name AS guardian_name, COALESCE(g.whatsapp, g.phone) AS phone
+  const sub = await db.prepare(`SELECT sub.*, sw.full_name AS swimmer_name, g.full_name AS guardian_name, COALESCE(NULLIF(TRIM(g.whatsapp), ''), NULLIF(TRIM(g.phone), '')) AS phone
     FROM subscriptions sub JOIN swimmers sw ON sw.id = sub.swimmer_id LEFT JOIN guardians g ON g.id = sw.guardian_id WHERE sub.id = ?`).get(id);
   if (!sub) return res.redirect('/subscriptions');
   const phone = String(sub.phone || '').trim();
@@ -322,7 +322,7 @@ router.get('/subscriptions/:id/whatsapp', async function (req, res) {
 /* جلب بيانات الاشتراك + لاعب + ولي أمر + برنامج + مجموعة + إعدادات الأكاديمية لبناء نص الإيصال */
 async function receiptPayload(id) {
   const s = await db.prepare(`SELECT sub.*, sw.full_name AS swimmer_name, sw.membership_no, p.name AS program_name, g.name AS group_name,
-      gu.full_name AS guardian_name, COALESCE(gu.whatsapp, gu.phone) AS phone
+      gu.full_name AS guardian_name, COALESCE(NULLIF(TRIM(gu.whatsapp), ''), NULLIF(TRIM(gu.phone), '')) AS phone
     FROM subscriptions sub
     LEFT JOIN swimmers sw ON sw.id = sub.swimmer_id
     LEFT JOIN programs p ON p.id = sub.program_id
