@@ -387,7 +387,8 @@ const SW_FK_COLS = ['guardian_id', 'level_id', 'group_id', 'coach_id', 'program_
 /* ربط اللاعب بولي أمر ومزامنة بياناته:
    - عند تعديل لاعب مرتبط بولي أمر، تُحدَّث بيانات سجل ولي الأمر نفسه (الاسم/الهاتف/القرابة)
      حتى لا تختلف بيانات ولي الأمر بين شاشة اللاعب وشاشة أولياء الأمور.
-   - عند الإضافة يُبحث عن ولي أمر بنفس الاسم أو يُنشأ جديد.
+   - عند الإضافة يُبحث عن ولي أمر بنفس الاسم أو الهاتف أو يُنشأ جديد.
+   - كتابة رقم ولي الأمر وحده (دون اسم) تُنشئ ولي أمر باسم افتراضي بدلاً من تجاهل الرقم.
    الحقول الفارغة لا تمسح القيمة المحفوظة. */
 async function resolveGuardian(d, b, linkedGuardianId) {
   const name = String(b.guardian_name || '').trim();
@@ -408,9 +409,15 @@ async function resolveGuardian(d, b, linkedGuardianId) {
     }
   }
 
-  if (!name) return null;
+  if (!name && !phone) return null;
 
-  const existing = await d.get('SELECT id FROM guardians WHERE full_name = ? AND deleted_at IS NULL', name);
+  /* اسم افتراضي عند إدخال الرقم فقط، حتى لا يُفقد رقم ولي الأمر */
+  const fallbackName = (String(b.full_name || '').trim() || 'لاعب') + ' - ولي الأمر';
+  const finalName = name || fallbackName;
+
+  const existing = name
+    ? await d.get('SELECT id FROM guardians WHERE full_name = ? AND deleted_at IS NULL', name)
+    : await d.get('SELECT id FROM guardians WHERE phone = ? AND deleted_at IS NULL', phone);
   if (existing) {
     await d.run(`UPDATE guardians SET
         phone = CASE WHEN ? <> '' THEN ? ELSE phone END,
@@ -421,7 +428,7 @@ async function resolveGuardian(d, b, linkedGuardianId) {
   }
 
   const info = await d.run('INSERT INTO guardians (full_name, relation, phone) VALUES (?,?,?)',
-    name, relation || 'أب', phone || null);
+    finalName, relation || 'أب', phone || null);
   return info.lastInsertRowid;
 }
 
