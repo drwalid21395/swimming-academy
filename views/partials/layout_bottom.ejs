@@ -16,6 +16,12 @@
 <% if (typeof pageScripts !== 'undefined' && pageScripts) { pageScripts.forEach(function (s) { %><script src="<%= s %>"></script><% }); } %>
 <% if (typeof inlineScript !== 'undefined' && inlineScript) { %><script><%= inlineScript %></script><% } %>
 <script>
+/* عند الرجوع بالخلف (زر المتصفح أو إيماءة الهاتف) قد يعيد المتصفح الصفحة من
+   ذاكرة bfcache بحالتها القديمة، فتظهر البيانات وكأن التعديل أُلغي. إعادة
+   التحميل من السيرفر تضمن ظهور أحدث بيانات محفوظة في كل الأحوال. */
+window.addEventListener('pageshow', function (e) {
+  if (e.persisted) window.location.reload();
+});
 (function () {
   document.querySelectorAll('[data-multi-dropdown]').forEach(function (wrap) {
     var toggle = wrap.querySelector('[data-toggle]');

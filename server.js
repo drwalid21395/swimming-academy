@@ -157,7 +157,11 @@ async function currentUser(req) {
 app.use(async function (req, res, next) {
   try {
     await ready();
-    res.set('Cache-Control', 'no-store');
+    /* لا تُخزَّن صفحات النظام في كاش المتصفح ولا تُستعاد بحالتها القديمة عند
+       الرجوع بالزر/إيماءة الهاتف، حتى تظهر دائماً أحدث بيانات محفوظة. */
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     /* مزامنة دورية مخنوقة: تحوّل حالة اللاعب إلى «منتهي» عند انتهاء اشتراكه */
     try { await syncExpiredSubscriptions(); } catch (e) { console.error('مزامنة انتهاء الاشتراكات:', e.message); }
     const settingsRows = await db.all('SELECT * FROM settings');
