@@ -1195,18 +1195,18 @@ const testFields = async function (values, sid) {
   ];
 };
 
-/* مجموعات التدريب مع اللاعبين (لنموذج الاختبار الجماعي) */
-async function testGroupsWithSwimmers(sid) {
-  const groups = await db.prepare('SELECT g.id, g.name, g.coach_id FROM groups g WHERE g.deleted_at IS NULL' + groupClause(sid) + ' ORDER BY g.name').all();
+/* فرق السباحة مع اللاعبين (لنموذج الاختبار الجماعي) */
+async function testTeamsWithSwimmers(sid) {
+  const teams = await db.prepare('SELECT t.id, t.name, t.coach_id FROM teams t WHERE 1=1' + sportClause(sid, 't') + ' ORDER BY t.name').all();
   const result = [];
-  for (const g of groups) {
-    result.push({ id: g.id, name: g.name, coach_id: g.coach_id, swimmers: await groupSwimmers(g.id) });
+  for (const t of teams) {
+    result.push({ id: t.id, name: t.name, coach_id: t.coach_id, swimmers: await teamSwimmers(t.id) });
   }
   return result;
 }
-async function groupSwimmers(gid) {
-  return await db.prepare(`SELECT s.id, s.full_name, s.membership_no, l.name AS level_name FROM swimmer_group sg
-    JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN levels l ON l.id = s.level_id WHERE sg.group_id = ? AND s.deleted_at IS NULL ORDER BY s.full_name`).all(gid);
+async function teamSwimmers(tid) {
+  return await db.prepare(`SELECT s.id, s.full_name, s.membership_no, l.name AS level_name FROM team_members tm
+    JOIN swimmers s ON s.id = tm.swimmer_id LEFT JOIN levels l ON l.id = s.level_id WHERE tm.team_id = ? AND s.deleted_at IS NULL ORDER BY s.full_name`).all(tid);
 }
 
 /* حفظ نتيجة اختبار للاعب واحد (سجل مستقل في الاختبارات) + ترقية عند اجتياز اختبار المستوى */
@@ -1263,8 +1263,8 @@ router.get('/tests', async function (req, res) {
 router.get('/tests/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'tests')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   res.render('test_group_form', {
-    form: { title: 'اختبار جديد', subtitle: 'تسجيل اختبار للاعب واحد أو لكل لاعب في مجموعة', icon: 'fa-plus', active: 'tests', action: '/tests/new', fields: await testFields({}, activeSport(req)), values: {}, submitLabel: 'حفظ الاختبار', cancelUrl: '/tests', csrf: '' },
-    groups: await testGroupsWithSwimmers(activeSport(req)), testTypes: await testTypes(), levelOptions: await levelOptions(activeSport(req)), swimmerOptions: await swimmerOptions(activeSport(req))
+    form: { title: 'اختبار جديد', subtitle: 'تسجيل اختبار للاعب واحد أو لكل لاعب في فريق', icon: 'fa-plus', active: 'tests', action: '/tests/new', fields: await testFields({}, activeSport(req)), values: {}, submitLabel: 'حفظ الاختبار', cancelUrl: '/tests', csrf: '' },
+    teams: await testTeamsWithSwimmers(activeSport(req)), testTypes: await testTypes(), levelOptions: await levelOptions(activeSport(req)), swimmerOptions: await swimmerOptions(activeSport(req))
   });
 });
 router.post('/tests/new', async function (req, res) {
@@ -1273,10 +1273,10 @@ router.post('/tests/new', async function (req, res) {
   const date = b.date || b.t_date || new Date().toISOString().slice(0, 10);
   let saved = 0;
   const levelsOf = v => v === undefined || v === null ? [] : (Array.isArray(v) ? v : [v]);
-  if (b.group_id) {
-    const grp = await db.prepare('SELECT coach_id, program_id FROM groups WHERE id=?').get(Number(b.group_id));
-    const coachId = (grp && grp.coach_id) || req.currentUser.coach_id || null;
-    const programId = grp ? grp.program_id : null;
+  if (b.team_id) {
+    const tm = await db.prepare('SELECT coach_id FROM teams WHERE id=?').get(Number(b.team_id));
+    const coachId = (tm && tm.coach_id) || req.currentUser.coach_id || null;
+    const programId = null;
     const rowsArr = Array.isArray(b.rows) ? b.rows : (b.rows ? [b.rows] : []);
     for (const r of rowsArr) {
       if (!r || !r.swimmer_id) continue;

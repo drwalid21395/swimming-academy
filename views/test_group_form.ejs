@@ -18,7 +18,7 @@
             <input type="radio" name="mode" value="single" id="modeSingle" checked> <i class="fas fa-user"></i> لاعب واحد
           </label>
           <label class="mode-card" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:1px solid var(--card-border);border-radius:10px;">
-            <input type="radio" name="mode" value="group" id="modeGroup"> <i class="fas fa-people-group"></i> مجموعة كاملة
+            <input type="radio" name="mode" value="group" id="modeGroup"> <i class="fas fa-flag-checkered"></i> فريق كامل
           </label>
         </div>
       </div>
@@ -67,15 +67,15 @@
         </div>
       </div>
 
-      <!-- ===== مجموعة كاملة ===== -->
+      <!-- ===== فريق كامل ===== -->
       <div id="panelGroup" style="display:none">
         <div class="form-grid">
           <div class="form-group">
-            <label>المجموعة <span class="req">*</span></label>
-            <select id="testGroupSel" name="group_id" class="form-control">
-              <option value="">— اختر المجموعة —</option>
-              <% groups.forEach(function (g) { %>
-                <option value="<%= g.id %>"><%= g.name %> (<%= g.swimmers.length %> لاعب)</option>
+            <label>الفريق <span class="req">*</span></label>
+            <select id="testTeamSel" name="team_id" class="form-control">
+              <option value="">— اختر الفريق —</option>
+              <% teams.forEach(function (t) { %>
+                <option value="<%= t.id %>"><%= t.name %> (<%= t.swimmers.length %> لاعب)</option>
               <% }); %>
             </select>
           </div>
@@ -93,7 +93,7 @@
 
           <div class="full form-section-title"><i class="fas fa-person-swimming"></i> اللاعبون — سجّل النتائج لكل لاعب ثم احفظ</div>
           <div class="full" id="groupSwimmersWrap">
-            <div class="empty-state"><i class="fas fa-people-group"></i><p>اختر مجموعة لعرض اللاعبين وبدء تسجيل النتائج</p></div>
+            <div class="empty-state"><i class="fas fa-flag-checkered"></i><p>اختر فريقاً لعرض اللاعبين وبدء تسجيل النتائج</p></div>
           </div>
         </div>
       </div>
@@ -144,12 +144,12 @@
 
 <script>
 (function () {
-  var groups = <%- JSON.stringify(groups) %>;
+  var teams = <%- JSON.stringify(teams) %>;
   var testTypes = <%- JSON.stringify(testTypes) %>;
   var levelsData = <%- JSON.stringify(levelOptions) %>;
   var rowSeq = 0;
   var wrap = document.getElementById('groupSwimmersWrap');
-  var groupSel = document.getElementById('testGroupSel');
+  var teamSel = document.getElementById('testTeamSel');
   var defaultTypeSel = document.getElementById('tDefaultType');
 
   function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
@@ -222,17 +222,17 @@
   }
 
   function render() {
-    var gid = groupSel ? groupSel.value : '';
-    if (!gid) {
-      wrap.innerHTML = '<div class="empty-state"><i class="fas fa-people-group"></i><p>اختر مجموعة لعرض اللاعبين وبدء تسجيل النتائج</p></div>';
+    var tid = teamSel ? teamSel.value : '';
+    if (!tid) {
+      wrap.innerHTML = '<div class="empty-state"><i class="fas fa-flag-checkered"></i><p>اختر فريقاً لعرض اللاعبين وبدء تسجيل النتائج</p></div>';
       return;
     }
-    var grp = groups.find(function (g) { return String(g.id) === String(gid); });
-    if (!grp || !grp.swimmers || !grp.swimmers.length) {
-      wrap.innerHTML = '<div class="empty-state"><i class="fas fa-users-slash"></i><p>لا يوجد لاعبون في هذه المجموعة</p></div>';
+    var tm = teams.find(function (t) { return String(t.id) === String(tid); });
+    if (!tm || !tm.swimmers || !tm.swimmers.length) {
+      wrap.innerHTML = '<div class="empty-state"><i class="fas fa-users-slash"></i><p>لا يوجد لاعبون في هذا الفريق</p></div>';
       return;
     }
-    wrap.innerHTML = grp.swimmers.map(swimmerCard).join('');
+    wrap.innerHTML = tm.swimmers.map(swimmerCard).join('');
   }
 
   wrap.addEventListener('click', function (e) {
@@ -254,7 +254,7 @@
     }
   });
 
-  if (groupSel) groupSel.addEventListener('change', render);
+  if (teamSel) teamSel.addEventListener('change', render);
 
   function syncLevelPick(typeSel) {
     var tr = typeSel && typeSel.closest('tr');
