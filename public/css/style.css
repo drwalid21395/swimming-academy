@@ -830,7 +830,7 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
 .gap-1 { gap: 8px; } .gap-2 { gap: 16px; }
 .text-muted { color: var(--text-muted); } .text-soft { color: var(--text-soft); }
 .text-success { color: var(--success); } .text-danger { color: var(--danger); }
-.text-primary { color: var(--primary); } .text-warning { color: var(--warning); }
+.text-primary { color: var(--primary); } .text-warning { color: var(--warning); } .text-info { color: #0ea5e9; }
 .fw-700 { font-weight: 700; } .fw-800 { font-weight: 800; }
 .text-center { text-align: center; }
 .w-100 { width: 100%; }

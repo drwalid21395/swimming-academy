@@ -2,7 +2,7 @@
 <div class="page-head">
   <div>
     <div class="page-title"><i class="fas fa-clipboard-check"></i> التقييمات الفنية</div>
-    <div class="page-sub">كل المجموعات في مكان واحد — ادخل أي مجموعة لتقييم لاعبيها، ويُحفظ التقييم تلقائياً</div>
+    <div class="page-sub">كل المجموعات والفرق في مكان واحد — ادخل أي مجموعة أو فريق لتقييم لاعبيها</div>
   </div>
   <div class="spacer"></div>
   <div class="flex flex-wrap gap-1">
@@ -19,6 +19,7 @@
 
 <div class="kpi-row">
   <div class="kpi"><div class="k-val text-primary"><%= groups.length %></div><div class="k-lbl">المجموعات</div></div>
+  <div class="kpi"><div class="k-val text-info"><%= teams.length %></div><div class="k-lbl">الفرق</div></div>
   <div class="kpi"><div class="k-val"><%= totalMembers %></div><div class="k-lbl">إجمالي اللاعبين</div></div>
   <div class="kpi"><div class="k-val text-success"><%= assessedToday %></div><div class="k-lbl">تم تقييمهم اليوم</div></div>
   <div class="kpi"><div class="k-val text-warning"><%= ungroupedCount %></div><div class="k-lbl">لاعبون بدون مجموعة</div></div>
@@ -50,6 +51,26 @@
         <a href="/groups/new" class="btn btn-primary" style="margin-top:14px"><i class="fas fa-plus"></i> إنشاء مجموعة</a>
       <% } %>
     </div>
+  </div>
+<% } %>
+
+<% if (teams.length) { %>
+  <h2 class="section-title" style="margin-top:28px"><i class="fas fa-flag-checkered"></i> الفرق</h2>
+  <div class="assess-groups-grid">
+    <% teams.forEach(function (t) { %>
+      <a class="assess-group-card" href="/teams/<%= t.id %>">
+        <span class="assess-group-icon" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)"><i class="fas fa-flag-checkered"></i></span>
+        <span class="assess-group-body">
+          <span class="assess-group-name"><%= t.name %></span>
+          <span class="assess-group-meta"><%= t.age_group || '' %><%= t.coach_name ? ' · ' + t.coach_name : '' %></span>
+          <span class="assess-group-stats">
+            <span><i class="fas fa-users"></i> <%= t.members %> لاعب</span>
+            <span><i class="fas fa-circle-check"></i> <%= t.assessed_today %> اليوم</span>
+          </span>
+        </span>
+        <i class="fas fa-chevron-left assess-group-arrow"></i>
+      </a>
+    <% }); %>
   </div>
 <% } %>
 

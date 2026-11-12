@@ -234,10 +234,24 @@ router.get('/assessments', async function (req, res) {
   const availableGroups = await db.prepare(`SELECT g.id, g.name, g.capacity,
       (SELECT COUNT(*) FROM swimmer_group sg WHERE sg.group_id = g.id) AS members
       FROM groups g WHERE g.deleted_at IS NULL` + groupClause(sid, 'g') + ` ORDER BY g.name`).all();
+  const teams = await db.prepare(`SELECT t.*, c.full_name AS coach_name,
+      (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id) AS members
+      FROM teams t LEFT JOIN coaches c ON c.id = t.coach_id
+      WHERE 1=1` + sportClause(sid, 't') + `
+      ORDER BY t.name`).all();
+  const teamAssessed = {};
+  (await db.prepare(`SELECT tm.team_id AS id, COUNT(DISTINCT a.swimmer_id) AS c
+      FROM team_members tm
+      JOIN teams t ON t.id = tm.team_id
+      JOIN swimmers s ON s.id = tm.swimmer_id AND s.deleted_at IS NULL
+      JOIN assessments a ON a.swimmer_id = s.id AND a.date = ?
+      WHERE 1=1` + sportClause(sid, 't') + `
+      GROUP BY tm.team_id`).all(todayISO())).forEach(function (r) { teamAssessed[r.id] = r.c; });
+  teams.forEach(function (t) { t.assessed_today = teamAssessed[t.id] || 0; });
   res.render('assessments_home', {
     title: 'التقييمات الفنية', active: 'assessments',
     groups, totalMembers, assessedToday, ungroupedCount: Number((ungrouped && ungrouped.c) || 0),
-    ungroupedSwimmers, availableGroups, userCanExport: canExport(req.currentUser, 'assessments')
+    ungroupedSwimmers, availableGroups, teams, userCanExport: canExport(req.currentUser, 'assessments')
   });
 });
 
