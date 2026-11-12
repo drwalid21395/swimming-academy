@@ -1197,7 +1197,7 @@ const testFields = async function (values, sid) {
 
 /* فرق السباحة مع اللاعبين (لنموذج الاختبار الجماعي) */
 async function testTeamsWithSwimmers(sid) {
-  const teams = await db.prepare('SELECT t.id, t.name, t.coach_id FROM teams t WHERE 1=1' + sportClause(sid, 't') + ' ORDER BY t.name').all();
+  const teams = await db.prepare('SELECT t.id, t.name, t.coach_id FROM teams t ORDER BY t.name').all();
   const result = [];
   for (const t of teams) {
     result.push({ id: t.id, name: t.name, coach_id: t.coach_id, swimmers: await teamSwimmers(t.id) });
