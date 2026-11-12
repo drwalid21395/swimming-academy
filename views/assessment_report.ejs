@@ -7,6 +7,7 @@
   <div class="spacer"></div>
   <div class="flex gap-1">
     <a href="/swimmers/<%= data.swimmer.id %>/assessment-report/pdf" target="_blank" class="btn btn-primary"><i class="fas fa-file-pdf"></i> طباعة / تحميل PDF</a>
+    <a href="/swimmers/<%= data.swimmer.id %>/assessment-report.xls" class="btn btn-outline"><i class="fas fa-file-excel"></i> تحميل Excel</a>
     <a href="/swimmers/<%= data.swimmer.id %>" class="btn btn-outline"><i class="fas fa-person-swimming"></i> ملف اللاعب</a>
     <a href="/assessments/log" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> كل التقييمات</a>
   </div>
@@ -34,7 +35,80 @@
   <div class="kpi"><div class="k-val text-success"><%= data.grandSum %><span class="font-12 text-soft"> / <%= data.allSkills * 100 %></span></div><div class="k-lbl">مجموع كل النسب</div></div>
   <div class="kpi"><div class="k-val"><%= data.grandAvg %>%</div><div class="k-lbl">المتوسط العام</div></div>
   <div class="kpi"><div class="k-val text-primary"><%= data.swimmer.program_name || '—' %></div><div class="k-lbl">البرنامج</div></div>
+  <% if (data.attendance) { %>
+    <div class="kpi"><div class="k-val text-success"><%= data.attendance.stats.rate %>%</div><div class="k-lbl">نسبة الحضور (<%= data.attendance.stats.present %>/<%= data.attendance.stats.total %>)</div></div>
+  <% } %>
 </div>
+
+<% if (data.allLevels && data.allLevels.length) { %>
+  <div class="card mt-2">
+    <div class="card-header">
+      <h3><i class="fas fa-layer-group"></i> تفصيل جميع المستويات والنسب المئوية</h3>
+      <span class="badge badge-primary"><%= data.allLevels.filter(function (l) { return l.assessed; }).length %> مستوى مقيّم من <%= data.allLevels.length %></span>
+    </div>
+    <div class="card-body">
+      <table class="data-table">
+        <thead><tr><th>المستوى</th><th>عدد المهارات</th><th>نسبة المهارات</th><th>النسبة مع المعايير العامة</th><th>آخر تقييم</th><th>الكابتن</th></tr></thead>
+        <tbody>
+          <% data.allLevels.forEach(function (lvl) { %>
+            <tr>
+              <td><b><%= lvl.level.name %></b><% if (data.swimmer.level_id === lvl.level.id) { %> <span class="badge badge-success" style="font-size:10px">الحالي</span><% } %></td>
+              <td><%= lvl.assessed ? lvl.count : '—' %></td>
+              <td><%= lvl.ownPercent !== null ? lvl.ownPercent + '%' : '—' %></td>
+              <td>
+                <% if (lvl.percent !== null) { %>
+                  <span class="badge <%= lvl.percent >= 80 ? 'badge-success' : lvl.percent >= 60 ? 'badge-warning' : 'badge-danger' %>"><%= lvl.percent %>%</span>
+                <% } else { %><span class="text-soft">لم يُقيَّم</span><% } %>
+              </td>
+              <td><%= lvl.assessment ? fmtDate(lvl.assessment.date) : '—' %></td>
+              <td><%= lvl.assessment && lvl.assessment.coach_name ? lvl.assessment.coach_name : '—' %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+<% } %>
+
+<% if (data.attendance) { var att = data.attendance.stats; %>
+  <div class="card mt-2">
+    <div class="card-header">
+      <h3><i class="fas fa-calendar-check"></i> الحضور والغياب</h3>
+      <span class="badge <%= att.rate >= 80 ? 'badge-success' : att.rate >= 60 ? 'badge-warning' : 'badge-danger' %>">نسبة الحضور <%= att.rate %>%</span>
+    </div>
+    <div class="card-body">
+      <div class="kpi-row" style="margin-bottom:12px">
+        <div class="kpi"><div class="k-val"><%= att.total %></div><div class="k-lbl">إجمالي السجلات</div></div>
+        <div class="kpi"><div class="k-val text-success"><%= att.present %></div><div class="k-lbl">حضر</div></div>
+        <div class="kpi"><div class="k-val text-danger"><%= att.absent %></div><div class="k-lbl">غاب</div></div>
+        <div class="kpi"><div class="k-val text-warning"><%= att.excused %></div><div class="k-lbl">بعذر</div></div>
+        <div class="kpi"><div class="k-val text-primary"><%= att.late %></div><div class="k-lbl">متأخر</div></div>
+      </div>
+      <% if (data.attendance.records && data.attendance.records.length) { %>
+        <div style="overflow-x:auto">
+          <table class="data-table">
+            <thead><tr><th>التاريخ</th><th>الجلسة</th><th>الوقت</th><th>الحالة</th><th>ملاحظات</th></tr></thead>
+            <tbody>
+              <% data.attendance.records.slice(0, 50).forEach(function (r) {
+                var st = { present: ['حضر', 'badge-success'], absent: ['غاب', 'badge-danger'], excused: ['بعذر', 'badge-warning'], late: ['متأخر', 'badge-info'] }[r.status] || [r.status || '—', 'badge-gray'];
+              %>
+                <tr>
+                  <td><%= fmtDate(r.date) %></td>
+                  <td><%= r.title || '—' %></td>
+                  <td><%= r.start_time || '—' %></td>
+                  <td><span class="badge <%= st[1] %>"><%= st[0] %></span></td>
+                  <td><%= r.reason || '—' %></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      <% } else { %>
+        <div class="empty-state"><i class="fas fa-calendar-xmark"></i><p>لا توجد سجلات حضور لهذا اللاعب</p></div>
+      <% } %>
+    </div>
+  </div>
+<% } %>
 
 <% data.levels.forEach(function (lvl, i) { %>
   <div class="card" style="margin-top:14px">

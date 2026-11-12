@@ -1,9 +1,11 @@
 /** الجوانب الفنية: التقييمات، الاختبارات، الفرق، البطولات، الأزمنة الشخصية */
 const express = require('express');
 const { db } = require('../lib/db');
-const { audit, money, fmtDate, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
+const { audit, money, fmtDate, canView, canAdd, canEdit, canDel, canExport } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
 const { activeSport, sportClause, progClause, groupClause, swimmerOfClause } = require('../lib/sport-context');
+const pdfmake = require('../lib/pdf');
+const assessmentReports = require('../lib/assessment-report');
 const router = express.Router();
 
 async function swimmerOptions(sid) {
@@ -42,24 +44,6 @@ async function levelGroups(sid, currentLevelId) {
     });
   }
   return groups;
-}
-
-/* حفظ/تحديث تقييم مستوى معيّن أو المعايير العامة (levelId = null). يحدّث أحدث سجل للمستوى أو يُنشئ جديداً */
-async function upsertAssessment(swimmerId, levelId, g, b, userId) {
-  if (!g || !g.n) return null;
-  const row = levelId == null
-    ? await db.prepare(`SELECT * FROM assessments WHERE swimmer_id = ? AND level_id IS NULL ORDER BY date DESC, id DESC`).get(swimmerId)
-    : await db.prepare(`SELECT * FROM assessments WHERE swimmer_id = ? AND level_id = ? ORDER BY date DESC, id DESC`).get(swimmerId, levelId);
-  const overall = Math.round((g.sum / g.n) * 1000) / 1000;
-  if (row) {
-    await db.prepare(`UPDATE assessments SET coach_id=?, program_id=?, date=?, scores=?, strengths=?, weaknesses=?, recommendations=?, ready_to_advance=?, next_assessment_date=?, overall_percent=?, notes=? WHERE id=?`)
-      .run(b.coach_id || null, b.program_id || null, b.date, JSON.stringify(g.scores), b.strengths || '', b.weaknesses || '', b.recommendations || '', b.ready_to_advance === '1' ? 1 : 0, b.next_assessment_date || null, overall, b.notes || '', row.id);
-    return row.id;
-  }
-  const info = await db.prepare(`INSERT INTO assessments (swimmer_id, coach_id, program_id, level_id, date, scores, strengths, weaknesses, recommendations, ready_to_advance, next_assessment_date, overall_percent, notes, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(swimmerId, b.coach_id || null, b.program_id || null, levelId, b.date, JSON.stringify(g.scores), b.strengths || '', b.weaknesses || '', b.recommendations || '', b.ready_to_advance === '1' ? 1 : 0, b.next_assessment_date || null, overall, b.notes || '', userId);
-  return info.lastInsertRowid;
 }
 
 /* قراءة تقييم (scores) من req.body مقسّمة إلى: مستوى محدد + معايير عامة */
@@ -161,6 +145,49 @@ function hasNonZeroScore(g) {
   return !!(g && g.scores && Object.keys(g.scores).some(k => Number(g.scores[k]) > 0));
 }
 
+/* أحدث نسبة مسجلة لكل مهارة لكل مستوى + المعايير العامة (لتعبئة النموذج الكامل من نفس بيانات الكارت السريع) */
+async function latestScoresFor(swimmerId) {
+  const rows = await db.prepare(`SELECT * FROM assessments WHERE swimmer_id = ? ORDER BY date DESC, id DESC`).all(swimmerId);
+  const seen = {};
+  const values = {};
+  rows.forEach(function (a) {
+    const key = a.level_id == null ? 'g' : String(a.level_id);
+    if (seen[key]) return;
+    seen[key] = true;
+    let sc = {};
+    try { sc = JSON.parse(a.scores || '{}'); } catch (e) { sc = {}; }
+    Object.keys(sc).forEach(function (cid) { values['score_' + cid] = sc[cid]; });
+  });
+  return values;
+}
+
+/* حفظ حقول التحليل والملاحظات على سجل التقييم */
+async function saveAssessmentMeta(id, b) {
+  if (!id || !b) return;
+  await db.prepare(`UPDATE assessments SET strengths = ?, weaknesses = ?, recommendations = ?, ready_to_advance = ?, next_assessment_date = ?, notes = ? WHERE id = ?`)
+    .run(b.strengths || '', b.weaknesses || '', b.recommendations || '', b.ready_to_advance === '1' ? 1 : 0, b.next_assessment_date || null, b.notes || '', id);
+}
+
+/* تعيين مستوى اللاعب إذا كان بلا مستوى: المختار صراحةً أو الأول حسب ترتيب المستويات */
+async function assignFirstLevel(swimmerId, preferLevelId, savedLevelIds) {
+  const sw = await db.prepare('SELECT id, level_id FROM swimmers WHERE id = ?').get(swimmerId);
+  if (!sw || sw.level_id != null) return sw ? Number(sw.level_id) : null;
+  let prefer = preferLevelId ? Number(preferLevelId) : null;
+  if (prefer) {
+    const lvl = await db.prepare('SELECT id FROM levels WHERE id = ?').get(prefer);
+    if (!lvl) prefer = null;
+  }
+  const ids = (savedLevelIds || []).filter(function (n) { return Number.isFinite(Number(n)); }).map(Number);
+  if (!prefer && ids.length) {
+    const ph = ids.map(function () { return '?'; }).join(',');
+    const ordered = await db.prepare('SELECT id FROM levels WHERE id IN (' + ph + ') ORDER BY order_no, id').all(...ids);
+    if (ordered.length) prefer = Number(ordered[0].id);
+  }
+  if (!prefer) return null;
+  await db.prepare('UPDATE swimmers SET level_id = ? WHERE id = ? AND level_id IS NULL').run(prefer, swimmerId);
+  return prefer;
+}
+
 /* حفظ/تحديث تقييم نفس اليوم (بدل إنشاء نسخة جديدة في كل مرة) */
 async function upsertAssessmentForDate(swimmerId, levelId, date, g, b, userId, group) {
   if (!g || !g.n) return null;
@@ -169,7 +196,7 @@ async function upsertAssessmentForDate(swimmerId, levelId, date, g, b, userId, g
     : await db.prepare('SELECT id FROM assessments WHERE swimmer_id = ? AND level_id = ? AND date = ? ORDER BY id DESC LIMIT 1').get(swimmerId, levelId, date);
   const overall = Math.round((g.sum / g.n) * 1000) / 1000;
   const coachId = (b && b.coach_id) || (group && group.coach_id) || null;
-  const programId = (group && group.program_id) || null;
+  const programId = (b && b.program_id) || (group && group.program_id) || null;
   if (row) {
     await db.prepare(`UPDATE assessments SET scores = ?, overall_percent = ?, coach_id = COALESCE(?, coach_id), program_id = COALESCE(?, program_id) WHERE id = ?`)
       .run(JSON.stringify(g.scores), overall, coachId, programId, row.id);
@@ -232,27 +259,31 @@ router.get('/assessments/groups/:id', async function (req, res) {
   const { general, byLevel } = await criteriaTree();
   const today = todayISO();
   const savedScores = {};
+  const levelPercents = {};
   if (members.length) {
     const ids = members.map(m => m.id);
     const ph = ids.map(() => '?').join(',');
     const rows = await db.prepare(`SELECT * FROM assessments WHERE swimmer_id IN (${ph}) ORDER BY date DESC, id DESC`).all(...ids);
-    const levelOf = {};
-    members.forEach(m => { levelOf[m.id] = m.level_id == null ? null : String(m.level_id); });
-    const seenLevel = {}, seenGeneral = {};
+    /* أحدث تقييم لكل مستوى + أحدث تقييم للمعايير العامة لكل لاعب */
+    const latestBySwimmer = {};
     rows.forEach(a => {
-      const lid = a.level_id == null ? null : String(a.level_id);
-      if (lid !== null && lid !== levelOf[a.swimmer_id]) return;
-      if (lid === null) {
-        if (seenGeneral[a.swimmer_id]) return;
-        seenGeneral[a.swimmer_id] = true;
-      } else {
-        if (seenLevel[a.swimmer_id]) return;
-        seenLevel[a.swimmer_id] = true;
-      }
-      let scores = {};
-      try { scores = JSON.parse(a.scores || '{}'); } catch (e) { scores = {}; }
-      savedScores[a.swimmer_id] = savedScores[a.swimmer_id] || {};
-      Object.keys(scores).forEach(cid => { savedScores[a.swimmer_id][cid] = scores[cid]; });
+      const key = a.level_id == null ? 'g' : String(a.level_id);
+      const box = (latestBySwimmer[a.swimmer_id] = latestBySwimmer[a.swimmer_id] || {});
+      if (!box[key]) box[key] = a;
+    });
+    Object.keys(latestBySwimmer).forEach(sid => {
+      savedScores[sid] = {};
+      levelPercents[sid] = {};
+      const box = latestBySwimmer[sid];
+      Object.keys(box).forEach(key => {
+        const a = box[key];
+        let scores = {};
+        try { scores = JSON.parse(a.scores || '{}'); } catch (e) { scores = {}; }
+        Object.keys(scores).forEach(cid => { savedScores[sid][cid] = scores[cid]; });
+        if (a.overall_percent !== null && a.overall_percent !== undefined) {
+          levelPercents[sid][key] = { percent: a.overall_percent, date: a.date };
+        }
+      });
     });
   }
 
@@ -266,7 +297,7 @@ router.get('/assessments/groups/:id', async function (req, res) {
   res.render('assessment_group', {
     title: 'تقييم مجموعة ' + group.name, active: 'assessments',
     group, members, generalCriteria: general, criteriaByLevel: byLevel,
-    savedScores, ungrouped, today,
+    savedScores, levelPercents, ungrouped, today,
     levels: (await levelOptions(sid)).filter(function (l) { return byLevel[String(l.value)] && byLevel[String(l.value)].length; }),
     criteriaJson: JSON.stringify(byLevel).replace(/</g, '\\u003c')
   });
@@ -324,30 +355,46 @@ router.post('/assessments/groups/:gid/swimmer/:sid/quick', async function (req, 
 
   const b = req.body || {};
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || '')) ? b.date : todayISO();
-  /* اللاعب بلا مستوى: يختار المدرب المستوى من كارت التقييم، ويُعيَّن له عند أول حفظ */
-  let assessLevelId = member.level_id != null ? Number(member.level_id) : null;
-  if (assessLevelId == null && b.level_id) {
-    const lvl = await db.prepare('SELECT id FROM levels WHERE id = ?').get(Number(b.level_id));
-    if (!lvl) return res.status(400).json({ ok: false, error: 'المستوى المختار غير موجود' });
-    assessLevelId = Number(lvl.id);
-  }
   const { perLevel, shared } = await parseScores(b);
-  let levelPercent = null, generalPercent = null;
-  const levelKey = assessLevelId != null ? String(assessLevelId) : null;
-  const levelScores = levelKey && perLevel[levelKey] ? perLevel[levelKey] : null;
-  if (levelScores && levelScores.n && (hasNonZeroScore(levelScores) || await assessmentExistsForDate(swimmerId, assessLevelId, date))) {
-    await upsertAssessmentForDate(swimmerId, assessLevelId, date, levelScores, b, req.currentUser.id, group);
-    levelPercent = Math.round((levelScores.sum / levelScores.n) * 1000) / 1000;
+  const levelResults = {};
+  for (const lid of Object.keys(perLevel)) {
+    const g = perLevel[lid];
+    if (!g || !g.n) continue;
+    if (!hasNonZeroScore(g) && !(await assessmentExistsForDate(swimmerId, Number(lid), date))) continue;
+    await upsertAssessmentForDate(swimmerId, Number(lid), date, g, b, req.currentUser.id, group);
+    levelResults[lid] = Math.round((g.sum / g.n) * 1000) / 1000;
   }
+  let generalPercent = null;
   if (shared && shared.n && (hasNonZeroScore(shared) || await assessmentExistsForDate(swimmerId, null, date))) {
     await upsertAssessmentForDate(swimmerId, null, date, shared, b, req.currentUser.id, group);
     generalPercent = Math.round((shared.sum / shared.n) * 1000) / 1000;
   }
+
   /* تعيين المستوى الأول للاعب الذي لم يكن له مستوى (لا يغيّر مستوى لاعب موجود) */
-  if (assessLevelId && member.level_id == null) {
-    await db.prepare('UPDATE swimmers SET level_id = ? WHERE id = ? AND level_id IS NULL').run(assessLevelId, swimmerId);
+  let assignedLevelId = member.level_id != null ? Number(member.level_id) : null;
+  if (assignedLevelId == null) {
+    let prefer = b.level_id ? Number(b.level_id) : null;
+    if (prefer) {
+      const lvl = await db.prepare('SELECT id FROM levels WHERE id = ?').get(prefer);
+      if (!lvl) prefer = null;
+    }
+    const scoredIds = Object.keys(levelResults).map(Number);
+    if (!prefer && scoredIds.length) {
+      const ph = scoredIds.map(function () { return '?'; }).join(',');
+      const ordered = await db.prepare('SELECT id FROM levels WHERE id IN (' + ph + ') ORDER BY order_no, id').all(...scoredIds);
+      if (ordered.length) prefer = Number(ordered[0].id);
+    }
+    if (prefer && (scoredIds.length || generalPercent !== null)) {
+      await db.prepare('UPDATE swimmers SET level_id = ? WHERE id = ? AND level_id IS NULL').run(prefer, swimmerId);
+      assignedLevelId = prefer;
+    }
   }
-  if (levelPercent === null && generalPercent === null) {
+
+  const levelIds = Object.keys(levelResults);
+  const overall = levelIds.length
+    ? Math.round((levelIds.reduce(function (s, k) { return s + levelResults[k]; }, 0) / levelIds.length) * 1000) / 1000
+    : generalPercent;
+  if (levelPercentEmpty(levelResults) && generalPercent === null) {
     if (!isAjax) {
       setFlash(res, { type: 'error', message: 'لم تُسجل أي نسب — غيّر نسبة مهارة واحدة على الأقل' });
       return res.redirect('/assessments/groups/' + gid);
@@ -358,17 +405,204 @@ router.post('/assessments/groups/:gid/swimmer/:sid/quick', async function (req, 
     setFlash(res, { type: 'success', message: 'تم حفظ تقييم اللاعب' });
     return res.redirect('/assessments/groups/' + gid);
   }
+  const currentKey = assignedLevelId != null ? String(assignedLevelId) : null;
   res.json({
     ok: true,
-    percent: levelPercent !== null ? levelPercent : generalPercent,
-    level_percent: levelPercent,
+    percent: overall,
+    level_percent: currentKey && levelResults[currentKey] !== undefined ? levelResults[currentKey] : null,
     general_percent: generalPercent,
-    level_id: assessLevelId,
+    level_id: assignedLevelId,
+    levels: levelResults,
     date,
     date_label: fmtDate(date),
     time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
   });
 });
+
+function levelPercentEmpty(obj) { return !obj || !Object.keys(obj).length; }
+
+/* ============================================================== */
+/*              تقارير التقييم الفني: PDF و Excel                  */
+/* ============================================================== */
+function xEsc(v) {
+  return String(v === null || v === undefined ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function xCell(v, cls) {
+  return '<td' + (cls ? ' style="' + cls + '"' : '') + '>' + (v === null || v === undefined || v === '' ? '—' : xEsc(v)) + '</td>';
+}
+function latestAssessmentDate(d) {
+  let last = null;
+  (d.levels || []).forEach(function (l) {
+    if (l.assessment && l.assessment.date && (!last || String(l.assessment.date) > String(last))) last = l.assessment.date;
+  });
+  return last;
+}
+
+function buildGroupReportPdf(data, todayStr) {
+  const g = data.group;
+  const t = data.totals;
+  const content = [
+    { text: 'الأكاديمية', style: 'academyTitle' },
+    { text: 'التقرير الفني الشامل للمجموعة', style: 'reportTitle' },
+    { text: 'تاريخ الإصدار: ' + todayStr, style: 'meta' },
+    { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 760, y2: 0, lineWidth: 1.6, lineColor: '#0284c7' }], margin: [0, 6, 0, 0] },
+    { table: { headerRows: 0, widths: ['14%', '36%', '14%', '36%'], body: [
+      [{ text: 'المجموعة', style: 'lbl' }, { text: g.name, style: 'val' }, { text: 'البرنامج', style: 'lbl' }, { text: g.program_name || '—', style: 'val' }],
+      [{ text: 'الكابتن', style: 'lbl' }, { text: g.coach_name || '—', style: 'val' }, { text: 'عدد اللاعبين', style: 'lbl' }, { text: String(t.members), style: 'val' }]
+    ] }, layout: 'noBorders', margin: [0, 10, 0, 4] },
+    { table: { widths: ['20%', '20%', '20%', '20%', '20%'], body: [[
+      { text: [String(t.members), { text: '\nلاعب', fontSize: 9, color: '#6b7280' }], style: 'kpi', color: '#0284c7' },
+      { text: [String(t.assessed), { text: '\nلاعب مقيَّم', fontSize: 9, color: '#6b7280' }], style: 'kpi', color: '#0284c7' },
+      { text: [t.average + '%', { text: '\nمتوسط التقييم', fontSize: 9, color: '#6b7280' }], style: 'kpi', color: '#16a34a' },
+      { text: [t.attendance.present + '/' + t.attendance.total, { text: '\nحضور', fontSize: 9, color: '#6b7280' }], style: 'kpi', color: '#0284c7' },
+      { text: [t.attendance.rate + '%', { text: '\nنسبة الحضور', fontSize: 9, color: '#6b7280' }], style: 'kpi', color: '#ca8a04' }
+    ]] }, layout: { defaultBorder: true, hLineWidth: () => 0, vLineWidth: () => 0, paddingLeft: () => 4, paddingRight: () => 4, paddingTop: () => 6, paddingBottom: () => 6 }, margin: [0, 2, 0, 0] },
+    { text: 'ملخص اللاعبين', style: 'sectionTitle', margin: [0, 14, 0, 4] }
+  ];
+
+  const summaryRows = data.swimmers.map(function (d, i) {
+    const s = d.swimmer, att = d.attendance.stats;
+    return [
+      { text: String(i + 1), style: 'td' },
+      { text: s.full_name, style: 'td', alignment: 'right' },
+      { text: s.membership_no || '—', style: 'td' },
+      { text: s.level_name || '—', style: 'td' },
+      { text: String(d.totalLevels), style: 'td' },
+      { text: d.allSkills ? d.grandAvg + '%' : '—', style: 'td', bold: true, color: d.allSkills ? gradeColor(d.grandAvg) : '#9ca3af' },
+      { text: att.present + '/' + att.total, style: 'td' },
+      { text: att.rate + '%', style: 'td', bold: true },
+      { text: latestAssessmentDate(d) ? fmtDate(latestAssessmentDate(d)) : '—', style: 'td' }
+    ];
+  });
+  content.push({ table: { headerRows: 1, widths: [22, '*', 60, 80, 45, 50, 50, 45, 80], body: [
+    [{ text: '#', style: 'th' }, { text: 'اللاعب', style: 'th' }, { text: 'العضوية', style: 'th' }, { text: 'المستوى الحالي', style: 'th' }, { text: 'مستويات مقيّمة', style: 'th' }, { text: 'المتوسط', style: 'th' }, { text: 'حضور', style: 'th' }, { text: 'النسبة', style: 'th' }, { text: 'آخر تقييم', style: 'th' }]
+  ].concat(summaryRows.length ? summaryRows : [[{ text: 'لا يوجد لاعبون', style: 'td', colSpan: 9, alignment: 'center' }, {}, {}, {}, {}, {}, {}, {}, {}]]) }, layout: 'lightHorizontalLines' });
+
+  content.push({ text: 'تفصيل كل لاعب على كل المستويات', style: 'sectionTitle', margin: [0, 16, 0, 4] });
+  data.swimmers.forEach(function (d, i) {
+    const att = d.attendance.stats;
+    content.push({ columns: [
+      { text: (i + 1) + '. ' + d.swimmer.full_name, style: 'subTitle' },
+      { text: 'المتوسط العام: ' + (d.allSkills ? d.grandAvg + '%' : '—'), alignment: 'left', bold: true, fontSize: 10, color: d.allSkills ? gradeColor(d.grandAvg) : '#9ca3af' }
+    ], margin: [0, 8, 0, 3] });
+    const lvlRows = d.allLevels.map(function (lvl) {
+      return [
+        { text: lvl.level.name, style: 'td', alignment: 'right' },
+        { text: lvl.assessed ? String(lvl.count) : '—', style: 'td' },
+        { text: lvl.ownPercent !== null ? lvl.ownPercent + '%' : '—', style: 'td' },
+        { text: lvl.percent !== null ? lvl.percent + '%' : 'لم يُقيَّم', style: 'td', bold: true, color: lvl.percent !== null ? gradeColor(lvl.percent) : '#9ca3af' },
+        { text: lvl.assessment ? fmtDate(lvl.assessment.date) : '—', style: 'td' },
+        { text: lvl.assessment ? (lvl.assessment.coach_name || '—') : '—', style: 'td' }
+      ];
+    });
+    content.push({ table: { headerRows: 1, widths: ['26%', 50, 55, 75, 90, '*'], body: [
+      [{ text: 'المستوى', style: 'th' }, { text: 'المهارات', style: 'th' }, { text: 'نسبة المهارات', style: 'th' }, { text: 'مع المعايير العامة', style: 'th' }, { text: 'آخر تقييم', style: 'th' }, { text: 'الكابتن', style: 'th' }]
+    ].concat(lvlRows.length ? lvlRows : [[{ text: 'لا توجد مستويات مسجلة', style: 'td', colSpan: 6, alignment: 'center' }, {}, {}, {}, {}, {}]]) }, layout: 'lightHorizontalLines' });
+    content.push({ text: 'الحضور: حضر ' + att.present + ' · غاب ' + att.absent + ' · بعذر ' + att.excused + ' · متأخر ' + att.late + ' · إجمالي ' + att.total + ' · نسبة الحضور ' + att.rate + '%', style: 'meta2', margin: [0, 3, 0, 0] });
+  });
+
+  content.push({ table: { widths: ['33.3%', '33.3%', '33.3%'], body: [[
+    { text: 'مدير الأكاديمية', style: 'sign' },
+    { text: 'المدرب المسؤول', style: 'sign' },
+    { text: 'التاريخ', style: 'sign' }
+  ]] }, layout: 'noBorders', margin: [0, 22, 0, 0] });
+
+  return {
+    pageSize: 'A4',
+    pageOrientation: 'landscape',
+    pageMargins: [28, 30, 28, 36],
+    info: { title: 'التقرير الفني — ' + g.name, author: 'الأكاديمية' },
+    defaultStyle: { font: 'Tahoma', fontSize: 9.5, color: '#111827', alignment: 'right' },
+    styles: {
+      academyTitle: { fontSize: 18, bold: true, color: '#0284c7', alignment: 'center' },
+      reportTitle: { fontSize: 14, bold: true, alignment: 'center', margin: [0, 4, 0, 2] },
+      meta: { fontSize: 9, color: '#6b7280', alignment: 'center' },
+      meta2: { fontSize: 9, color: '#6b7280' },
+      lbl: { bold: true, fontSize: 9.5, color: '#334155', alignment: 'center' },
+      val: { fontSize: 10, alignment: 'center' },
+      th: { bold: true, fontSize: 9.5, color: '#ffffff', fillColor: '#0284c7', alignment: 'center', margin: [2, 3, 2, 3] },
+      td: { fontSize: 9, alignment: 'center', margin: [1, 2, 1, 2] },
+      sectionTitle: { fontSize: 12, bold: true, color: '#0f172a' },
+      subTitle: { fontSize: 11, bold: true, color: '#0f172a' },
+      kpi: { fontSize: 15, bold: true, alignment: 'center' },
+      sign: { alignment: 'center', fontSize: 11, bold: true, margin: [0, 0, 0, 34] }
+    },
+    footer: function (current, total) {
+      return { text: 'الأكاديمية — التقرير الفني للمجموعة   •   صفحة ' + current + ' من ' + total, alignment: 'center', fontSize: 8, color: '#9ca3af' };
+    },
+    content: content
+  };
+}
+
+router.get('/assessments/reports/group/:id.pdf', async function (req, res) {
+  if (!canView(req.currentUser, 'assessments') || !canExport(req.currentUser, 'assessments')) {
+    return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  }
+  const data = await assessmentReports.groupReportData(Number(req.params.id), { from: req.query.from, to: req.query.to });
+  if (!data) return res.redirect('/assessments');
+  const doc = buildGroupReportPdf(data, todayISO());
+  pdfmake.createPdf(doc).getBuffer().then(function (buf) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="group-assessment-report-' + data.group.id + '.pdf"');
+    res.send(buf);
+  }).catch(function (e) {
+    console.error('خطأ في توليد تقرير المجموعة PDF:', e.message);
+    res.status(500).send('تعذّر توليد ملف PDF: ' + e.message);
+  });
+});
+
+router.get('/assessments/reports/group/:id.xls', async function (req, res) {
+  if (!canView(req.currentUser, 'assessments') || !canExport(req.currentUser, 'assessments')) {
+    return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  }
+  const data = await assessmentReports.groupReportData(Number(req.params.id), { from: req.query.from, to: req.query.to });
+  if (!data) return res.redirect('/assessments');
+  const rows = [];
+  data.swimmers.forEach(function (d) {
+    const s = d.swimmer, att = d.attendance.stats;
+    const levels = d.allLevels.length ? d.allLevels : [null];
+    levels.forEach(function (lvl) {
+      rows.push('<tr>'
+        + xCell(data.group.name)
+        + xCell(s.full_name, 'font-weight:700')
+        + xCell(s.membership_no)
+        + xCell(s.level_name || '—')
+        + xCell(lvl ? lvl.level.name : '—')
+        + xCell(lvl && lvl.assessed ? lvl.count : '—')
+        + xCell(lvl && lvl.ownPercent !== null ? lvl.ownPercent + '%' : '—')
+        + xCell(lvl && lvl.percent !== null ? lvl.percent + '%' : 'لم يُقيَّم')
+        + xCell(lvl && lvl.assessment ? fmtDate(lvl.assessment.date) : '—')
+        + xCell(lvl && lvl.assessment ? (lvl.assessment.coach_name || '—') : '—')
+        + xCell(d.allSkills ? d.grandAvg + '%' : '—')
+        + xCell(att.present) + xCell(att.absent) + xCell(att.excused) + xCell(att.late)
+        + xCell(att.total) + xCell(att.rate + '%')
+        + '</tr>');
+    });
+  });
+  const html = '\uFEFF' + `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8">
+    <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>التقرير الفني</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+    <style>table{border-collapse:collapse;table-layout:fixed}td,th{border:1px solid #999;padding:4px 7px;font-size:12px;font-family:Tahoma,Arial,sans-serif;vertical-align:top}th{background:#e8eef7;font-weight:700}</style></head>
+    <body dir="rtl"><table dir="rtl" style="width:1500px">
+      <thead><tr><th colspan="18" style="font-size:15px;background:#0284c7;color:#fff">التقرير الفني لمجموعة ${xEsc(data.group.name)} — ${xEsc(data.group.program_name || '')} — ${todayISO()}</th></tr>
+      <tr><th>المجموعة</th><th>اللاعب</th><th>رقم العضوية</th><th>المستوى الحالي</th><th>المستوى المقيَّم</th><th>عدد المهارات</th><th>نسبة المهارات</th><th>النسبة مع العامة</th><th>آخر تقييم</th><th>الكابتن</th><th>المتوسط العام</th><th>حضر</th><th>غاب</th><th>بعذر</th><th>متأخر</th><th>إجمالي الحضور</th><th>نسبة الحضور</th></tr></thead>
+      <tbody>${rows.join('') || '<tr><td colspan="18">لا يوجد لاعبون</td></tr>'}</tbody></table>
+      <br><table dir="rtl" style="width:700px"><tr><th>عدد اللاعبين</th><td>${data.totals.members}</td><th>لاعبون مقيَّمون</th><td>${data.totals.assessed}</td><th>متوسط التقييم</th><td>${data.totals.average}%</td></tr>
+      <tr><th>إجمالي الحضور</th><td>${data.totals.attendance.total}</td><th>حضر</th><td>${data.totals.attendance.present}</td><th>نسبة الحضور</th><td>${data.totals.attendance.rate}%</td></tr></table>
+    </body></html>`;
+  res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+  res.setHeader('Content-Disposition', "attachment; filename=\"group-assessment-report.xls\"; filename*=UTF-8''" + encodeURIComponent('تقرير-فني-' + data.group.name + '.xls'));
+  res.send(html);
+});
+
+/* دالة مساعدة: ألوان التقدير (نفس المستخدمة في تقرير اللاعب) */
+function gradeColor(score) {
+  if (score >= 85) return '#16a34a';
+  if (score >= 70) return '#0284c7';
+  if (score >= 50) return '#ca8a04';
+  if (score >= 30) return '#f97316';
+  return '#dc2626';
+}
 
 router.get('/assessments/log', async function (req, res) {
   if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -442,13 +676,26 @@ router.get('/api/assessments/criteria', async function (req, res) {
   res.json(await criteriaFor(req.query.level_id ? Number(req.query.level_id) : null));
 });
 
+/* أحدث درجات لاعب واحد — لتحديث النموذج الكامل فور تغيير اللاعب (تزامن مع الكارت السريع) */
+router.get('/api/assessments/swimmer/:id/scores', async function (req, res) {
+  if (!canView(req.currentUser, 'assessments')) return res.status(403).json({ ok: false, error: 'لا تملك صلاحية العرض' });
+  const sw = await db.prepare('SELECT id, level_id FROM swimmers WHERE id = ? AND deleted_at IS NULL').get(Number(req.params.id));
+  if (!sw) return res.status(404).json({ ok: false, error: 'اللاعب غير موجود' });
+  res.json({ ok: true, level_id: sw.level_id, scores: await latestScoresFor(sw.id) });
+});
+
 router.get('/assessments/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const values = {};
   let currentLevelId = null;
   if (req.query.swimmer) {
     const sw = await db.prepare('SELECT id, level_id FROM swimmers WHERE id=?').get(Number(req.query.swimmer));
-    if (sw) { values.swimmer_id = sw.id; currentLevelId = sw.level_id; }
+    if (sw) {
+      values.swimmer_id = sw.id;
+      currentLevelId = sw.level_id;
+      /* نفس بيانات الكارت السريع: أحدث تقييم لكل مستوى + المعايير العامة */
+      Object.assign(values, await latestScoresFor(sw.id));
+    }
   }
   /* فتح التقييم من داخل مجموعة: نعيد المستخدم لنفس المجموعة بعد الحفظ */
   let returnGroup = null;
@@ -469,19 +716,38 @@ router.get('/assessments/new', async function (req, res) {
 router.post('/assessments/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || '')) ? b.date : todayISO();
+  const swimmerId = Number(b.swimmer_id || 0);
+  if (!swimmerId) {
+    setFlash(res, { type: 'error', message: 'اختر اللاعب أولاً' });
+    return res.redirect('/assessments/new');
+  }
   const { perLevel, shared } = await parseScores(b);
   let firstId = null;
+  let levelCount = 0;
+  const savedLevelIds = [];
   for (const lid of Object.keys(perLevel)) {
     const g = perLevel[lid];
-    const overall = g.n ? Math.round((g.sum / g.n) * 1000) / 1000 : 0;
-    const info = await db.prepare(`INSERT INTO assessments (swimmer_id, coach_id, program_id, level_id, date, scores, strengths, weaknesses, recommendations, ready_to_advance, next_assessment_date, overall_percent, notes, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(b.swimmer_id, b.coach_id || null, b.program_id || null, Number(lid), b.date || new Date().toISOString().slice(0, 10), JSON.stringify(g.scores), b.strengths || '', b.weaknesses || '', b.recommendations || '', b.ready_to_advance === '1' ? 1 : 0, b.next_assessment_date || null, overall, b.notes || '', req.currentUser.id);
-    if (firstId === null) firstId = info.lastInsertRowid;
+    if (!g || !g.n) continue;
+    if (!hasNonZeroScore(g) && !(await assessmentExistsForDate(swimmerId, Number(lid), date))) continue;
+    const rid = await upsertAssessmentForDate(swimmerId, Number(lid), date, g, b, req.currentUser.id, null);
+    if (rid) {
+      await saveAssessmentMeta(rid, b);
+      savedLevelIds.push(Number(lid));
+      if (firstId === null) firstId = rid;
+      levelCount++;
+    }
   }
   /* المعايير العامة تُحفظ في سجل واحد (مستوى NULL) وتُضمَّن تلقائياً في كل المستويات داخل التقرير */
-  await upsertAssessment(b.swimmer_id, null, shared, b, req.currentUser.id);
-  const levelCount = Object.keys(perLevel).length;
+  if (shared && shared.n && (hasNonZeroScore(shared) || await assessmentExistsForDate(swimmerId, null, date))) {
+    const gid = await upsertAssessmentForDate(swimmerId, null, date, shared, b, req.currentUser.id, null);
+    if (gid) {
+      await saveAssessmentMeta(gid, b);
+      if (firstId === null) firstId = gid;
+    }
+  }
+  /* تعيين مستوى اللاعب إن لم يكن له مستوى (اختيار المدرب أو أول مستوى تم تقييمه) */
+  await assignFirstLevel(swimmerId, b.level_id, savedLevelIds);
   if (levelCount) {
     audit(req.currentUser.id, req.currentUser.full_name, 'add', 'assessments', firstId, 'تقييم على ' + levelCount + ' مستوى', req);
     setFlash(res, { type: 'success', message: 'تم حفظ تقييمات ' + levelCount + ' مستوى بنجاح' });
@@ -582,6 +848,8 @@ router.post('/assessments/:id/edit', async function (req, res) {
   const b = req.body;
   const row = await db.prepare('SELECT * FROM assessments WHERE id=?').get(id);
   if (!row) return res.redirect('/assessments');
+  const swimmerId = Number(b.swimmer_id || row.swimmer_id);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || '')) ? b.date : row.date;
   const { perLevel, shared } = await parseScores(b);
   const primaryIsGeneral = row.level_id == null;
   const primaryG = primaryIsGeneral
@@ -589,14 +857,23 @@ router.post('/assessments/:id/edit', async function (req, res) {
     : (perLevel[row.level_id] || { scores: {}, n: 0, sum: 0 });
   const overall = primaryG.n ? Math.round((primaryG.sum / primaryG.n) * 1000) / 1000 : 0;
   await db.prepare(`UPDATE assessments SET swimmer_id=?, coach_id=?, program_id=?, level_id=?, date=?, scores=?, strengths=?, weaknesses=?, recommendations=?, ready_to_advance=?, next_assessment_date=?, overall_percent=?, notes=? WHERE id=?`)
-    .run(b.swimmer_id, b.coach_id || null, b.program_id || null, primaryIsGeneral ? null : row.level_id, b.date, JSON.stringify(primaryG.scores), b.strengths || '', b.weaknesses || '', b.recommendations || '', b.ready_to_advance === '1' ? 1 : 0, b.next_assessment_date || null, overall, b.notes || '', id);
-  if (!primaryIsGeneral) {
-    delete perLevel[row.level_id];
-    for (const lid of Object.keys(perLevel)) {
-      await upsertAssessment(b.swimmer_id, Number(lid), perLevel[lid], b, req.currentUser.id);
-    }
-    await upsertAssessment(b.swimmer_id, null, shared, b, req.currentUser.id);
+    .run(swimmerId, b.coach_id || null, b.program_id || null, primaryIsGeneral ? null : row.level_id, date, JSON.stringify(primaryG.scores), b.strengths || '', b.weaknesses || '', b.recommendations || '', b.ready_to_advance === '1' ? 1 : 0, b.next_assessment_date || null, overall, b.notes || '', id);
+
+  /* بقية المستويات تُحفظ بنفس تاريخ التقييم (تزامن كامل مع الكارت السريع) */
+  const savedLevelIds = [];
+  for (const lid of Object.keys(perLevel)) {
+    if (!primaryIsGeneral && String(lid) === String(row.level_id)) continue;
+    const g = perLevel[lid];
+    if (!g || !g.n) continue;
+    if (!hasNonZeroScore(g) && !(await assessmentExistsForDate(swimmerId, Number(lid), date))) continue;
+    await upsertAssessmentForDate(swimmerId, Number(lid), date, g, b, req.currentUser.id, null);
+    savedLevelIds.push(Number(lid));
   }
+  if (!primaryIsGeneral && shared && shared.n && (hasNonZeroScore(shared) || await assessmentExistsForDate(swimmerId, null, date))) {
+    await upsertAssessmentForDate(swimmerId, null, date, shared, b, req.currentUser.id, null);
+  }
+  await assignFirstLevel(swimmerId, b.level_id, savedLevelIds);
+
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'assessments', id, 'تعديل تقييم شامل', req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات على جميع المستويات' });
   const returnGroupId = Number(b.group_id || 0);

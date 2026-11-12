@@ -193,6 +193,31 @@
     }
   });
   const swimSel = document.querySelector('select[name="swimmer_id"]');
+  const levelHidden = document.querySelector('form input[name="level_id"]');
+  function applyScores(scores) {
+    scores = scores || {};
+    document.querySelectorAll('.criteria-range').forEach(function (r) {
+      const raw = scores[r.name];
+      const v = raw === undefined || raw === null || raw === '' ? 0 : Math.min(100, Math.max(0, parseInt(raw, 10) || 0));
+      r.value = v;
+      const num = r.nextElementSibling ? r.nextElementSibling.querySelector('.criteria-num') : null;
+      if (num) num.value = v;
+    });
+    recalcAll();
+  }
+  let reqToken = 0;
+  function loadSwimmer(id) {
+    if (!id) { applyScores({}); if (levelHidden) levelHidden.value = ''; return; }
+    const token = ++reqToken;
+    fetch('/api/assessments/swimmer/' + encodeURIComponent(id) + '/scores', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (token !== reqToken || !j || !j.ok) return;
+        applyScores(j.scores);
+        if (levelHidden) levelHidden.value = j.level_id != null ? j.level_id : '';
+      })
+      .catch(function () {});
+  }
   if (swimSel) {
     swimSel.addEventListener('change', function () {
       const opt = swimSel.options[swimSel.selectedIndex];
@@ -205,6 +230,7 @@
           target.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
       }
+      loadSwimmer(swimSel.value);
     });
   }
   recalcAll();

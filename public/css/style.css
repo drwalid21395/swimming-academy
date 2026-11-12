@@ -1334,3 +1334,12 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
 .assess-level-pick .form-control { max-width: 360px; }
 .assess-level-pick .form-hint { margin: 0; }
 .assess-swimmer .assess-panel .assess-level-pick { background: var(--card); border: 1px dashed var(--primary); border-radius: 10px; padding: 10px 12px; }
+.assess-quick-hint { font-size: 12px; color: var(--text-muted); background: rgba(2,132,199,.07); border: 1px solid rgba(2,132,199,.18); border-radius: 10px; padding: 8px 11px; margin-bottom: 10px; display: flex; align-items: flex-start; gap: 7px; line-height: 1.6; }
+.assess-all-levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 12px; align-items: start; }
+.assess-level-card .assess-crit-title { justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.assess-level-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.assess-level-card.is-current { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(2,132,199,.1); }
+.assess-level-card .score-pill { margin-inline-start: auto; }
+@media (max-width: 640px) {
+  .assess-all-levels { grid-template-columns: 1fr; }
+}

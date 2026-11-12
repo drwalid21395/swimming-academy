@@ -8,6 +8,7 @@ const crud = require('../lib/crud');
 const { uploadAndStore, removeUploaded } = require('../lib/upload');
 const { activeSport, effectiveSport, sportClause, progClause, swimmerClause, swimmerSportClause, groupClause, sessionClause } = require('../lib/sport-context');
 const pdfmake = require('../lib/pdf');
+const assessmentReportData = require('../lib/assessment-report');
 const router = express.Router();
 
 const GUARDIAN_RELATIONS = ['أب', 'أم', 'عم', 'خال', 'أخ', 'أخت', 'جد', 'جدة', 'أخرى'];
@@ -658,59 +659,8 @@ router.get('/swimmers/:id/attendance-print', async function (req, res) {
 /* ============================================================== */
 /*        ملف اللاعبين الشامل: بيانات شخصية + صور + ملفات + تقييمات       */
 /* ============================================================== */
-function buildSkills(sc, criteriaMap) {
-  const skills = Object.entries(sc).map(function (e) {
-    const c = criteriaMap[Number(e[0])];
-    return {
-      name: c ? c.name : String(e[0]),
-      score: Number(e[1]) || 0,
-      isGeneral: !!(c && (c.level_id === null || c.level_id === undefined)),
-      category: c ? c.category : ''
-    };
-  });
-  const total = skills.reduce((s, k) => s + k.score, 0);
-  const avg = skills.length ? Math.round((total / skills.length) * 1000) / 1000 : 0;
-  return { skills, total, avg, count: skills.length };
-}
-
-async function swimmerAssessmentReport(swimmerId) {
-  const swimmer = await db.prepare(`SELECT s.*, l.name AS level_name, gr.name AS group_name, c.full_name AS coach_name, p.name AS program_name FROM swimmers s
-    LEFT JOIN levels l ON l.id = s.level_id LEFT JOIN groups gr ON gr.id = s.group_id
-    LEFT JOIN coaches c ON c.id = s.coach_id LEFT JOIN programs p ON p.id = s.program_id WHERE s.id = ?`).get(swimmerId);
-  if (!swimmer) return null;
-  const criteriaMap = {};
-  (await db.prepare('SELECT * FROM assessment_criteria').all()).forEach(c => { criteriaMap[c.id] = c; });
-  /* أحدث تقييم للمعايير العامة (مستوى NULL) — مصدر واحد يُضمَّن في كل المستويات */
-  const genRow = await db.prepare(`SELECT a.*, c.full_name AS coach_name FROM assessments a LEFT JOIN coaches c ON c.id = a.coach_id
-    WHERE a.swimmer_id = ? AND a.level_id IS NULL ORDER BY a.date DESC, a.id DESC`).get(swimmerId);
-  let gen = { skills: [], total: 0, avg: 0, count: 0 };
-  if (genRow) {
-    let sc = {};
-    try { sc = JSON.parse(genRow.scores || '{}'); } catch (e) { sc = {}; }
-    gen = buildSkills(sc, criteriaMap);
-    gen.assessment = genRow;
-  }
-  const raw = await db.prepare(`SELECT a.*, l.name AS level_name, l.order_no AS level_order, c.full_name AS coach_name FROM assessments a
-    LEFT JOIN levels l ON l.id = a.level_id LEFT JOIN coaches c ON c.id = a.coach_id
-    WHERE a.swimmer_id = ? AND a.level_id IS NOT NULL ORDER BY a.date DESC, a.id DESC`).all(swimmerId);
-  const seen = {};
-  const latest = [];
-  raw.forEach(a => { if (!seen[a.level_id]) { seen[a.level_id] = true; latest.push(a); } });
-  latest.sort((x, y) => (x.level_order || 0) - (y.level_order || 0));
-  const levels = latest.map(function (a) {
-    let sc = {};
-    try { sc = JSON.parse(a.scores || '{}'); } catch (e) { sc = {}; }
-    const own = buildSkills(sc, criteriaMap);
-    const skills = own.skills.concat(gen.skills);
-    const total = own.total + gen.total;
-    const count = own.count + gen.count;
-    const avg = count ? Math.round((total / count) * 1000) / 1000 : 0;
-    return { assessment: a, skills, total, avg, count, ownCount: own.count };
-  }).filter(l => l.skills.length);
-  const allSkills = levels.reduce((n, l) => n + l.count, 0);
-  const grandSum = levels.reduce((s, l) => s + l.total, 0);
-  const grandAvg = allSkills ? Math.round((grandSum / allSkills) * 1000) / 1000 : 0;
-  return { swimmer, levels, general: gen, totalLevels: levels.length, allSkills, grandSum, grandAvg };
+async function swimmerAssessmentReport(swimmerId, opts) {
+  return await assessmentReportData.swimmerReportData(swimmerId, opts);
 }
 
 /* تقرير شامل: تقييمات اللاعب على كل المستويات (مستوى ← مهارات + نسب) */
@@ -763,6 +713,37 @@ function buildReportPdf(data, todayStr) {
     ]] }, layout: { defaultBorder: true, hLineWidth: () => 0, vLineWidth: () => 0, paddingLeft: () => 4, paddingRight: () => 4, paddingTop: () => 6, paddingBottom: () => 6 }, margin: [0, 2, 0, 0] },
     { text: 'ملاحظة: المعايير العامة (مثل السرعة، الالتزام، الانضباط) مُضمَّنة تلقائياً في متوسط كل مستوى وتُقاس مرّة واحدة.', style: 'note', margin: [0, 6, 0, 0] }
   ];
+
+  /* تفصيل جميع المستويات: المقيّم وغير المقيّم + نسبته */
+  if (data.allLevels && data.allLevels.length) {
+    content.push({ text: 'تفصيل جميع المستويات والنسب المئوية', style: 'sectionTitle', margin: [0, 14, 0, 4] });
+    const levelRows = data.allLevels.map(function (lvl) {
+      return [
+        { text: lvl.level.name, style: 'td', alignment: 'right' },
+        { text: lvl.assessed ? String(lvl.count) : '—', style: 'td' },
+        { text: lvl.percent !== null ? lvl.percent + '%' : 'لم يُقيَّم', style: 'td', bold: true, color: lvl.percent !== null ? gradeColor(lvl.percent) : '#9ca3af' },
+        { text: lvl.assessment ? fmtDate(lvl.assessment.date) : '—', style: 'td' },
+        { text: lvl.assessment ? (lvl.assessment.coach_name || '—') : '—', style: 'td' }
+      ];
+    });
+    content.push({ table: { headerRows: 1, widths: ['26%', 44, 60, 90, '*'], body: [
+      [{ text: 'المستوى', style: 'th' }, { text: 'المهارات', style: 'th' }, { text: 'النسبة', style: 'th' }, { text: 'آخر تقييم', style: 'th' }, { text: 'الكابتن', style: 'th' }]
+    ].concat(levelRows) }, layout: 'lightHorizontalLines' });
+  }
+
+  /* الحضور والغياب */
+  const att = data.attendance && data.attendance.stats;
+  if (att) {
+    content.push({ text: 'الحضور والغياب', style: 'sectionTitle', margin: [0, 14, 0, 4] });
+    content.push({ table: { headerRows: 1, widths: ['16.6%', '16.6%', '16.6%', '16.6%', '16.6%', '17%'], body: [
+      [{ text: 'إجمالي الحضور', style: 'th' }, { text: 'حضر', style: 'th' }, { text: 'غاب', style: 'th' }, { text: 'بعذر', style: 'th' }, { text: 'متأخر', style: 'th' }, { text: 'نسبة الحضور', style: 'th' }],
+      [
+        { text: String(att.total), style: 'td' }, { text: String(att.present), style: 'td', color: '#16a34a' },
+        { text: String(att.absent), style: 'td', color: '#dc2626' }, { text: String(att.excused), style: 'td' },
+        { text: String(att.late), style: 'td', color: '#ca8a04' }, { text: att.rate + '%', style: 'td', bold: true }
+      ]
+    ] }, layout: 'lightHorizontalLines' });
+  }
 
   const buildSection = function (title, tag, tableRows, avg, coach, dateStr, ready) {
     return [
@@ -875,6 +856,57 @@ function buildReportPdf(data, todayStr) {
 }
 
 /* توليد ملف PDF حقيقي منسق (يُفتح في تبويب جديد / يُحمّل مباشرة) */
+router.get('/swimmers/:id/assessment-report.xls', async function (req, res) {
+  if (!canView(req.currentUser, 'assessments') || !canExport(req.currentUser, 'assessments')) {
+    return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  }
+  const data = await swimmerAssessmentReport(Number(req.params.id));
+  if (!data) return res.redirect('/swimmers');
+  const s = data.swimmer;
+  const levelRows = (data.allLevels || []).map(function (lvl) {
+    return '<tr>'
+      + xlsCell(lvl.level.name, 'b')
+      + xlsCell(lvl.assessed ? lvl.count : '—')
+      + xlsCell(lvl.ownPercent !== null ? lvl.ownPercent + '%' : '—')
+      + xlsCell(lvl.percent !== null ? lvl.percent + '%' : 'لم يُقيَّم')
+      + xlsCell(lvl.assessment ? fmtDate(lvl.assessment.date) : '—')
+      + xlsCell(lvl.assessment ? (lvl.assessment.coach_name || '—') : '—')
+      + '</tr>';
+  }).join('');
+  const skillRows = (data.levels || []).map(function (lvl) {
+    return lvl.skills.map(function (sk, i) {
+      return '<tr>'
+        + xlsCell(lvl.assessment.level_name)
+        + xlsCell(i + 1)
+        + xlsCell(sk.name + (sk.isGeneral ? ' (عام)' : ''))
+        + xlsCell(sk.score + '%')
+        + xlsCell(lvl.assessment ? fmtDate(lvl.assessment.date) : '—')
+        + xlsCell(lvl.assessment ? (lvl.assessment.coach_name || '—') : '—')
+        + '</tr>';
+    }).join('');
+  }).join('');
+  const att = (data.attendance && data.attendance.stats) || { total: 0, present: 0, absent: 0, excused: 0, late: 0, rate: 0 };
+  const attRows = (data.attendance && data.attendance.records || []).slice(0, 200).map(function (r) {
+    const label = { present: 'حضر', absent: 'غاب', excused: 'بعذر', late: 'متأخر' }[r.status] || r.status;
+    return '<tr>' + xlsCell(fmtDate(r.date)) + xlsCell(r.title || '—') + xlsCell(r.start_time || '—') + xlsCell(label) + xlsCell(r.reason || '—') + '</tr>';
+  }).join('');
+  const html = '\uFEFF' + `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8">
+    <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>تقرير التقييم</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+    <style>table{border-collapse:collapse;table-layout:fixed}td,th{border:1px solid #999;padding:4px 7px;font-size:12px;font-family:Tahoma,Arial,sans-serif}th{background:#e8eef7;font-weight:700}td.b{font-weight:700}.title{font-size:16px;font-weight:800;border:none}</style></head>
+    <body dir="rtl">
+      <table dir="rtl" style="width:760px"><tr><td class="title" colspan="6">تقرير التقييم الفني — ${s.full_name}</td></tr>
+      <tr><th>اللاعب</th><td>${s.full_name}</td><th>رقم العضوية</th><td>${s.membership_no || '—'}</td><th>المجموعة</th><td>${s.group_name || '—'}</td></tr>
+      <tr><th>المستوى الحالي</th><td>${s.level_name || '—'}</td><th>الكابتن</th><td>${s.coach_name || '—'}</td><th>المتوسط العام</th><td>${data.grandAvg}%</td></tr></table>
+      <br><table dir="rtl" style="width:760px"><thead><tr><th>المستوى</th><th>عدد المهارات</th><th>نسبة المهارات</th><th>النسبة مع المعايير العامة</th><th>آخر تقييم</th><th>الكابتن</th></tr></thead><tbody>${levelRows || '<tr><td colspan="6">لا توجد مستويات</td></tr>'}</tbody></table>
+      <br><table dir="rtl" style="width:760px"><thead><tr><th>المستوى</th><th>#</th><th>المهارة / المعيار</th><th>النسبة</th><th>تاريخ التقييم</th><th>الكابتن</th></tr></thead><tbody>${skillRows || '<tr><td colspan="6">لا توجد تقييمات مسجلة</td></tr>'}</tbody></table>
+      <br><table dir="rtl" style="width:760px"><thead><tr><th>سجل الحضور</th><th>حضر</th><th>غاب</th><th>بعذر</th><th>متأخر</th><th>نسبة الحضور</th></tr></thead><tbody><tr><td>${att.total}</td><td>${att.present}</td><td>${att.absent}</td><td>${att.excused}</td><td>${att.late}</td><td>${att.rate}%</td></tr></tbody></table>
+      <br><table dir="rtl" style="width:760px"><thead><tr><th>التاريخ</th><th>الجلسة</th><th>الوقت</th><th>الحالة</th><th>السبب / الملاحظة</th></tr></thead><tbody>${attRows || '<tr><td colspan="5">لا توجد سجلات حضور</td></tr>'}</tbody></table>
+    </body></html>`;
+  res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+  res.setHeader('Content-Disposition', "attachment; filename=\"assessment-report.xls\"; filename*=UTF-8''" + encodeURIComponent('تقرير-تقييم-' + (s.membership_no || s.id) + '.xls'));
+  res.send(html);
+});
+
 router.get('/swimmers/:id/assessment-report/pdf', async function (req, res) {
   if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const data = await swimmerAssessmentReport(Number(req.params.id));
