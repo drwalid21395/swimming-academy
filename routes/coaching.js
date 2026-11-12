@@ -663,23 +663,31 @@ function buildAllGroupsReportPdf(groups, todayStr) {
 function round(v) { return Math.round(v * 1000) / 1000; }
 
 /* جدول Excel أفقي: المستويات والمهارات في الصف العلوي، وكل لاعب في صف واحد */
-function buildGroupXlsTable(data) {
+function buildGroupXlsTable(data, opts) {
+  opts = opts || {};
   const levelBlocks = (data.levels || []).map(function (lvl) {
     const criteria = (data.criteriaByLevel && data.criteriaByLevel[String(lvl.id)]) || [];
     return { level: lvl, criteria: criteria, colCount: criteria.length + 3 };
   }).filter(function (b) { return b.colCount > 3; });
-  const fixedCols = 5; // اسم، عضوية، مستوى حالي، حضور، متوسط عام
+  const fixedCols = 6; // اسم، عضوية، كابتن، مستوى حالي، حضور، متوسط عام
   const totalCols = fixedCols + levelBlocks.reduce(function (n, b) { return n + b.colCount; }, 0);
 
+  let html = '';
+  if (opts.showTitle !== false) {
+    html += '<thead><tr><th colspan="' + totalCols + '" style="font-size:15px;background:#0284c7;color:#fff">التقرير الفني لمجموعة ' + xEsc(data.group.name) + ' — ' + xEsc(data.group.program_name || '') + ' — ' + todayISO() + '</th></tr>';
+  } else {
+    html += '<thead>';
+  }
+
   // صف المستويات (الصف العلوي)
-  let header1 = '<tr><th>اللاعب</th><th>رقم العضوية</th><th>المستوى الحالي</th><th>الحضور</th><th>المتوسط العام</th>';
+  let header1 = '<tr><th>اللاعب</th><th>رقم العضوية</th><th>الكابتن</th><th>المستوى الحالي</th><th>الحضور</th><th>المتوسط العام</th>';
   levelBlocks.forEach(function (b) {
     header1 += '<th colspan="' + b.colCount + '" style="background:#dbeafe">' + xEsc(b.level.name) + '</th>';
   });
   header1 += '</tr>';
 
   // صف المهارات / الملخصات
-  let header2 = '<tr><th></th><th></th><th></th><th></th><th></th>';
+  let header2 = '<tr><th></th><th></th><th></th><th></th><th></th><th></th>';
   levelBlocks.forEach(function (b) {
     b.criteria.forEach(function (c) { header2 += '<th>' + xEsc(c.name) + '</th>'; });
     header2 += '<th>عدد</th><th>متوسط المهارات</th><th>مع العامة</th>';
@@ -696,6 +704,7 @@ function buildGroupXlsTable(data) {
     });
     let cells = xCell(s.full_name, 'font-weight:700')
       + xCell(s.membership_no)
+      + xCell(s.coach_name || '—')
       + xCell(s.level_name || '—')
       + xCell(attText, 'text-align:center')
       + xCell(d.allSkills ? d.grandAvg + '%' : '—', 'text-align:center;font-weight:700');
@@ -712,7 +721,7 @@ function buildGroupXlsTable(data) {
     return '<tr>' + cells + '</tr>';
   });
 
-  return '<table dir="rtl" style="width:' + Math.max(900, totalCols * 90) + 'px"><thead><tr><th colspan="' + totalCols + '" style="font-size:15px;background:#0284c7;color:#fff">التقرير الفني لمجموعة ' + xEsc(data.group.name) + ' — ' + xEsc(data.group.program_name || '') + ' — ' + todayISO() + '</th></tr>'
+  return '<table dir="rtl" style="width:' + Math.max(900, totalCols * 90) + 'px">' + html
     + header1 + header2 + '</thead><tbody>' + (rows.join('') || ('<tr><td colspan="' + totalCols + '">لا يوجد لاعبون</td></tr>')) + '</tbody></table>';
 }
 
@@ -796,10 +805,11 @@ router.get('/assessments/reports/all.xls', async function (req, res) {
   });
   const overallAvg = grandCount ? round(grandSum / grandCount) : 0;
   const overallRate = totalSessions ? Math.round((totalPresent / totalSessions) * 100) : 0;
+  const titleBlock = '<table dir="rtl" style="width:900px"><tr><th colspan="6" style="font-size:16px;background:#0284c7;color:#fff">التقرير الفني المجمع — كل المجموعات — ' + todayISO() + '</th></tr></table>';
   const summary = '<table dir="rtl" style="width:700px"><tr><th>عدد المجموعات</th><td>' + groups.length + '</td><th>عدد اللاعبين</th><td>' + totalMembers + '</td><th>لاعبون مقيَّمون</th><td>' + totalAssessed + '</td></tr>'
     + '<tr><th>متوسط التقييم</th><td>' + overallAvg + '%</td><th>إجمالي الحضور</th><td>' + totalSessions + '</td><th>نسبة الحضور</th><td>' + overallRate + '%</td></tr></table>';
-  const sheets = groups.map(function (g) { return { name: g.group.name || ('مجموعة ' + g.group.id), html: buildGroupXlsTable(g) }; });
-  const html = xlsWorkbook(sheets, { body: summary });
+  const sheets = groups.map(function (g) { return { name: g.group.name || ('مجموعة ' + g.group.id), html: buildGroupXlsTable(g, { showTitle: false }) }; });
+  const html = xlsWorkbook(sheets, { body: titleBlock + '<br>' + summary });
   res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
   res.setHeader('Content-Disposition', "attachment; filename=\"all-groups-assessment-report.xls\"; filename*=UTF-8''" + encodeURIComponent('تقرير-فني-كل-المجموعات.xls'));
   res.send(html);
