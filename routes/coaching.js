@@ -1374,7 +1374,7 @@ router.get('/teams', async function (req, res) {
 
 router.get('/teams/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  res.render('form', { form: { title: 'فريق جديد', subtitle: 'إنشاء فريق سباحة', icon: 'fa-plus', active: 'teams', action: '/teams/new', fields: teamFields({}, res.locals.adminSports || [], activeSport(req)), values: {}, submitLabel: 'إنشاء الفريق', cancelUrl: '/teams', csrf: '' } });
+  res.render('form', { form: { title: 'فريق جديد', subtitle: 'إنشاء فريق سباحة', icon: 'fa-plus', active: 'teams', action: '/teams/new', fields: await teamFields({}, res.locals.adminSports || [], activeSport(req)), values: {}, submitLabel: 'إنشاء الفريق', cancelUrl: '/teams', csrf: '' } });
 });
 router.post('/teams/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -1402,7 +1402,7 @@ router.get('/teams/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const row = await db.prepare('SELECT * FROM teams WHERE id=?').get(Number(req.params.id));
   if (!row) return res.redirect('/teams');
-  res.render('form', { form: { title: 'تعديل الفريق', subtitle: row.name, icon: 'fa-pen', active: 'teams', action: '/teams/' + row.id + '/edit', fields: teamFields(row, res.locals.adminSports || [], activeSport(req)), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/teams/' + row.id, csrf: '' } });
+  res.render('form', { form: { title: 'تعديل الفريق', subtitle: row.name, icon: 'fa-pen', active: 'teams', action: '/teams/' + row.id + '/edit', fields: await teamFields(row, res.locals.adminSports || [], activeSport(req)), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/teams/' + row.id, csrf: '' } });
 });
 router.post('/teams/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
