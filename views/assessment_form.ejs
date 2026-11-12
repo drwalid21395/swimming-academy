@@ -2,14 +2,21 @@
 <div class="page-head">
   <div>
     <div class="page-title"><i class="fas <%= isEdit ? 'fa-pen' : 'fa-clipboard-check' %>"></i> <%= title %></div>
-    <div class="page-sub">تقييم مهارات اللاعب على جميع المستويات</div>
+    <div class="page-sub">تقييم مهارات اللاعب على جميع المستويات<% if (typeof returnGroup !== 'undefined' && returnGroup) { %> — مجموعة: <b><%= returnGroup.name %></b><% } %></div>
   </div>
+  <div class="spacer"></div>
+  <% if (typeof returnGroup !== 'undefined' && returnGroup) { %>
+    <a href="/assessments/groups/<%= returnGroup.id %>" class="btn btn-outline"><i class="fas fa-arrow-right"></i> رجوع للمجموعة</a>
+  <% } else { %>
+    <a href="/assessments" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل التقييمات</a>
+  <% } %>
 </div>
 
 <div class="card">
   <div class="card-body">
     <form method="POST" action="<%= action %>">
       <input type="hidden" name="level_id" value="<%= values.level_id !== undefined && values.level_id !== null ? values.level_id : '' %>">
+      <input type="hidden" name="group_id" value="<%= values.group_id !== undefined && values.group_id !== null ? values.group_id : '' %>">
       <div class="form-grid">
         <div class="full form-section-title"><i class="fas fa-user"></i> بيانات التقييم</div>
         <div class="form-group">
@@ -131,7 +138,7 @@
       </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-floppy-disk"></i> <%= isEdit ? 'حفظ التعديلات' : 'حفظ التقييم' %></button>
-        <a href="<%= isEdit ? '/assessments' : '/assessments' %>" class="btn btn-outline btn-lg"><i class="fas fa-xmark"></i> إلغاء</a>
+        <a href="<%= (typeof returnGroup !== 'undefined' && returnGroup) ? '/assessments/groups/' + returnGroup.id : (isEdit ? '/assessments/log' : '/assessments') %>" class="btn btn-outline btn-lg"><i class="fas fa-xmark"></i> إلغاء</a>
       </div>
     </form>
   </div>

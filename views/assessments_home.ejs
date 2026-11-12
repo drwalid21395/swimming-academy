@@ -1,0 +1,63 @@
+<%- include('partials/layout_top', { title: title, active: 'assessments' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-clipboard-check"></i> التقييمات الفنية</div>
+    <div class="page-sub">كل المجموعات في مكان واحد — ادخل أي مجموعة لتقييم لاعبيها، ويُحفظ التقييم تلقائياً</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex flex-wrap gap-1">
+    <% if (canAdd(user, 'assessments')) { %>
+      <a href="/assessments/new" class="btn btn-primary"><i class="fas fa-plus"></i> تقييم جديد</a>
+    <% } %>
+    <a href="/assessments/log" class="btn btn-outline"><i class="fas fa-list-check"></i> سجل التقييمات</a>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="k-val text-primary"><%= groups.length %></div><div class="k-lbl">المجموعات</div></div>
+  <div class="kpi"><div class="k-val"><%= totalMembers %></div><div class="k-lbl">إجمالي اللاعبين</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= assessedToday %></div><div class="k-lbl">تم تقييمهم اليوم</div></div>
+  <div class="kpi"><div class="k-val text-warning"><%= ungroupedCount %></div><div class="k-lbl">لاعبون بدون مجموعة</div></div>
+</div>
+
+<% if (groups.length) { %>
+  <div class="assess-groups-grid">
+    <% groups.forEach(function (g) { %>
+      <a class="assess-group-card" href="/assessments/groups/<%= g.id %>">
+        <span class="assess-group-icon"><i class="fas fa-people-group"></i></span>
+        <span class="assess-group-body">
+          <span class="assess-group-name"><%= g.name %></span>
+          <span class="assess-group-meta"><%= g.program_name || 'بدون برنامج' %><%= g.coach_name ? ' · ' + g.coach_name : '' %></span>
+          <span class="assess-group-stats">
+            <span><i class="fas fa-user-group"></i> <%= g.members %> لاعب</span>
+            <span><i class="fas fa-circle-check"></i> <%= g.assessed_today %> اليوم</span>
+          </span>
+        </span>
+        <i class="fas fa-chevron-left assess-group-arrow"></i>
+      </a>
+    <% }); %>
+  </div>
+<% } else { %>
+  <div class="card">
+    <div class="empty-state">
+      <i class="fas fa-people-group"></i>
+      <p>لا توجد مجموعات بعد — أنشئ مجموعة أولاً ثم عد لتقييم لاعبيها</p>
+      <% if (canView(user, 'groups')) { %>
+        <a href="/groups/new" class="btn btn-primary" style="margin-top:14px"><i class="fas fa-plus"></i> إنشاء مجموعة</a>
+      <% } %>
+    </div>
+  </div>
+<% } %>
+
+<% if (ungroupedCount > 0) { %>
+  <div class="card mt-2">
+    <div class="card-body flex items-center gap-2" style="flex-wrap:wrap">
+      <span class="assess-group-icon" style="background:linear-gradient(135deg,#f59e0b,#f97316)"><i class="fas fa-user-plus"></i></span>
+      <div style="flex:1;min-width:200px">
+        <b><%= ungroupedCount %> لاعب غير مضاف إلى أي مجموعة</b>
+        <div class="page-sub">افتح أي مجموعة من الأعلى لإضافتهم إليها قبل تقييمهم — يقتصر خيار الإضافة على اللاعبين غير المضافين لأي مجموعة.</div>
+      </div>
+    </div>
+  </div>
+<% } %>
+<%- include('partials/layout_bottom') %>

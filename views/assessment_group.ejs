@@ -1,0 +1,215 @@
+<%- include('partials/layout_top', { title: title, active: 'assessments' }) %>
+<%
+  var canAssess = canAdd(user, 'assessments') || canEdit(user, 'assessments');
+  var assessedToday = members.filter(function (m) { return Number(m.assessed_today || 0) > 0; }).length;
+  var neverAssessed = members.filter(function (m) { return !m.last_date; }).length;
+%>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-people-group"></i> <%= group.name %></div>
+    <div class="page-sub"><%= group.program_name || 'بدون برنامج' %><%= group.coach_name ? ' · الكابتن: ' + group.coach_name : '' %> · <%= members.length %> لاعب</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex flex-wrap gap-1">
+    <a href="/assessments" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل المجموعات</a>
+    <a href="/assessments/log" class="btn btn-ghost"><i class="fas fa-list-check"></i> سجل التقييمات</a>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="k-val text-primary"><%= members.length %></div><div class="k-lbl">أعضاء المجموعة</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= assessedToday %></div><div class="k-lbl">تم تقييمهم اليوم</div></div>
+  <div class="kpi"><div class="k-val text-warning"><%= neverAssessed %></div><div class="k-lbl">لم يُقيَّموا بعد</div></div>
+</div>
+
+<% if (canAssess) { %>
+  <div class="card mt-2" id="addSwimmerCard">
+    <div class="card-header">
+      <h3><i class="fas fa-user-plus"></i> إضافة لاعب إلى المجموعة</h3>
+      <span class="badge badge-info"><%= ungrouped.length %> لاعب بدون مجموعة</span>
+    </div>
+    <div class="card-body">
+      <% if (ungrouped.length) { %>
+        <form method="POST" action="/assessments/groups/<%= group.id %>/add-swimmer" class="chip-add">
+          <select name="swimmer_id" class="form-control" required style="flex:1;min-width:220px">
+            <option value="">— اختر اللاعب —</option>
+            <% ungrouped.forEach(function (s) { %>
+              <option value="<%= s.id %>"><%= s.full_name %> (<%= s.membership_no %>)</option>
+            <% }); %>
+          </select>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> إضافة إلى المجموعة</button>
+        </form>
+        <div class="form-hint">تظهر هنا فقط أسماء اللاعبين غير المضافين لأي مجموعة. بعد الإضافة يدخل اللاعب هذه المجموعة ويظهر مباشرة في قائمة التقييم.</div>
+      <% } else { %>
+        <div class="form-hint"><i class="fas fa-circle-check text-success"></i> جميع اللاعبين مضافون بالفعل إلى مجموعات.</div>
+      <% } %>
+    </div>
+  </div>
+<% } %>
+
+<div class="card mt-2">
+  <div class="card-header">
+    <h3><i class="fas fa-user-group"></i> لاعبو المجموعة (<%= members.length %>)</h3>
+    <span class="badge badge-primary">اضغط على أي لاعب لتقييمه — الحفظ تلقائي</span>
+  </div>
+  <div class="card-body">
+    <% if (!members.length) { %>
+      <div class="empty-state">
+        <i class="fas fa-user-slash"></i>
+        <p>لا يوجد لاعبون في هذه المجموعة بعد</p>
+        <% if (ungrouped.length) { %><div class="form-hint">أضف لاعباً من القائمة بالأعلى ليظهر هنا للتقييم.</div><% } %>
+      </div>
+    <% } %>
+
+    <% members.forEach(function (m) { %>
+      <%
+        var crit = (m.level_id !== null && m.level_id !== undefined && criteriaByLevel[String(m.level_id)]) ? criteriaByLevel[String(m.level_id)] : [];
+        var sc = savedScores[m.id] || {};
+        var lp = (m.last_percent !== null && m.last_percent !== undefined) ? Math.round(Number(m.last_percent)) : null;
+        var scoreCls = lp === null ? 'score-low' : (lp >= 80 ? 'score-high' : (lp >= 60 ? 'score-mid' : 'score-low'));
+      %>
+      <details class="assess-swimmer" data-swimmer-id="<%= m.id %>" data-last-date="<%= m.last_date || '' %>">
+        <summary>
+          <span class="assess-avatar"><%= (m.full_name || 'ل').trim().charAt(0) %></span>
+          <span class="assess-name">
+            <b><%= m.full_name %></b>
+            <small><%= m.membership_no || '' %><%= m.level_name ? ' · ' + m.level_name : ' · بدون مستوى' %></small>
+          </span>
+          <span class="assess-last">
+            <span class="score-pill <%= scoreCls %>" data-score><%= lp === null ? '—' : lp + '%' %></span>
+            <small data-last-date><%= m.last_date ? fmtDate(m.last_date) : 'لم يُقيَّم بعد' %></small>
+          </span>
+          <i class="fas fa-chevron-down assess-chev"></i>
+        </summary>
+        <div class="assess-panel">
+          <% if (!crit.length && !generalCriteria.length) { %>
+            <div class="form-hint">لا توجد معايير تقييم مسجلة لهذا المستوى. أضف المهارات من إعدادات المستويات أو استخدم التقييم الكامل.</div>
+            <div class="assess-panel-foot">
+              <span class="assess-save-state"><i class="fas fa-circle-info"></i> لا توجد مهارات لتقييمها</span>
+              <a href="/assessments/new?swimmer=<%= m.id %>&group=<%= group.id %>" class="btn btn-outline btn-sm"><i class="fas fa-pen-to-square"></i> تقييم كامل</a>
+            </div>
+          <% } else if (!canAssess) { %>
+            <div class="form-hint">لديك صلاحية العرض فقط.</div>
+          <% } else { %>
+            <form class="assess-quick-form" method="POST" action="/assessments/groups/<%= group.id %>/swimmer/<%= m.id %>/quick" data-quick-form>
+              <div class="assess-criteria-grid">
+                <% if (generalCriteria.length) { %>
+                  <div class="assess-crit-group">
+                    <div class="assess-crit-title"><i class="fas fa-star text-warning"></i> المعايير العامة</div>
+                    <% generalCriteria.forEach(function (c) { var v = (sc[c.id] !== undefined && sc[c.id] !== '') ? sc[c.id] : 0; %>
+                      <div class="assess-crit-row">
+                        <label><%= c.name %></label>
+                        <input type="range" min="0" max="100" step="1" value="<%= v %>" data-range-for="score_<%= c.id %>" aria-label="<%= c.name %>">
+                        <input type="number" min="0" max="100" step="1" name="score_<%= c.id %>" value="<%= v %>" data-score-input>
+                      </div>
+                    <% }); %>
+                  </div>
+                <% } %>
+                <% if (crit.length) { %>
+                  <div class="assess-crit-group">
+                    <div class="assess-crit-title"><i class="fas fa-layer-group text-primary"></i> مهارات <%= m.level_name %></div>
+                    <% crit.forEach(function (c) { var v = (sc[c.id] !== undefined && sc[c.id] !== '') ? sc[c.id] : 0; %>
+                      <div class="assess-crit-row">
+                        <label><%= c.name %></label>
+                        <input type="range" min="0" max="100" step="1" value="<%= v %>" data-range-for="score_<%= c.id %>" aria-label="<%= c.name %>">
+                        <input type="number" min="0" max="100" step="1" name="score_<%= c.id %>" value="<%= v %>" data-score-input>
+                      </div>
+                    <% }); %>
+                  </div>
+                <% } %>
+              </div>
+              <div class="assess-panel-foot">
+                <div class="assess-save-state" data-save-state><i class="fas fa-cloud-arrow-up"></i> الحفظ التلقائي — غيّر أي نسبة وسيتم الحفظ</div>
+                <div class="flex gap-1">
+                  <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-floppy-disk"></i> حفظ الآن</button>
+                  <a href="/assessments/new?swimmer=<%= m.id %>&group=<%= group.id %>" class="btn btn-outline btn-sm"><i class="fas fa-pen-to-square"></i> تقييم كامل</a>
+                </div>
+              </div>
+            </form>
+          <% } %>
+        </div>
+      </details>
+    <% }); %>
+  </div>
+</div>
+
+<script>
+(function () {
+  function scoreClass(p) { return p >= 80 ? 'score-high' : (p >= 60 ? 'score-mid' : 'score-low'); }
+  document.querySelectorAll('[data-quick-form]').forEach(function (form) {
+    var details = form.closest('.assess-swimmer');
+    var state = details.querySelector('[data-save-state]');
+    var badge = details.querySelector('[data-score]');
+    var lastDate = details.querySelector('[data-last-date]');
+    var timer = null, saving = false, pending = false;
+
+    function setState(text, cls) {
+      if (!state) return;
+      state.textContent = text;
+      state.className = 'assess-save-state' + (cls ? ' ' + cls : '');
+    }
+    function payload() {
+      var params = new URLSearchParams();
+      form.querySelectorAll('input[name^="score_"]').forEach(function (inp) {
+        params.append(inp.name, inp.value === '' ? '0' : inp.value);
+      });
+      return params.toString();
+    }
+    function save() {
+      if (saving) { pending = true; return; }
+      saving = true;
+      setState('جارٍ الحفظ…', 'saving');
+      fetch(form.getAttribute('action'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+        body: payload()
+      }).then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+      }).then(function (res) {
+        saving = false;
+        if (!res.ok || !res.j || !res.j.ok) {
+          setState((res.j && res.j.error) || 'تعذر الحفظ', 'error');
+          if (window.App) App.showToast((res.j && res.j.error) || 'تعذر حفظ التقييم', 'error');
+          return;
+        }
+        var p = res.j.percent;
+        if (p !== null && p !== undefined && badge) {
+          var rp = Math.round(Number(p));
+          badge.textContent = rp + '%';
+          badge.className = 'score-pill ' + scoreClass(rp);
+        }
+        if (lastDate && res.j.date_label) lastDate.textContent = res.j.date_label;
+        if (details) details.setAttribute('data-last-date', res.j.date || '');
+        setState('تم الحفظ تلقائياً' + (res.j.time ? ' ' + res.j.time : ''), 'saved');
+        if (pending) { pending = false; save(); }
+      }).catch(function () {
+        saving = false;
+        setState('تعذر الحفظ — تحقق من الاتصال', 'error');
+        if (window.App) App.showToast('تعذر حفظ التقييم', 'error');
+      });
+    }
+    function schedule() {
+      clearTimeout(timer);
+      timer = setTimeout(save, 700);
+    }
+    form.addEventListener('input', function (e) {
+      var t = e.target;
+      if (t.matches('[data-score-input]')) {
+        var range = form.querySelector('[data-range-for="' + t.name + '"]');
+        if (range && range.value !== t.value) range.value = t.value;
+        schedule();
+      } else if (t.matches('[data-range-for]')) {
+        var num = form.querySelector('input[name="' + t.getAttribute('data-range-for') + '"]');
+        if (num && num.value !== t.value) num.value = t.value;
+        schedule();
+      }
+    });
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      clearTimeout(timer);
+      save();
+    });
+  });
+})();
+</script>
+<%- include('partials/layout_bottom') %>

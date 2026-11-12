@@ -1280,3 +1280,52 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
 .btn-warning { background: var(--warning); color: #fff; }
 .btn-warning:hover { background: #d97706; color: #fff; }
 
+
+/* ============================= تقييم المجموعات (الحفظ التلقائي) ============================= */
+.assess-groups-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); gap: 14px; }
+.assess-group-card { display: flex; align-items: center; gap: 12px; padding: 16px; background: var(--card); border: 1px solid var(--card-border); border-radius: 14px; color: var(--text); box-shadow: var(--shadow-sm); transition: transform .15s, box-shadow .15s, border-color .15s; min-width: 0; }
+.assess-group-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-color: var(--primary); }
+.assess-group-icon { width: 44px; height: 44px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #14b8a6, #0d9488); color: #fff; font-size: 18px; flex: none; }
+.assess-group-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.assess-group-name { font-weight: 800; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.assess-group-meta { font-size: 12px; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.assess-group-stats { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 5px; font-size: 11.5px; color: var(--text-muted); }
+.assess-group-stats span { display: inline-flex; align-items: center; gap: 4px; }
+.assess-group-arrow { color: var(--text-muted); flex: none; }
+
+.assess-swimmer { border: 1px solid var(--card-border); border-radius: 14px; background: var(--card); margin-bottom: 10px; overflow: hidden; }
+.assess-swimmer:last-child { margin-bottom: 0; }
+.assess-swimmer > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 12px 14px; flex-wrap: wrap; }
+.assess-swimmer > summary::-webkit-details-marker { display: none; }
+.assess-swimmer[open] { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(2,132,199,.08); }
+.assess-swimmer .assess-chev { margin-inline-start: auto; color: var(--text-muted); transition: transform .2s; flex: none; }
+.assess-swimmer[open] .assess-chev { transform: rotate(180deg); }
+.assess-avatar { width: 38px; height: 38px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-weight: 800; flex: none; }
+.assess-name { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; line-height: 1.4; }
+.assess-name b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.assess-name small { color: var(--text-muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.assess-last { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: none; }
+.assess-last small { color: var(--text-muted); font-size: 10.5px; }
+.assess-panel { border-top: 1px dashed var(--card-border); padding: 14px; background: var(--bg-soft); }
+.assess-criteria-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); gap: 14px; }
+.assess-crit-group { border: 1px solid var(--card-border); border-radius: 12px; padding: 12px; background: var(--card); min-width: 0; }
+.assess-crit-title { font-weight: 800; font-size: 12.5px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.assess-crit-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.assess-crit-row:last-child { margin-bottom: 0; }
+.assess-crit-row label { flex: 1; font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
+.assess-crit-row input[type="range"] { width: 90px; flex: none; accent-color: var(--primary); }
+.assess-crit-row input[type="number"] { width: 58px; flex: none; text-align: center; border: 1px solid var(--input-border); border-radius: 8px; padding: 3px 4px; background: var(--input-bg); color: var(--text); font-weight: 700; }
+.assess-crit-row input[type="number"]:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px rgba(2,132,199,.12); }
+.assess-panel-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.assess-save-state { font-size: 12px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 6px; }
+.assess-save-state.saving { color: var(--primary); }
+.assess-save-state.saved { color: var(--success); }
+.assess-save-state.error { color: var(--danger); }
+@media (max-width: 640px) {
+  .assess-swimmer > summary { gap: 8px; padding: 11px 12px; }
+  .assess-last { align-items: flex-start; }
+  .assess-crit-row input[type="range"] { width: 64px; }
+  .assess-panel { padding: 12px; }
+  .assess-panel-foot { align-items: stretch; }
+  .assess-panel-foot .btn { flex: 1; justify-content: center; }
+}

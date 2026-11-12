@@ -109,8 +109,254 @@ async function parseRowScores(row) {
 /* ============================================================== */
 /*                          التقييمات الفنية                       */
 /* ============================================================== */
+function todayISO() { return new Date().toISOString().slice(0, 10); }
 
+/* كل المجموعات مع عدد اللاعبين وعدد من تم تقييمهم اليوم */
+async function assessmentGroupsOverview(sid) {
+  const groups = await db.prepare(`SELECT g.id, g.name, g.capacity, g.program_id, g.coach_id,
+      p.name AS program_name, c.full_name AS coach_name,
+      (SELECT COUNT(*) FROM swimmers s
+        WHERE s.deleted_at IS NULL
+          AND (s.group_id = g.id OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id AND sg.group_id = g.id))) AS members
+    FROM groups g
+    LEFT JOIN programs p ON p.id = g.program_id
+    LEFT JOIN coaches c ON c.id = g.coach_id
+    WHERE g.deleted_at IS NULL` + groupClause(sid, 'g') + `
+    ORDER BY g.name`).all();
+  const assessed = {};
+  (await db.prepare(`SELECT g.id AS group_id, COUNT(DISTINCT a.swimmer_id) AS c
+      FROM groups g
+      JOIN swimmers s ON s.deleted_at IS NULL
+        AND (s.group_id = g.id OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id AND sg.group_id = g.id))
+      JOIN assessments a ON a.swimmer_id = s.id AND a.date = ?
+      WHERE g.deleted_at IS NULL
+      GROUP BY g.id`).all(todayISO())).forEach(r => { assessed[r.group_id] = r.c; });
+  groups.forEach(g => { g.assessed_today = assessed[g.id] || 0; });
+  return groups;
+}
+
+/* شجرة معايير التقييم: العامة + معايير كل مستوى */
+async function criteriaTree() {
+  const all = await db.prepare('SELECT * FROM assessment_criteria ORDER BY order_no, id').all();
+  const general = [];
+  const byLevel = {};
+  all.forEach(c => {
+    if (c.level_id == null) general.push(c);
+    else {
+      const k = String(c.level_id);
+      (byLevel[k] = byLevel[k] || []).push(c);
+    }
+  });
+  return { general, byLevel };
+}
+
+/* يوجد تقييم محفوظ لنفس اللاعب/المستوى/التاريخ؟ (لمنع إنشاء سجل صفري جديد وهمي) */
+async function assessmentExistsForDate(swimmerId, levelId, date) {
+  const row = levelId == null
+    ? await db.prepare('SELECT 1 FROM assessments WHERE swimmer_id = ? AND level_id IS NULL AND date = ? LIMIT 1').get(swimmerId, date)
+    : await db.prepare('SELECT 1 FROM assessments WHERE swimmer_id = ? AND level_id = ? AND date = ? LIMIT 1').get(swimmerId, levelId, date);
+  return !!row;
+}
+function hasNonZeroScore(g) {
+  return !!(g && g.scores && Object.keys(g.scores).some(k => Number(g.scores[k]) > 0));
+}
+
+/* حفظ/تحديث تقييم نفس اليوم (بدل إنشاء نسخة جديدة في كل مرة) */
+async function upsertAssessmentForDate(swimmerId, levelId, date, g, b, userId, group) {
+  if (!g || !g.n) return null;
+  const row = levelId == null
+    ? await db.prepare('SELECT id FROM assessments WHERE swimmer_id = ? AND level_id IS NULL AND date = ? ORDER BY id DESC LIMIT 1').get(swimmerId, date)
+    : await db.prepare('SELECT id FROM assessments WHERE swimmer_id = ? AND level_id = ? AND date = ? ORDER BY id DESC LIMIT 1').get(swimmerId, levelId, date);
+  const overall = Math.round((g.sum / g.n) * 1000) / 1000;
+  const coachId = (b && b.coach_id) || (group && group.coach_id) || null;
+  const programId = (group && group.program_id) || null;
+  if (row) {
+    await db.prepare(`UPDATE assessments SET scores = ?, overall_percent = ?, coach_id = COALESCE(?, coach_id), program_id = COALESCE(?, program_id) WHERE id = ?`)
+      .run(JSON.stringify(g.scores), overall, coachId, programId, row.id);
+    return row.id;
+  }
+  const info = await db.prepare(`INSERT INTO assessments (swimmer_id, coach_id, program_id, level_id, date, scores, overall_percent, created_by)
+      VALUES (?,?,?,?,?,?,?,?)`)
+    .run(swimmerId, coachId, programId, levelId, date, JSON.stringify(g.scores), overall, userId);
+  return info.lastInsertRowid;
+}
+
+/* صفحة التقييمات: كل المجموعات في مكان واحد */
 router.get('/assessments', async function (req, res) {
+  if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const sid = activeSport(req);
+  const groups = await assessmentGroupsOverview(sid);
+  const totalRes = await db.prepare(`SELECT COUNT(DISTINCT s.id) AS c FROM swimmers s
+      WHERE s.deleted_at IS NULL
+        AND (s.group_id IS NOT NULL OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id))` + progClause(sid, 's')).get();
+  const totalMembers = Number((totalRes && totalRes.c) || 0);
+  const assessedRes = await db.prepare(`SELECT COUNT(DISTINCT a.swimmer_id) AS c
+      FROM assessments a JOIN swimmers s ON s.id = a.swimmer_id AND s.deleted_at IS NULL
+      WHERE a.date = ?
+        AND (s.group_id IS NOT NULL OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id))` + progClause(sid, 's')).get(todayISO());
+  const assessedToday = Number((assessedRes && assessedRes.c) || 0);
+  const ungrouped = await db.prepare(`SELECT COUNT(*) AS c FROM swimmers s
+      WHERE s.deleted_at IS NULL AND s.group_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id)` + progClause(sid, 's')).get();
+  res.render('assessments_home', {
+    title: 'التقييمات الفنية', active: 'assessments',
+    groups, totalMembers, assessedToday, ungroupedCount: Number((ungrouped && ungrouped.c) || 0)
+  });
+});
+
+/* صفحة تقييم مجموعة: تظهر كل لاعبيها وتُحفظ النسب تلقائياً */
+router.get('/assessments/groups/:id', async function (req, res) {
+  if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const id = Number(req.params.id);
+  const sid = activeSport(req);
+  const group = await db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name
+      FROM groups g LEFT JOIN programs p ON p.id = g.program_id LEFT JOIN coaches c ON c.id = g.coach_id
+      WHERE g.id = ? AND g.deleted_at IS NULL` + groupClause(sid, 'g')).get(id);
+  if (!group) return res.redirect('/assessments');
+
+  const members = await db.prepare(`SELECT DISTINCT s.id, s.full_name, s.membership_no, s.level_id, s.program_id,
+        l.name AS level_name,
+        (SELECT a.date FROM assessments a
+          WHERE a.swimmer_id = s.id AND (a.level_id = s.level_id OR a.level_id IS NULL)
+          ORDER BY (a.level_id IS NULL), a.date DESC, a.id DESC LIMIT 1) AS last_date,
+        (SELECT a.overall_percent FROM assessments a
+          WHERE a.swimmer_id = s.id AND (a.level_id = s.level_id OR a.level_id IS NULL)
+          ORDER BY (a.level_id IS NULL), a.date DESC, a.id DESC LIMIT 1) AS last_percent,
+        (SELECT COUNT(*) FROM assessments a WHERE a.swimmer_id = s.id AND a.date = ?) AS assessed_today
+      FROM swimmers s
+      LEFT JOIN levels l ON l.id = s.level_id
+      WHERE s.deleted_at IS NULL
+        AND (s.group_id = ? OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id AND sg.group_id = ?))
+      ORDER BY s.full_name`).all(todayISO(), id, id);
+
+  const { general, byLevel } = await criteriaTree();
+  const today = todayISO();
+  const savedScores = {};
+  if (members.length) {
+    const ids = members.map(m => m.id);
+    const ph = ids.map(() => '?').join(',');
+    const rows = await db.prepare(`SELECT * FROM assessments WHERE swimmer_id IN (${ph}) ORDER BY date DESC, id DESC`).all(...ids);
+    const levelOf = {};
+    members.forEach(m => { levelOf[m.id] = m.level_id == null ? null : String(m.level_id); });
+    const seenLevel = {}, seenGeneral = {};
+    rows.forEach(a => {
+      const lid = a.level_id == null ? null : String(a.level_id);
+      if (lid !== null && lid !== levelOf[a.swimmer_id]) return;
+      if (lid === null) {
+        if (seenGeneral[a.swimmer_id]) return;
+        seenGeneral[a.swimmer_id] = true;
+      } else {
+        if (seenLevel[a.swimmer_id]) return;
+        seenLevel[a.swimmer_id] = true;
+      }
+      let scores = {};
+      try { scores = JSON.parse(a.scores || '{}'); } catch (e) { scores = {}; }
+      savedScores[a.swimmer_id] = savedScores[a.swimmer_id] || {};
+      Object.keys(scores).forEach(cid => { savedScores[a.swimmer_id][cid] = scores[cid]; });
+    });
+  }
+
+  /* خيارات الإضافة: فقط اللاعبون غير المضافين لأي مجموعة */
+  const ungrouped = await db.prepare(`SELECT s.id, s.full_name, s.membership_no
+      FROM swimmers s
+      WHERE s.deleted_at IS NULL AND s.group_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id)` + progClause(sid, 's') + `
+      ORDER BY s.full_name`).all();
+
+  res.render('assessment_group', {
+    title: 'تقييم مجموعة ' + group.name, active: 'assessments',
+    group, members, generalCriteria: general, criteriaByLevel: byLevel,
+    savedScores, ungrouped, today
+  });
+});
+
+/* إضافة لاعب غير مضاف لأي مجموعة إلى هذه المجموعة (ثم يظهر للتقييم فوراً) */
+router.post('/assessments/groups/:id/add-swimmer', async function (req, res) {
+  if (!canAdd(req.currentUser, 'assessments') && !canEdit(req.currentUser, 'assessments')) {
+    return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  }
+  const gid = Number(req.params.id);
+  const sid = activeSport(req);
+  const group = await db.prepare('SELECT * FROM groups g WHERE g.id = ? AND g.deleted_at IS NULL' + groupClause(sid, 'g')).get(gid);
+  if (!group) {
+    setFlash(res, { type: 'error', message: 'المجموعة غير موجودة' });
+    return res.redirect('/assessments');
+  }
+  const swimmerId = Number(req.body.swimmer_id || 0);
+  const sw = swimmerId ? await db.prepare('SELECT id, full_name, group_id FROM swimmers WHERE id = ? AND deleted_at IS NULL').get(swimmerId) : null;
+  if (!sw) {
+    setFlash(res, { type: 'error', message: 'اختر لاعباً صحيحاً' });
+    return res.redirect('/assessments/groups/' + gid);
+  }
+  const already = sw.group_id != null || await db.prepare('SELECT 1 FROM swimmer_group WHERE swimmer_id = ? LIMIT 1').get(swimmerId);
+  if (already) {
+    setFlash(res, { type: 'error', message: 'هذا اللاعب مضاف بالفعل إلى مجموعة — يقتصر خيار الإضافة على اللاعبين غير المضافين لأي مجموعة' });
+    return res.redirect('/assessments/groups/' + gid);
+  }
+  const cap = Number(group.capacity) || 12;
+  const count = Number((await db.prepare('SELECT COUNT(*) AS c FROM swimmer_group WHERE group_id = ?').get(gid)).c || 0);
+  if (count >= cap) {
+    setFlash(res, { type: 'error', message: 'المجموعة ممتلئة — العدد الأقصى ' + cap + ' عضو' });
+    return res.redirect('/assessments/groups/' + gid);
+  }
+  await db.prepare('UPDATE swimmers SET group_id = ? WHERE id = ?').run(gid, swimmerId);
+  await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) VALUES (?,?)').run(swimmerId, gid);
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'groups', gid, 'إضافة لاعب #' + swimmerId + ' إلى المجموعة من صفحة التقييم', req);
+  setFlash(res, { type: 'success', message: 'تمت إضافة ' + sw.full_name + ' إلى المجموعة — أصبح جاهزاً للتقييم' });
+  res.redirect('/assessments/groups/' + gid);
+});
+
+/* حفظ تلقائي لتقييم لاعب واحد من صفحة المجموعة */
+router.post('/assessments/groups/:gid/swimmer/:sid/quick', async function (req, res) {
+  if (!canAdd(req.currentUser, 'assessments') && !canEdit(req.currentUser, 'assessments')) {
+    return res.status(403).json({ ok: false, error: 'لا تملك صلاحية التقييم' });
+  }
+  const gid = Number(req.params.gid), swimmerId = Number(req.params.sid);
+  const isAjax = String(req.get('X-Requested-With') || '').toLowerCase() === 'xmlhttprequest' || (req.get('Accept') || '').includes('application/json');
+  const group = await db.prepare('SELECT * FROM groups WHERE id = ? AND deleted_at IS NULL').get(gid);
+  if (!group) return res.status(404).json({ ok: false, error: 'المجموعة غير موجودة' });
+  const member = await db.prepare(`SELECT s.id, s.level_id FROM swimmers s
+      WHERE s.id = ? AND s.deleted_at IS NULL
+        AND (s.group_id = ? OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id AND sg.group_id = ?))`).get(swimmerId, gid, gid);
+  if (!member) return res.status(404).json({ ok: false, error: 'اللاعب غير موجود في هذه المجموعة' });
+
+  const b = req.body || {};
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || '')) ? b.date : todayISO();
+  const { perLevel, shared } = await parseScores(b);
+  let levelPercent = null, generalPercent = null;
+  const levelKey = member.level_id != null ? String(member.level_id) : null;
+  const levelScores = levelKey && perLevel[levelKey] ? perLevel[levelKey] : null;
+  if (levelScores && levelScores.n && (hasNonZeroScore(levelScores) || await assessmentExistsForDate(swimmerId, member.level_id, date))) {
+    await upsertAssessmentForDate(swimmerId, member.level_id, date, levelScores, b, req.currentUser.id, group);
+    levelPercent = Math.round((levelScores.sum / levelScores.n) * 1000) / 1000;
+  }
+  if (shared && shared.n && (hasNonZeroScore(shared) || await assessmentExistsForDate(swimmerId, null, date))) {
+    await upsertAssessmentForDate(swimmerId, null, date, shared, b, req.currentUser.id, group);
+    generalPercent = Math.round((shared.sum / shared.n) * 1000) / 1000;
+  }
+  if (levelPercent === null && generalPercent === null) {
+    if (!isAjax) {
+      setFlash(res, { type: 'error', message: 'لم تُسجل أي نسب — غيّر نسبة مهارة واحدة على الأقل' });
+      return res.redirect('/assessments/groups/' + gid);
+    }
+    return res.status(400).json({ ok: false, error: 'لم تُسجل أي نسب' });
+  }
+  if (!isAjax) {
+    setFlash(res, { type: 'success', message: 'تم حفظ تقييم اللاعب' });
+    return res.redirect('/assessments/groups/' + gid);
+  }
+  res.json({
+    ok: true,
+    percent: levelPercent !== null ? levelPercent : generalPercent,
+    level_percent: levelPercent,
+    general_percent: generalPercent,
+    date,
+    date_label: fmtDate(date),
+    time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+  });
+});
+
+router.get('/assessments/log', async function (req, res) {
   if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   /* التقييمات: نجمع صفوف اللاعب الواحد في نفس التاريخ في سطر واحد (كل المستويات معاً) */
   const rows = await db.prepare(`SELECT 'تقييم' AS kind,
@@ -159,7 +405,10 @@ router.get('/assessments', async function (req, res) {
       { name: 'ready_to_advance', label: 'الترقية', options: [{ value: '1', label: 'جاهز للترقية' }, { value: '0', label: 'قيد التدريب' }] }
     ],
     canAdd: canAdd(req.currentUser, 'assessments'), addUrl: canAdd(req.currentUser, 'assessments') ? '/assessments/new' : null, addLabel: 'تقييم جديد',
-    headerActions: [{ href: '/tests/new', label: 'اختبار (فردي/جماعي)', icon: 'fa-vial-circle-check', cls: 'btn-outline' }],
+    headerActions: [
+      { href: '/assessments', label: 'تقييم المجموعات', icon: 'fa-people-group', cls: 'btn-primary' },
+      { href: '/tests/new', label: 'اختبار (فردي/جماعي)', icon: 'fa-vial-circle-check', cls: 'btn-outline' }
+    ],
     actions: () => row => row.kind === 'اختبار' ? [
       { label: 'تعديل', icon: 'fa-pen', href: '/tests/' + row.id + '/edit' },
       { label: 'اللاعب', icon: 'fa-person-swimming', href: '/swimmers/' + row.swimmer_id },
@@ -187,8 +436,18 @@ router.get('/assessments/new', async function (req, res) {
     const sw = await db.prepare('SELECT id, level_id FROM swimmers WHERE id=?').get(Number(req.query.swimmer));
     if (sw) { values.swimmer_id = sw.id; currentLevelId = sw.level_id; }
   }
+  /* فتح التقييم من داخل مجموعة: نعيد المستخدم لنفس المجموعة بعد الحفظ */
+  let returnGroup = null;
+  if (req.query.group) {
+    returnGroup = await db.prepare('SELECT id, name, coach_id, program_id FROM groups WHERE id = ? AND deleted_at IS NULL').get(Number(req.query.group));
+    if (returnGroup) {
+      values.group_id = returnGroup.id;
+      if (values.coach_id === undefined && returnGroup.coach_id) values.coach_id = returnGroup.coach_id;
+      if (values.program_id === undefined && returnGroup.program_id) values.program_id = returnGroup.program_id;
+    }
+  }
   res.render('assessment_form', {
-    title: 'تقييم فني جديد', active: 'assessments', isEdit: false,
+    title: 'تقييم فني جديد', active: 'assessments', isEdit: false, returnGroup,
     action: '/assessments/new', values, levelGroups: await levelGroups(activeSport(req), currentLevelId), generalCriteria: await generalCriteria(),
     swimmers: await swimmerOptions(activeSport(req)), coaches: await coachOptions(activeSport(req)), programs: await programOptions(activeSport(req))
   });
@@ -217,7 +476,9 @@ router.post('/assessments/new', async function (req, res) {
   } else {
     setFlash(res, { type: 'error', message: 'لم تُسجل أي نسب — تأكد من تقييم مهارة واحدة على الأقل' });
   }
-  res.redirect('/swimmers/' + b.swimmer_id);
+  /* العودة للتقييمات (أو لصفحة المجموعة لو بدأ التقييم منها) وليس للاختبارات */
+  const returnGroupId = Number(b.group_id || 0);
+  res.redirect(returnGroupId ? '/assessments/groups/' + returnGroupId : '/assessments');
 });
 
 router.get('/assessments/:id', async function (req, res) {
@@ -290,8 +551,13 @@ router.get('/assessments/:id/edit', async function (req, res) {
     try { g = JSON.parse(genRow.scores || '{}'); } catch (e) { g = {}; }
     Object.keys(g).forEach(k => { values['score_' + k] = g[k]; });
   }
+  let returnGroup = null;
+  if (req.query.group) {
+    returnGroup = await db.prepare('SELECT id, name FROM groups WHERE id = ? AND deleted_at IS NULL').get(Number(req.query.group));
+    if (returnGroup) values.group_id = returnGroup.id;
+  }
   res.render('assessment_form', {
-    title: 'تعديل التقييم', active: 'assessments', isEdit: true,
+    title: 'تعديل التقييم', active: 'assessments', isEdit: true, returnGroup,
     action: '/assessments/' + row.id + '/edit', values, levelGroups: await levelGroups(activeSport(req), row.level_id != null ? row.level_id : null), generalCriteria: await generalCriteria(),
     swimmers: await swimmerOptions(activeSport(req)), coaches: await coachOptions(activeSport(req)), programs: await programOptions(activeSport(req))
   });
@@ -319,7 +585,8 @@ router.post('/assessments/:id/edit', async function (req, res) {
   }
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'assessments', id, 'تعديل تقييم شامل', req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات على جميع المستويات' });
-  res.redirect('/assessments/' + id);
+  const returnGroupId = Number(b.group_id || 0);
+  res.redirect(returnGroupId ? '/assessments/groups/' + returnGroupId : '/assessments/' + id);
 });
 router.post('/assessments/:id/delete', async function (req, res) {
   if (!canDel(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -333,7 +600,7 @@ router.post('/assessments/:id/delete', async function (req, res) {
   } else {
     setFlash(res, { type: 'error', message: 'التقييم غير موجود' });
   }
-  res.redirect('/assessments');
+  res.redirect('/assessments/log');
 });
 
 /* ============================================================== */
