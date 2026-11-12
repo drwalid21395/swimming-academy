@@ -1329,3 +1329,8 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
   .assess-panel-foot { align-items: stretch; }
   .assess-panel-foot .btn { flex: 1; justify-content: center; }
 }
+.assess-level-pick { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.assess-level-pick label { font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
+.assess-level-pick .form-control { max-width: 360px; }
+.assess-level-pick .form-hint { margin: 0; }
+.assess-swimmer .assess-panel .assess-level-pick { background: var(--card); border: 1px dashed var(--primary); border-radius: 10px; padding: 10px 12px; }

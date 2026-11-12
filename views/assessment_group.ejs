@@ -73,7 +73,7 @@
           <span class="assess-avatar"><%= (m.full_name || 'ل').trim().charAt(0) %></span>
           <span class="assess-name">
             <b><%= m.full_name %></b>
-            <small><%= m.membership_no || '' %><%= m.level_name ? ' · ' + m.level_name : ' · بدون مستوى' %></small>
+            <small><%= m.membership_no || '' %><span data-level-label><%= m.level_name ? ' · ' + m.level_name : ' · بدون مستوى' %></span></small>
           </span>
           <span class="assess-last">
             <span class="score-pill <%= scoreCls %>" data-score><%= lp === null ? '—' : lp + '%' %></span>
@@ -82,7 +82,7 @@
           <i class="fas fa-chevron-down assess-chev"></i>
         </summary>
         <div class="assess-panel">
-          <% if (!crit.length && !generalCriteria.length) { %>
+          <% if (!generalCriteria.length && !crit.length && ((m.level_id !== null && m.level_id !== undefined) || !levels.length)) { %>
             <div class="form-hint">لا توجد معايير تقييم مسجلة لهذا المستوى. أضف المهارات من إعدادات المستويات أو استخدم التقييم الكامل.</div>
             <div class="assess-panel-foot">
               <span class="assess-save-state"><i class="fas fa-circle-info"></i> لا توجد مهارات لتقييمها</span>
@@ -92,6 +92,18 @@
             <div class="form-hint">لديك صلاحية العرض فقط.</div>
           <% } else { %>
             <form class="assess-quick-form" method="POST" action="/assessments/groups/<%= group.id %>/swimmer/<%= m.id %>/quick" data-quick-form>
+              <% if (m.level_id === null || m.level_id === undefined) { %>
+                <div class="assess-level-pick">
+                  <label><i class="fas fa-layer-group"></i> اختر مستوى اللاعب للتقييم <span class="req">*</span></label>
+                  <select class="form-control" data-level-select>
+                    <option value="">— اختر المستوى —</option>
+                    <% levels.forEach(function (l) { %>
+                      <option value="<%= l.value %>"><%= l.label %></option>
+                    <% }); %>
+                  </select>
+                  <div class="form-hint">بمجرد اختيار المستوى تظهر مهاراته هنا — ويُعيَّن المستوى للاعب بعد أول حفظ.</div>
+                </div>
+              <% } %>
               <div class="assess-criteria-grid">
                 <% if (generalCriteria.length) { %>
                   <div class="assess-crit-group">
@@ -117,11 +129,19 @@
                     <% }); %>
                   </div>
                 <% } %>
+                <% if (m.level_id === null || m.level_id === undefined) { %>
+                  <div class="assess-crit-group" data-level-crit-group style="display:none">
+                    <div class="assess-crit-title"><i class="fas fa-layer-group text-primary"></i> مهارات <span data-level-name></span></div>
+                    <div data-level-crit-rows></div>
+                  </div>
+                <% } %>
               </div>
               <div class="assess-panel-foot">
-                <div class="assess-save-state" data-save-state><i class="fas fa-cloud-arrow-up"></i> الحفظ التلقائي — غيّر أي نسبة وسيتم الحفظ</div>
+                <div class="assess-save-state" data-save-state>
+                  <% if (m.level_id === null || m.level_id === undefined) { %><i class="fas fa-circle-info"></i> اختر مستوى اللاعب أولاً<% } else { %><i class="fas fa-cloud-arrow-up"></i> الحفظ التلقائي — غيّر أي نسبة وسيتم الحفظ<% } %>
+                </div>
                 <div class="flex gap-1">
-                  <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-floppy-disk"></i> حفظ الآن</button>
+                  <button type="submit" class="btn btn-primary btn-sm" data-save-btn <%= (m.level_id === null || m.level_id === undefined) ? 'disabled' : '' %>><i class="fas fa-floppy-disk"></i> حفظ الآن</button>
                   <a href="/assessments/new?swimmer=<%= m.id %>&group=<%= group.id %>" class="btn btn-outline btn-sm"><i class="fas fa-pen-to-square"></i> تقييم كامل</a>
                 </div>
               </div>
@@ -133,14 +153,18 @@
   </div>
 </div>
 
+<script>window.__assessCriteriaByLevel = <%- typeof criteriaJson !== 'undefined' ? criteriaJson : '{}' %>;</script>
 <script>
 (function () {
   function scoreClass(p) { return p >= 80 ? 'score-high' : (p >= 60 ? 'score-mid' : 'score-low'); }
+  var CRIT = window.__assessCriteriaByLevel || {};
   document.querySelectorAll('[data-quick-form]').forEach(function (form) {
     var details = form.closest('.assess-swimmer');
     var state = details.querySelector('[data-save-state]');
     var badge = details.querySelector('[data-score]');
     var lastDate = details.querySelector('[data-last-date]');
+    var levelSel = form.querySelector('[data-level-select]');
+    var saveBtn = form.querySelector('[data-save-btn]');
     var timer = null, saving = false, pending = false;
 
     function setState(text, cls) {
@@ -148,14 +172,69 @@
       state.textContent = text;
       state.className = 'assess-save-state' + (cls ? ' ' + cls : '');
     }
+    function setSaveEnabled() {
+      if (saveBtn && levelSel) saveBtn.disabled = !levelSel.value;
+    }
+    function buildLevelRows() {
+      if (!levelSel) return;
+      var group = form.querySelector('[data-level-crit-group]');
+      var box = form.querySelector('[data-level-crit-rows]');
+      var nameEl = form.querySelector('[data-level-name]');
+      if (!group || !box) return;
+      box.innerHTML = '';
+      if (!levelSel.value) {
+        group.style.display = 'none';
+        setState('اختر مستوى اللاعب أولاً');
+        setSaveEnabled();
+        return;
+      }
+      var list = CRIT[levelSel.value] || [];
+      group.style.display = '';
+      if (nameEl) {
+        var opt = levelSel.options[levelSel.selectedIndex];
+        nameEl.textContent = opt ? opt.textContent : '';
+      }
+      if (!list.length) {
+        var hint = document.createElement('div');
+        hint.className = 'form-hint';
+        hint.style.margin = '0';
+        hint.textContent = 'لا توجد مهارات مسجلة لهذا المستوى.';
+        box.appendChild(hint);
+      } else {
+        list.forEach(function (c) {
+          var row = document.createElement('div');
+          row.className = 'assess-crit-row';
+          var lab = document.createElement('label');
+          lab.textContent = c.name;
+          var range = document.createElement('input');
+          range.type = 'range'; range.min = 0; range.max = 100; range.step = 1; range.value = 0;
+          range.setAttribute('data-range-for', 'score_' + c.id);
+          range.setAttribute('aria-label', c.name);
+          var num = document.createElement('input');
+          num.type = 'number'; num.min = 0; num.max = 100; num.step = 1; num.value = 0;
+          num.name = 'score_' + c.id;
+          num.setAttribute('data-score-input', '');
+          row.appendChild(lab); row.appendChild(range); row.appendChild(num);
+          box.appendChild(row);
+        });
+        setState('الحفظ التلقائي — غيّر أي نسبة وسيتم الحفظ');
+      }
+      setSaveEnabled();
+    }
+    if (levelSel) {
+      levelSel.addEventListener('change', buildLevelRows);
+      buildLevelRows();
+    }
     function payload() {
       var params = new URLSearchParams();
+      if (levelSel && levelSel.value) params.append('level_id', levelSel.value);
       form.querySelectorAll('input[name^="score_"]').forEach(function (inp) {
         params.append(inp.name, inp.value === '' ? '0' : inp.value);
       });
       return params.toString();
     }
     function save() {
+      if (!form.querySelector('input[name^="score_"]')) { setState('اختر مستوى اللاعب أولاً'); return; }
       if (saving) { pending = true; return; }
       saving = true;
       setState('جارٍ الحفظ…', 'saving');
@@ -180,6 +259,16 @@
         }
         if (lastDate && res.j.date_label) lastDate.textContent = res.j.date_label;
         if (details) details.setAttribute('data-last-date', res.j.date || '');
+        /* لاعب بلا مستوى: يُثبَّت المستوى المختار بعد أول حفظ (الخادم يعيّنه للاعب) */
+        if (res.j.level_id && levelSel && !levelSel.disabled) {
+          levelSel.value = String(res.j.level_id);
+          levelSel.disabled = true;
+          var lbl = details.querySelector('[data-level-label]');
+          var opt = levelSel.options[levelSel.selectedIndex];
+          if (lbl && opt) lbl.textContent = ' · ' + opt.textContent;
+          var pick = form.querySelector('.assess-level-pick .form-hint');
+          if (pick) pick.textContent = 'تم تعيين المستوى لهذا اللاعب — يمكنك تعديل النسب وسيتم الحفظ تلقائياً.';
+        }
         setState('تم الحفظ تلقائياً' + (res.j.time ? ' ' + res.j.time : ''), 'saved');
         if (pending) { pending = false; save(); }
       }).catch(function () {

@@ -217,10 +217,10 @@ router.get('/assessments/groups/:id', async function (req, res) {
   const members = await db.prepare(`SELECT DISTINCT s.id, s.full_name, s.membership_no, s.level_id, s.program_id,
         l.name AS level_name,
         (SELECT a.date FROM assessments a
-          WHERE a.swimmer_id = s.id AND (a.level_id = s.level_id OR a.level_id IS NULL)
+          WHERE a.swimmer_id = s.id AND (a.level_id = s.level_id OR a.level_id IS NULL OR s.level_id IS NULL)
           ORDER BY (a.level_id IS NULL), a.date DESC, a.id DESC LIMIT 1) AS last_date,
         (SELECT a.overall_percent FROM assessments a
-          WHERE a.swimmer_id = s.id AND (a.level_id = s.level_id OR a.level_id IS NULL)
+          WHERE a.swimmer_id = s.id AND (a.level_id = s.level_id OR a.level_id IS NULL OR s.level_id IS NULL)
           ORDER BY (a.level_id IS NULL), a.date DESC, a.id DESC LIMIT 1) AS last_percent,
         (SELECT COUNT(*) FROM assessments a WHERE a.swimmer_id = s.id AND a.date = ?) AS assessed_today
       FROM swimmers s
@@ -266,7 +266,9 @@ router.get('/assessments/groups/:id', async function (req, res) {
   res.render('assessment_group', {
     title: 'تقييم مجموعة ' + group.name, active: 'assessments',
     group, members, generalCriteria: general, criteriaByLevel: byLevel,
-    savedScores, ungrouped, today
+    savedScores, ungrouped, today,
+    levels: (await levelOptions(sid)).filter(function (l) { return byLevel[String(l.value)] && byLevel[String(l.value)].length; }),
+    criteriaJson: JSON.stringify(byLevel).replace(/</g, '\\u003c')
   });
 });
 
@@ -322,17 +324,28 @@ router.post('/assessments/groups/:gid/swimmer/:sid/quick', async function (req, 
 
   const b = req.body || {};
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || '')) ? b.date : todayISO();
+  /* اللاعب بلا مستوى: يختار المدرب المستوى من كارت التقييم، ويُعيَّن له عند أول حفظ */
+  let assessLevelId = member.level_id != null ? Number(member.level_id) : null;
+  if (assessLevelId == null && b.level_id) {
+    const lvl = await db.prepare('SELECT id FROM levels WHERE id = ?').get(Number(b.level_id));
+    if (!lvl) return res.status(400).json({ ok: false, error: 'المستوى المختار غير موجود' });
+    assessLevelId = Number(lvl.id);
+  }
   const { perLevel, shared } = await parseScores(b);
   let levelPercent = null, generalPercent = null;
-  const levelKey = member.level_id != null ? String(member.level_id) : null;
+  const levelKey = assessLevelId != null ? String(assessLevelId) : null;
   const levelScores = levelKey && perLevel[levelKey] ? perLevel[levelKey] : null;
-  if (levelScores && levelScores.n && (hasNonZeroScore(levelScores) || await assessmentExistsForDate(swimmerId, member.level_id, date))) {
-    await upsertAssessmentForDate(swimmerId, member.level_id, date, levelScores, b, req.currentUser.id, group);
+  if (levelScores && levelScores.n && (hasNonZeroScore(levelScores) || await assessmentExistsForDate(swimmerId, assessLevelId, date))) {
+    await upsertAssessmentForDate(swimmerId, assessLevelId, date, levelScores, b, req.currentUser.id, group);
     levelPercent = Math.round((levelScores.sum / levelScores.n) * 1000) / 1000;
   }
   if (shared && shared.n && (hasNonZeroScore(shared) || await assessmentExistsForDate(swimmerId, null, date))) {
     await upsertAssessmentForDate(swimmerId, null, date, shared, b, req.currentUser.id, group);
     generalPercent = Math.round((shared.sum / shared.n) * 1000) / 1000;
+  }
+  /* تعيين المستوى الأول للاعب الذي لم يكن له مستوى (لا يغيّر مستوى لاعب موجود) */
+  if (assessLevelId && member.level_id == null) {
+    await db.prepare('UPDATE swimmers SET level_id = ? WHERE id = ? AND level_id IS NULL').run(assessLevelId, swimmerId);
   }
   if (levelPercent === null && generalPercent === null) {
     if (!isAjax) {
@@ -350,6 +363,7 @@ router.post('/assessments/groups/:gid/swimmer/:sid/quick', async function (req, 
     percent: levelPercent !== null ? levelPercent : generalPercent,
     level_percent: levelPercent,
     general_percent: generalPercent,
+    level_id: assessLevelId,
     date,
     date_label: fmtDate(date),
     time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
