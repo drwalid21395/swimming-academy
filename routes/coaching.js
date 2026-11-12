@@ -225,10 +225,63 @@ router.get('/assessments', async function (req, res) {
   const ungrouped = await db.prepare(`SELECT COUNT(*) AS c FROM swimmers s
       WHERE s.deleted_at IS NULL AND s.group_id IS NULL
         AND NOT EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id)` + progClause(sid, 's')).get();
+  const ungroupedSwimmers = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, l.name AS level_name
+      FROM swimmers s
+      LEFT JOIN levels l ON l.id = s.level_id
+      WHERE s.deleted_at IS NULL AND s.group_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id)` + progClause(sid, 's') + `
+      ORDER BY s.full_name`).all();
+  const availableGroups = await db.prepare(`SELECT g.id, g.name, g.capacity,
+      (SELECT COUNT(*) FROM swimmer_group sg WHERE sg.group_id = g.id) AS members
+      FROM groups g WHERE g.deleted_at IS NULL` + groupClause(sid, 'g') + ` ORDER BY g.name`).all();
   res.render('assessments_home', {
     title: 'التقييمات الفنية', active: 'assessments',
-    groups, totalMembers, assessedToday, ungroupedCount: Number((ungrouped && ungrouped.c) || 0)
+    groups, totalMembers, assessedToday, ungroupedCount: Number((ungrouped && ungrouped.c) || 0),
+    ungroupedSwimmers, availableGroups, userCanExport: canExport(req.currentUser, 'assessments')
   });
+});
+
+/* تسكين لاعبين غير مضافين في مجموعة من صفحة التقييمات */
+router.post('/assessments/assign-ungrouped', async function (req, res) {
+  if (!canAdd(req.currentUser, 'assessments') && !canEdit(req.currentUser, 'assessments')) {
+    return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  }
+  const b = req.body;
+  const groupId = Number(b.group_id || 0);
+  const group = groupId ? await db.prepare('SELECT * FROM groups WHERE id = ? AND deleted_at IS NULL').get(groupId) : null;
+  if (!group) {
+    setFlash(res, { type: 'error', message: 'اختر مجموعة صحيحة' });
+    return res.redirect('/assessments');
+  }
+  const ids = Array.isArray(b.swimmer_ids) ? b.swimmer_ids.map(Number).filter(Boolean) : (b.swimmer_ids ? [Number(b.swimmer_ids)].filter(Boolean) : []);
+  if (!ids.length) {
+    setFlash(res, { type: 'error', message: 'اختر لاعباً واحداً على الأقل' });
+    return res.redirect('/assessments');
+  }
+  const cap = Number(group.capacity) || 12;
+  let assigned = 0, skipped = 0;
+  for (const swimmerId of ids) {
+    try {
+      const sw = await db.prepare('SELECT id, full_name, group_id FROM swimmers WHERE id = ? AND deleted_at IS NULL').get(swimmerId);
+      if (!sw || sw.group_id != null || await db.prepare('SELECT 1 FROM swimmer_group WHERE swimmer_id = ? LIMIT 1').get(swimmerId)) { skipped++; continue; }
+      const count = Number((await db.prepare('SELECT COUNT(*) AS c FROM swimmer_group WHERE group_id = ?').get(groupId)).c || 0);
+      if (count >= cap) { skipped++; continue; }
+      await db.prepare('UPDATE swimmers SET group_id = ?, coach_id = ? WHERE id = ?')
+        .run(groupId, group.coach_id || null, swimmerId);
+      await db.prepare('INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) VALUES (?, ?)').run(swimmerId, groupId);
+      audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'swimmers', swimmerId, 'تسكين اللاعب ' + sw.full_name + ' في مجموعة ' + group.name, req);
+      assigned++;
+    } catch (e) {
+      console.error('خطأ في تسكين اللاعب', swimmerId, e.message);
+      skipped++;
+    }
+  }
+  if (assigned) {
+    setFlash(res, { type: 'success', message: 'تم تسكين ' + assigned + ' لاعب في مجموعة ' + group.name + (skipped ? ' وتجاوز ' + skipped + ' لاعب (مضاف مسبقاً أو المجموعة ممتلئة)' : '') });
+  } else {
+    setFlash(res, { type: 'error', message: 'لم يتم تسكين أي لاعب — قد تكون المجموعة ممتلئة أو اللاعبون مضافون بالفعل' });
+  }
+  res.redirect('/assessments');
 });
 
 /* صفحة تقييم مجموعة: تظهر كل لاعبيها وتُحفظ النسب تلقائياً */
@@ -609,72 +662,58 @@ function buildAllGroupsReportPdf(groups, todayStr) {
 
 function round(v) { return Math.round(v * 1000) / 1000; }
 
-/* جدول Excel تفصيلي للمجموعة: المهارات متراكمة عمودياً مع بيانات اللاعب مدمجة جانباً */
-function buildGroupXlsRows(data) {
-  const rows = [];
-  data.swimmers.forEach(function (d) {
+/* جدول Excel أفقي: المستويات والمهارات في الصف العلوي، وكل لاعب في صف واحد */
+function buildGroupXlsTable(data) {
+  const levelBlocks = (data.levels || []).map(function (lvl) {
+    const criteria = (data.criteriaByLevel && data.criteriaByLevel[String(lvl.id)]) || [];
+    return { level: lvl, criteria: criteria, colCount: criteria.length + 3 };
+  }).filter(function (b) { return b.colCount > 3; });
+  const fixedCols = 5; // اسم، عضوية، مستوى حالي، حضور، متوسط عام
+  const totalCols = fixedCols + levelBlocks.reduce(function (n, b) { return n + b.colCount; }, 0);
+
+  // صف المستويات (الصف العلوي)
+  let header1 = '<tr><th>اللاعب</th><th>رقم العضوية</th><th>المستوى الحالي</th><th>الحضور</th><th>المتوسط العام</th>';
+  levelBlocks.forEach(function (b) {
+    header1 += '<th colspan="' + b.colCount + '" style="background:#dbeafe">' + xEsc(b.level.name) + '</th>';
+  });
+  header1 += '</tr>';
+
+  // صف المهارات / الملخصات
+  let header2 = '<tr><th></th><th></th><th></th><th></th><th></th>';
+  levelBlocks.forEach(function (b) {
+    b.criteria.forEach(function (c) { header2 += '<th>' + xEsc(c.name) + '</th>'; });
+    header2 += '<th>عدد</th><th>متوسط المهارات</th><th>مع العامة</th>';
+  });
+  header2 += '</tr>';
+
+  const rows = data.swimmers.map(function (d) {
     const s = d.swimmer, att = d.attendance.stats;
     const attText = att.total ? att.present + '/' + att.total + ' (' + att.rate + '%)' : '—';
-    const body = [];
-    d.allLevels.forEach(function (lvl) {
-      const skills = lvl.assessed && lvl.ownSkills.length ? lvl.ownSkills : [];
-      if (skills.length) {
-        skills.forEach(function (sk, i) {
-          body.push({
-            levelName: i === 0 ? lvl.level.name : '',
-            skillName: sk.name + (sk.isGeneral ? ' (عام)' : ''),
-            score: sk.score + '%',
-            levelAvg: '',
-            withGeneral: ''
-          });
-        });
-      }
-      // summary row per level
-      body.push({
-        levelName: skills.length ? '' : lvl.level.name,
-        skillName: lvl.assessed ? 'متوسط المستوى' : '—',
-        score: lvl.assessed ? String(lvl.count) + ' مهارة' : 'لم يُقيَّم',
-        levelAvg: lvl.ownPercent !== null ? lvl.ownPercent + '%' : '—',
-        withGeneral: lvl.percent !== null ? lvl.percent + '%' : '—'
+    const scoreMap = {};
+    d.allLevels.forEach(function (l) {
+      const m = scoreMap[l.level.id] = {};
+      l.ownSkills.forEach(function (sk) { m[sk.id] = sk.score; });
+    });
+    let cells = xCell(s.full_name, 'font-weight:700')
+      + xCell(s.membership_no)
+      + xCell(s.level_name || '—')
+      + xCell(attText, 'text-align:center')
+      + xCell(d.allSkills ? d.grandAvg + '%' : '—', 'text-align:center;font-weight:700');
+    levelBlocks.forEach(function (b) {
+      const lvl = d.allLevels.find(function (l) { return l.level.id === b.level.id; }) || null;
+      b.criteria.forEach(function (c) {
+        const sc = lvl ? (scoreMap[b.level.id] && scoreMap[b.level.id][c.id]) : undefined;
+        cells += xCell(sc !== undefined ? sc + '%' : '', 'text-align:center');
       });
+      cells += xCell(lvl && lvl.assessed ? lvl.count : '—', 'text-align:center')
+        + xCell(lvl && lvl.ownPercent !== null ? lvl.ownPercent + '%' : '—', 'text-align:center')
+        + xCell(lvl && lvl.percent !== null ? lvl.percent + '%' : '—', 'text-align:center');
     });
-    if (!body.length) body.push({ levelName: '—', skillName: 'لا توجد مستويات', score: '', levelAvg: '', withGeneral: '' });
-    // swimmer overall summary row
-    body.push({
-      levelName: '',
-      skillName: 'المتوسط العام للاعب',
-      score: d.allSkills ? d.grandAvg + '%' : '—',
-      levelAvg: '',
-      withGeneral: ''
-    });
-    const rowSpan = body.length;
-    body.forEach(function (r, idx) {
-      const isFirst = idx === 0;
-      const nameCells = isFirst
-        ? xCellAttrs(data.group.name, { rowspan: rowSpan, cls: 'font-weight:700;background:#f8fafc' })
-          + xCellAttrs(s.full_name, { rowspan: rowSpan, cls: 'font-weight:700' })
-          + xCellAttrs(s.membership_no, { rowspan: rowSpan })
-          + xCellAttrs(s.level_name || '—', { rowspan: rowSpan })
-          + xCellAttrs(attText, { rowspan: rowSpan, cls: 'text-align:center' })
-        : '';
-      rows.push('<tr>'
-        + nameCells
-        + xCell(r.levelName, r.levelName ? 'background:#e8eef7;font-weight:700' : '')
-        + xCell(r.skillName, r.skillName === 'المتوسط العام للاعب' ? 'font-weight:700;background:#fff7ed' : '')
-        + xCell(r.score, 'text-align:center')
-        + xCell(r.levelAvg, 'text-align:center')
-        + xCell(r.withGeneral, 'text-align:center')
-        + '</tr>');
-    });
+    return '<tr>' + cells + '</tr>';
   });
-  return rows;
-}
 
-function groupXlsTable(data) {
-  const rows = buildGroupXlsRows(data);
-  return '<table dir="rtl" style="width:1200px"><thead><tr><th colspan="11" style="font-size:15px;background:#0284c7;color:#fff">التقرير الفني لمجموعة ' + xEsc(data.group.name) + ' — ' + xEsc(data.group.program_name || '') + ' — ' + todayISO() + '</th></tr>'
-    + '<tr><th>المجموعة</th><th>اللاعب</th><th>رقم العضوية</th><th>المستوى الحالي</th><th>الحضور</th><th>المستوى</th><th>المهارة / الملخص</th><th>النسبة / العدد</th><th>متوسط المهارات</th><th>النسبة مع المعايير العامة</th></tr></thead>'
-    + '<tbody>' + (rows.join('') || '<tr><td colspan="11">لا يوجد لاعبون</td></tr>') + '</tbody></table>';
+  return '<table dir="rtl" style="width:' + Math.max(900, totalCols * 90) + 'px"><thead><tr><th colspan="' + totalCols + '" style="font-size:15px;background:#0284c7;color:#fff">التقرير الفني لمجموعة ' + xEsc(data.group.name) + ' — ' + xEsc(data.group.program_name || '') + ' — ' + todayISO() + '</th></tr>'
+    + header1 + header2 + '</thead><tbody>' + (rows.join('') || ('<tr><td colspan="' + totalCols + '">لا يوجد لاعبون</td></tr>')) + '</tbody></table>';
 }
 
 function xlsWorkbook(sheetsHtml, opts) {
@@ -716,7 +755,7 @@ router.get('/assessments/reports/group/:id.xls', async function (req, res) {
   if (!data) return res.redirect('/assessments');
   const summary = '<table dir="rtl" style="width:700px"><tr><th>عدد اللاعبين</th><td>' + data.totals.members + '</td><th>لاعبون مقيَّمون</th><td>' + data.totals.assessed + '</td><th>متوسط التقييم</th><td>' + data.totals.average + '%</td></tr>'
     + '<tr><th>إجمالي الحضور</th><td>' + data.totals.attendance.total + '</td><th>حضر</th><td>' + data.totals.attendance.present + '</td><th>نسبة الحضور</th><td>' + data.totals.attendance.rate + '%</td></tr></table>';
-  const html = xlsWorkbook([{ name: data.group.name || 'المجموعة', html: groupXlsTable(data) }], { body: summary });
+  const html = xlsWorkbook([{ name: data.group.name || 'المجموعة', html: buildGroupXlsTable(data) }], { body: summary });
   res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
   res.setHeader('Content-Disposition', "attachment; filename=\"group-assessment-report.xls\"; filename*=UTF-8''" + encodeURIComponent('تقرير-فني-' + data.group.name + '.xls'));
   res.send(html);
@@ -759,7 +798,7 @@ router.get('/assessments/reports/all.xls', async function (req, res) {
   const overallRate = totalSessions ? Math.round((totalPresent / totalSessions) * 100) : 0;
   const summary = '<table dir="rtl" style="width:700px"><tr><th>عدد المجموعات</th><td>' + groups.length + '</td><th>عدد اللاعبين</th><td>' + totalMembers + '</td><th>لاعبون مقيَّمون</th><td>' + totalAssessed + '</td></tr>'
     + '<tr><th>متوسط التقييم</th><td>' + overallAvg + '%</td><th>إجمالي الحضور</th><td>' + totalSessions + '</td><th>نسبة الحضور</th><td>' + overallRate + '%</td></tr></table>';
-  const sheets = groups.map(function (g) { return { name: g.group.name || ('مجموعة ' + g.group.id), html: groupXlsTable(g) }; });
+  const sheets = groups.map(function (g) { return { name: g.group.name || ('مجموعة ' + g.group.id), html: buildGroupXlsTable(g) }; });
   const html = xlsWorkbook(sheets, { body: summary });
   res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
   res.setHeader('Content-Disposition', "attachment; filename=\"all-groups-assessment-report.xls\"; filename*=UTF-8''" + encodeURIComponent('تقرير-فني-كل-المجموعات.xls'));

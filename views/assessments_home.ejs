@@ -9,7 +9,7 @@
     <% if (canAdd(user, 'assessments')) { %>
       <a href="/assessments/new" class="btn btn-primary"><i class="fas fa-plus"></i> تقييم جديد</a>
     <% } %>
-    <% if (canExport(user, 'assessments')) { %>
+    <% if (userCanExport) { %>
       <a href="/assessments/reports/all.pdf" target="_blank" class="btn btn-outline"><i class="fas fa-file-pdf"></i> تقرير كل المجموعات PDF</a>
       <a href="/assessments/reports/all.xls" class="btn btn-outline"><i class="fas fa-file-excel"></i> تقرير كل المجموعات Excel</a>
     <% } %>
@@ -54,14 +54,61 @@
 <% } %>
 
 <% if (ungroupedCount > 0) { %>
-  <div class="card mt-2">
-    <div class="card-body flex items-center gap-2" style="flex-wrap:wrap">
+  <details class="card mt-2" id="ungroupedAssign">
+    <summary class="card-body flex items-center gap-2" style="flex-wrap:wrap;cursor:pointer;list-style:none">
       <span class="assess-group-icon" style="background:linear-gradient(135deg,#f59e0b,#f97316)"><i class="fas fa-user-plus"></i></span>
       <div style="flex:1;min-width:200px">
         <b><%= ungroupedCount %> لاعب غير مضاف إلى أي مجموعة</b>
-        <div class="page-sub">افتح أي مجموعة من الأعلى لإضافتهم إليها قبل تقييمهم — يقتصر خيار الإضافة على اللاعبين غير المضافين لأي مجموعة.</div>
+        <div class="page-sub">اضغط هنا لعرض اللاعبين وتسكينهم في المجموعات المتاحة.</div>
       </div>
+      <i class="fas fa-chevron-down" style="color:var(--text-muted)"></i>
+    </summary>
+    <div class="card-body" style="border-top:1px solid var(--card-border)">
+      <form method="POST" action="/assessments/assign-ungrouped">
+        <div class="form-grid" style="margin-bottom:12px">
+          <div class="form-group" style="min-width:220px">
+            <label>المجموعة المقصودة</label>
+            <select class="form-control" name="group_id" required>
+              <option value="">— اختر مجموعة —</option>
+              <% availableGroups.forEach(function (g) { %>
+                <option value="<%= g.id %>"><%= g.name %> (<%= g.members %>/<%= g.capacity || 12 %>)</option>
+              <% }); %>
+            </select>
+          </div>
+          <div class="form-group flex items-end">
+            <button type="submit" class="btn btn-primary"><i class="fas fa-user-check"></i> تسكين المحددين</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table">
+            <thead>
+              <tr><th><input type="checkbox" id="selectAllUngrouped"></th><th>اللاعب</th><th>رقم العضوية</th><th>المستوى الحالي</th></tr>
+            </thead>
+            <tbody>
+              <% ungroupedSwimmers.forEach(function (s) { %>
+                <tr>
+                  <td><input type="checkbox" name="swimmer_ids" value="<%= s.id %>" class="ug-check"></td>
+                  <td><b><%= s.full_name %></b></td>
+                  <td><%= s.membership_no || '—' %></td>
+                  <td><%= s.level_name || '—' %></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      </form>
     </div>
-  </div>
+  </details>
+  <script>
+    (function () {
+      const all = document.getElementById('selectAllUngrouped');
+      const boxes = document.querySelectorAll('#ungroupedAssign .ug-check');
+      if (all) {
+        all.addEventListener('change', function () {
+          boxes.forEach(function (c) { c.checked = all.checked; });
+        });
+      }
+    })();
+  </script>
 <% } %>
 <%- include('partials/layout_bottom') %>
