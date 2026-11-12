@@ -7,6 +7,10 @@
   <div class="spacer"></div>
   <div class="flex gap-1">
     <a href="/teams" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل الفرق</a>
+    <% if (canExport) { %>
+      <a href="/assessments/reports/team/<%= t.id %>.pdf" target="_blank" class="btn btn-primary"><i class="fas fa-file-pdf"></i> تقرير فني PDF</a>
+      <a href="/assessments/reports/team/<%= t.id %>.xls" class="btn btn-outline"><i class="fas fa-file-excel"></i> تقرير فني Excel</a>
+    <% } %>
     <% if (canEdit) { %><a href="/teams/<%= t.id %>/edit" class="btn btn-primary"><i class="fas fa-pen"></i> تعديل</a><% } %>
   </div>
 </div>

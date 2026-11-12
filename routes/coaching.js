@@ -674,7 +674,8 @@ function buildGroupXlsTable(data, opts) {
 
   let html = '';
   if (opts.showTitle !== false) {
-    html += '<thead><tr><th colspan="' + totalCols + '" style="font-size:15px;background:#0284c7;color:#fff">التقرير الفني لمجموعة ' + xEsc(data.group.name) + ' — ' + xEsc(data.group.program_name || '') + ' — ' + todayISO() + '</th></tr>';
+    const entity = opts.entityName || 'مجموعة';
+    html += '<thead><tr><th colspan="' + totalCols + '" style="font-size:15px;background:#0284c7;color:#fff">التقرير الفني ل' + entity + ': ' + xEsc(data.group.name) + ' — ' + xEsc(data.group.program_name || '') + ' — ' + todayISO() + '</th></tr>';
   } else {
     html += '<thead>';
   }
@@ -812,6 +813,48 @@ router.get('/assessments/reports/all.xls', async function (req, res) {
   const html = xlsWorkbook(sheets, { body: titleBlock + '<br>' + summary });
   res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
   res.setHeader('Content-Disposition', "attachment; filename=\"all-groups-assessment-report.xls\"; filename*=UTF-8''" + encodeURIComponent('تقرير-فني-كل-المجموعات.xls'));
+  res.send(html);
+});
+
+/* تقارير الفرق (PDF + Excel) — نفس بيانات التقييم الفني لكن لأعضاء الفريق */
+function buildTeamReportPdf(data, todayStr) {
+  const doc = buildGroupReportPdf(data, todayStr);
+  doc.info.title = 'التقرير الفني — ' + data.team.name;
+  doc.content[1].text = 'التقرير الفني الشامل للفريق';
+  doc.footer = function (current, total) {
+    return { text: 'الأكاديمية — التقرير الفني للفريق   •   صفحة ' + current + ' من ' + total, alignment: 'center', fontSize: 8, color: '#9ca3af' };
+  };
+  return doc;
+}
+
+router.get('/assessments/reports/team/:id.pdf', async function (req, res) {
+  if (!canView(req.currentUser, 'assessments') || !canExport(req.currentUser, 'assessments')) {
+    return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  }
+  const data = await assessmentReports.teamReportData(Number(req.params.id), { from: req.query.from, to: req.query.to });
+  if (!data) return res.redirect('/teams');
+  const doc = buildTeamReportPdf(data, todayISO());
+  pdfmake.createPdf(doc).getBuffer().then(function (buf) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="team-assessment-report-' + data.team.id + '.pdf"');
+    res.send(buf);
+  }).catch(function (e) {
+    console.error('خطأ في توليد تقرير الفريق PDF:', e.message);
+    res.status(500).send('تعذّر توليد ملف PDF: ' + e.message);
+  });
+});
+
+router.get('/assessments/reports/team/:id.xls', async function (req, res) {
+  if (!canView(req.currentUser, 'assessments') || !canExport(req.currentUser, 'assessments')) {
+    return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  }
+  const data = await assessmentReports.teamReportData(Number(req.params.id), { from: req.query.from, to: req.query.to });
+  if (!data) return res.redirect('/teams');
+  const summary = '<table dir="rtl" style="width:700px"><tr><th>عدد اللاعبين</th><td>' + data.totals.members + '</td><th>لاعبون مقيَّمون</th><td>' + data.totals.assessed + '</td><th>متوسط التقييم</th><td>' + data.totals.average + '%</td></tr>'
+    + '<tr><th>إجمالي الحضور</th><td>' + data.totals.attendance.total + '</td><th>حضر</th><td>' + data.totals.attendance.present + '</td><th>نسبة الحضور</th><td>' + data.totals.attendance.rate + '%</td></tr></table>';
+  const html = xlsWorkbook([{ name: data.team.name || 'الفريق', html: buildGroupXlsTable(data, { entityName: 'فريق' }) }], { body: summary });
+  res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+  res.setHeader('Content-Disposition', "attachment; filename=\"team-assessment-report.xls\"; filename*=UTF-8''" + encodeURIComponent('تقرير-فني-' + data.team.name + '.xls'));
   res.send(html);
 });
 
@@ -1396,7 +1439,8 @@ router.get('/teams/:id', async function (req, res) {
   const swimmers = (await db.prepare(`SELECT id, full_name, membership_no FROM swimmers WHERE deleted_at IS NULL AND id NOT IN (SELECT swimmer_id FROM team_members WHERE team_id = ?)` + progClause(activeSport(req), 'swimmers') + ` ORDER BY full_name`).all(id))
     .map(s => ({ value: s.id, label: s.full_name + ' (' + s.membership_no + ')' }));
   res.render('team_detail', { title: 'تفاصيل الفريق', active: 'teams', t, members, swimmers, money,
-    canEdit: canEdit(req.currentUser, 'teams'), canDel: canDel(req.currentUser, 'teams') });
+    canEdit: canEdit(req.currentUser, 'teams'), canDel: canDel(req.currentUser, 'teams'),
+    canExport: canExport(req.currentUser, 'assessments') });
 });
 router.get('/teams/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
