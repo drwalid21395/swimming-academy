@@ -9,6 +9,10 @@
     <% if (canAdd(user, 'assessments')) { %>
       <a href="/assessments/new" class="btn btn-primary"><i class="fas fa-plus"></i> تقييم جديد</a>
     <% } %>
+    <% if (canExport(user, 'assessments')) { %>
+      <a href="/assessments/reports/all.pdf" target="_blank" class="btn btn-outline"><i class="fas fa-file-pdf"></i> تقرير كل المجموعات PDF</a>
+      <a href="/assessments/reports/all.xls" class="btn btn-outline"><i class="fas fa-file-excel"></i> تقرير كل المجموعات Excel</a>
+    <% } %>
     <a href="/assessments/log" class="btn btn-outline"><i class="fas fa-list-check"></i> سجل التقييمات</a>
   </div>
 </div>

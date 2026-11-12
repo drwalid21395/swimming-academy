@@ -431,6 +431,14 @@ function xEsc(v) {
 function xCell(v, cls) {
   return '<td' + (cls ? ' style="' + cls + '"' : '') + '>' + (v === null || v === undefined || v === '' ? '—' : xEsc(v)) + '</td>';
 }
+function xCellAttrs(v, attrs) {
+  attrs = attrs || {};
+  let s = '';
+  if (attrs.rowspan) s += ' rowspan="' + attrs.rowspan + '"';
+  if (attrs.colspan) s += ' colspan="' + attrs.colspan + '"';
+  if (attrs.cls) s += ' style="' + attrs.cls + '"';
+  return '<td' + s + '>' + (v === null || v === undefined || v === '' ? '—' : xEsc(v)) + '</td>';
+}
 function latestAssessmentDate(d) {
   let last = null;
   (d.levels || []).forEach(function (l) {
@@ -439,12 +447,12 @@ function latestAssessmentDate(d) {
   return last;
 }
 
-function buildGroupReportPdf(data, todayStr) {
+function buildGroupReportContent(data, todayStr, title) {
   const g = data.group;
   const t = data.totals;
-  const content = [
+  return [
     { text: 'الأكاديمية', style: 'academyTitle' },
-    { text: 'التقرير الفني الشامل للمجموعة', style: 'reportTitle' },
+    { text: title || 'التقرير الفني الشامل للمجموعة', style: 'reportTitle' },
     { text: 'تاريخ الإصدار: ' + todayStr, style: 'meta' },
     { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 760, y2: 0, lineWidth: 1.6, lineColor: '#0284c7' }], margin: [0, 6, 0, 0] },
     { table: { headerRows: 0, widths: ['14%', '36%', '14%', '36%'], body: [
@@ -459,9 +467,19 @@ function buildGroupReportPdf(data, todayStr) {
       { text: [t.attendance.rate + '%', { text: '\nنسبة الحضور', fontSize: 9, color: '#6b7280' }], style: 'kpi', color: '#ca8a04' }
     ]] }, layout: { defaultBorder: true, hLineWidth: () => 0, vLineWidth: () => 0, paddingLeft: () => 4, paddingRight: () => 4, paddingTop: () => 6, paddingBottom: () => 6 }, margin: [0, 2, 0, 0] },
     { text: 'ملخص اللاعبين', style: 'sectionTitle', margin: [0, 14, 0, 4] }
-  ];
+  ].concat(buildGroupSummaryTable(data)).concat([
+    { text: 'تفصيل كل لاعب على كل المستويات', style: 'sectionTitle', margin: [0, 16, 0, 4] }
+  ]).concat(buildGroupDetailBlocks(data)).concat([
+    { table: { widths: ['33.3%', '33.3%', '33.3%'], body: [[
+      { text: 'مدير الأكاديمية', style: 'sign' },
+      { text: 'المدرب المسؤول', style: 'sign' },
+      { text: 'التاريخ', style: 'sign' }
+    ]] }, layout: 'noBorders', margin: [0, 22, 0, 0] }
+  ]);
+}
 
-  const summaryRows = data.swimmers.map(function (d, i) {
+function buildGroupSummaryTable(data) {
+  const rows = data.swimmers.map(function (d, i) {
     const s = d.swimmer, att = d.attendance.stats;
     return [
       { text: String(i + 1), style: 'td' },
@@ -475,14 +493,16 @@ function buildGroupReportPdf(data, todayStr) {
       { text: latestAssessmentDate(d) ? fmtDate(latestAssessmentDate(d)) : '—', style: 'td' }
     ];
   });
-  content.push({ table: { headerRows: 1, widths: [22, '*', 60, 80, 45, 50, 50, 45, 80], body: [
+  return [{ table: { headerRows: 1, widths: [22, '*', 60, 80, 45, 50, 50, 45, 80], body: [
     [{ text: '#', style: 'th' }, { text: 'اللاعب', style: 'th' }, { text: 'العضوية', style: 'th' }, { text: 'المستوى الحالي', style: 'th' }, { text: 'مستويات مقيّمة', style: 'th' }, { text: 'المتوسط', style: 'th' }, { text: 'حضور', style: 'th' }, { text: 'النسبة', style: 'th' }, { text: 'آخر تقييم', style: 'th' }]
-  ].concat(summaryRows.length ? summaryRows : [[{ text: 'لا يوجد لاعبون', style: 'td', colSpan: 9, alignment: 'center' }, {}, {}, {}, {}, {}, {}, {}, {}]]) }, layout: 'lightHorizontalLines' });
+  ].concat(rows.length ? rows : [[{ text: 'لا يوجد لاعبون', style: 'td', colSpan: 9, alignment: 'center' }, {}, {}, {}, {}, {}, {}, {}, {}]]) }, layout: 'lightHorizontalLines' }];
+}
 
-  content.push({ text: 'تفصيل كل لاعب على كل المستويات', style: 'sectionTitle', margin: [0, 16, 0, 4] });
+function buildGroupDetailBlocks(data) {
+  const blocks = [];
   data.swimmers.forEach(function (d, i) {
     const att = d.attendance.stats;
-    content.push({ columns: [
+    blocks.push({ columns: [
       { text: (i + 1) + '. ' + d.swimmer.full_name, style: 'subTitle' },
       { text: 'المتوسط العام: ' + (d.allSkills ? d.grandAvg + '%' : '—'), alignment: 'left', bold: true, fontSize: 10, color: d.allSkills ? gradeColor(d.grandAvg) : '#9ca3af' }
     ], margin: [0, 8, 0, 3] });
@@ -496,23 +516,20 @@ function buildGroupReportPdf(data, todayStr) {
         { text: lvl.assessment ? (lvl.assessment.coach_name || '—') : '—', style: 'td' }
       ];
     });
-    content.push({ table: { headerRows: 1, widths: ['26%', 50, 55, 75, 90, '*'], body: [
+    blocks.push({ table: { headerRows: 1, widths: ['26%', 50, 55, 75, 90, '*'], body: [
       [{ text: 'المستوى', style: 'th' }, { text: 'المهارات', style: 'th' }, { text: 'نسبة المهارات', style: 'th' }, { text: 'مع المعايير العامة', style: 'th' }, { text: 'آخر تقييم', style: 'th' }, { text: 'الكابتن', style: 'th' }]
     ].concat(lvlRows.length ? lvlRows : [[{ text: 'لا توجد مستويات مسجلة', style: 'td', colSpan: 6, alignment: 'center' }, {}, {}, {}, {}, {}]]) }, layout: 'lightHorizontalLines' });
-    content.push({ text: 'الحضور: حضر ' + att.present + ' · غاب ' + att.absent + ' · بعذر ' + att.excused + ' · متأخر ' + att.late + ' · إجمالي ' + att.total + ' · نسبة الحضور ' + att.rate + '%', style: 'meta2', margin: [0, 3, 0, 0] });
+    blocks.push({ text: 'الحضور: حضر ' + att.present + ' · غاب ' + att.absent + ' · بعذر ' + att.excused + ' · متأخر ' + att.late + ' · إجمالي ' + att.total + ' · نسبة الحضور ' + att.rate + '%', style: 'meta2', margin: [0, 3, 0, 0] });
   });
+  return blocks;
+}
 
-  content.push({ table: { widths: ['33.3%', '33.3%', '33.3%'], body: [[
-    { text: 'مدير الأكاديمية', style: 'sign' },
-    { text: 'المدرب المسؤول', style: 'sign' },
-    { text: 'التاريخ', style: 'sign' }
-  ]] }, layout: 'noBorders', margin: [0, 22, 0, 0] });
-
+function buildGroupReportPdf(data, todayStr) {
   return {
     pageSize: 'A4',
     pageOrientation: 'landscape',
     pageMargins: [28, 30, 28, 36],
-    info: { title: 'التقرير الفني — ' + g.name, author: 'الأكاديمية' },
+    info: { title: 'التقرير الفني — ' + data.group.name, author: 'الأكاديمية' },
     defaultStyle: { font: 'Tahoma', fontSize: 9.5, color: '#111827', alignment: 'right' },
     styles: {
       academyTitle: { fontSize: 18, bold: true, color: '#0284c7', alignment: 'center' },
@@ -531,8 +548,146 @@ function buildGroupReportPdf(data, todayStr) {
     footer: function (current, total) {
       return { text: 'الأكاديمية — التقرير الفني للمجموعة   •   صفحة ' + current + ' من ' + total, alignment: 'center', fontSize: 8, color: '#9ca3af' };
     },
+    content: buildGroupReportContent(data, todayStr, 'التقرير الفني الشامل للمجموعة')
+  };
+}
+
+function buildAllGroupsReportPdf(groups, todayStr) {
+  let totalMembers = 0, totalAssessed = 0, grandSum = 0, grandCount = 0, totalPresent = 0, totalAbs = 0, totalSessions = 0;
+  groups.forEach(function (g) {
+    totalMembers += g.totals.members;
+    totalAssessed += g.totals.assessed;
+    g.swimmers.forEach(function (s) {
+      if (s.allSkills) { grandSum += s.grandSum; grandCount += s.allSkills; }
+      const a = s.attendance.stats;
+      totalPresent += a.present; totalAbs += a.absent; totalSessions += a.total;
+    });
+  });
+  const overallAvg = grandCount ? round(grandSum / grandCount) : 0;
+  const overallRate = totalSessions ? Math.round((totalPresent / totalSessions) * 100) : 0;
+  const content = [
+    { text: 'الأكاديمية', style: 'academyTitle' },
+    { text: 'التقرير الفني المجمع — كل المجموعات', style: 'reportTitle' },
+    { text: 'تاريخ الإصدار: ' + todayStr, style: 'meta' },
+    { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 760, y2: 0, lineWidth: 1.6, lineColor: '#0284c7' }], margin: [0, 6, 0, 0] },
+    { table: { widths: ['20%', '20%', '20%', '20%', '20%'], body: [[
+      { text: [String(groups.length), { text: '\nمجموعة', fontSize: 9, color: '#6b7280' }], style: 'kpi', color: '#0284c7' },
+      { text: [String(totalMembers), { text: '\nلاعب', fontSize: 9, color: '#6b7280' }], style: 'kpi', color: '#0284c7' },
+      { text: [String(totalAssessed), { text: '\nلاعب مقيَّم', fontSize: 9, color: '#6b7280' }], style: 'kpi', color: '#16a34a' },
+      { text: [overallAvg + '%', { text: '\nمتوسط التقييم', fontSize: 9, color: '#6b7280' }], style: 'kpi', color: '#0284c7' },
+      { text: [overallRate + '%', { text: '\nنسبة الحضور', fontSize: 9, color: '#6b7280' }], style: 'kpi', color: '#ca8a04' }
+    ]] }, layout: { defaultBorder: true, hLineWidth: () => 0, vLineWidth: () => 0, paddingLeft: () => 4, paddingRight: () => 4, paddingTop: () => 6, paddingBottom: () => 6 }, margin: [0, 10, 0, 0] }
+  ];
+  groups.forEach(function (g, i) {
+    if (i > 0) content.push({ text: '', pageBreak: 'before' });
+    content.push.apply(content, buildGroupReportContent(g, todayStr, 'المجموعة: ' + g.group.name));
+  });
+  return {
+    pageSize: 'A4', pageOrientation: 'landscape', pageMargins: [28, 30, 28, 36],
+    info: { title: 'التقرير الفني المجمع', author: 'الأكاديمية' },
+    defaultStyle: { font: 'Tahoma', fontSize: 9.5, color: '#111827', alignment: 'right' },
+    styles: {
+      academyTitle: { fontSize: 18, bold: true, color: '#0284c7', alignment: 'center' },
+      reportTitle: { fontSize: 14, bold: true, alignment: 'center', margin: [0, 4, 0, 2] },
+      meta: { fontSize: 9, color: '#6b7280', alignment: 'center' },
+      meta2: { fontSize: 9, color: '#6b7280' },
+      lbl: { bold: true, fontSize: 9.5, color: '#334155', alignment: 'center' },
+      val: { fontSize: 10, alignment: 'center' },
+      th: { bold: true, fontSize: 9.5, color: '#ffffff', fillColor: '#0284c7', alignment: 'center', margin: [2, 3, 2, 3] },
+      td: { fontSize: 9, alignment: 'center', margin: [1, 2, 1, 2] },
+      sectionTitle: { fontSize: 12, bold: true, color: '#0f172a' },
+      subTitle: { fontSize: 11, bold: true, color: '#0f172a' },
+      kpi: { fontSize: 15, bold: true, alignment: 'center' },
+      sign: { alignment: 'center', fontSize: 11, bold: true, margin: [0, 0, 0, 34] }
+    },
+    footer: function (current, total) {
+      return { text: 'الأكاديمية — التقرير الفني المجمع   •   صفحة ' + current + ' من ' + total, alignment: 'center', fontSize: 8, color: '#9ca3af' };
+    },
     content: content
   };
+}
+
+function round(v) { return Math.round(v * 1000) / 1000; }
+
+/* جدول Excel تفصيلي للمجموعة: المهارات متراكمة عمودياً مع بيانات اللاعب مدمجة جانباً */
+function buildGroupXlsRows(data) {
+  const rows = [];
+  data.swimmers.forEach(function (d) {
+    const s = d.swimmer, att = d.attendance.stats;
+    const attText = att.total ? att.present + '/' + att.total + ' (' + att.rate + '%)' : '—';
+    const body = [];
+    d.allLevels.forEach(function (lvl) {
+      if (lvl.assessed && lvl.ownSkills.length) {
+        lvl.ownSkills.forEach(function (sk) {
+          body.push({
+            levelName: '',
+            skillName: sk.name + (sk.isGeneral ? ' (عام)' : ''),
+            score: sk.score + '%',
+            levelAvg: '',
+            withGeneral: ''
+          });
+        });
+      }
+      // summary row per level
+      body.push({
+        levelName: lvl.level.name,
+        skillName: lvl.assessed ? 'متوسط المستوى' : '—',
+        score: lvl.assessed ? String(lvl.count) + ' مهارة' : 'لم يُقيَّم',
+        levelAvg: lvl.ownPercent !== null ? lvl.ownPercent + '%' : '—',
+        withGeneral: lvl.percent !== null ? lvl.percent + '%' : '—'
+      });
+    });
+    if (!body.length) body.push({ levelName: '—', skillName: 'لا توجد مستويات', score: '', levelAvg: '', withGeneral: '' });
+    // swimmer overall summary row
+    body.push({
+      levelName: '',
+      skillName: 'المتوسط العام للاعب',
+      score: d.allSkills ? d.grandAvg + '%' : '—',
+      levelAvg: '',
+      withGeneral: ''
+    });
+    const rowSpan = body.length;
+    body.forEach(function (r, idx) {
+      const isFirst = idx === 0;
+      const nameCells = isFirst
+        ? xCellAttrs(data.group.name, { rowspan: rowSpan, cls: 'font-weight:700;background:#f8fafc' })
+          + xCellAttrs(s.full_name, { rowspan: rowSpan, cls: 'font-weight:700' })
+          + xCellAttrs(s.membership_no, { rowspan: rowSpan })
+          + xCellAttrs(s.level_name || '—', { rowspan: rowSpan })
+          + xCellAttrs(attText, { rowspan: rowSpan, cls: 'text-align:center' })
+        : '';
+      rows.push('<tr>'
+        + nameCells
+        + xCell(r.levelName, r.levelName ? 'background:#e8eef7;font-weight:700' : '')
+        + xCell(r.skillName, r.skillName === 'المتوسط العام للاعب' ? 'font-weight:700;background:#fff7ed' : '')
+        + xCell(r.score, 'text-align:center')
+        + xCell(r.levelAvg, 'text-align:center')
+        + xCell(r.withGeneral, 'text-align:center')
+        + '</tr>');
+    });
+  });
+  return rows;
+}
+
+function groupXlsTable(data) {
+  const rows = buildGroupXlsRows(data);
+  return '<table dir="rtl" style="width:1200px"><thead><tr><th colspan="11" style="font-size:15px;background:#0284c7;color:#fff">التقرير الفني لمجموعة ' + xEsc(data.group.name) + ' — ' + xEsc(data.group.program_name || '') + ' — ' + todayISO() + '</th></tr>'
+    + '<tr><th>المجموعة</th><th>اللاعب</th><th>رقم العضوية</th><th>المستوى الحالي</th><th>الحضور</th><th>المستوى</th><th>المهارة / الملخص</th><th>النسبة / العدد</th><th>متوسط المهارات</th><th>النسبة مع المعايير العامة</th></tr></thead>'
+    + '<tbody>' + (rows.join('') || '<tr><td colspan="11">لا يوجد لاعبون</td></tr>') + '</tbody></table>';
+}
+
+function xlsWorkbook(sheetsHtml, opts) {
+  opts = opts || {};
+  let sheetsXml = '';
+  sheetsHtml.forEach(function (sh, i) {
+    sheetsXml += '<x:ExcelWorksheet><x:Name>' + xEsc(sh.name || ('Sheet' + (i + 1))) + '</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/></x:WorksheetOptions></x:ExcelWorksheet>';
+  });
+  let body = (opts.body || '');
+  sheetsHtml.forEach(function (sh) { body += sh.html; });
+  return '\uFEFF' + '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8">'
+    + '<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets>' + sheetsXml + '</x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->'
+    + '<style>table{border-collapse:collapse;table-layout:fixed}td,th{border:1px solid #999;padding:4px 7px;font-size:12px;font-family:Tahoma,Arial,sans-serif;vertical-align:top}th{background:#e8eef7;font-weight:700}</style></head>'
+    + '<body dir="rtl">' + body + '</body></html>';
 }
 
 router.get('/assessments/reports/group/:id.pdf', async function (req, res) {
@@ -558,40 +713,55 @@ router.get('/assessments/reports/group/:id.xls', async function (req, res) {
   }
   const data = await assessmentReports.groupReportData(Number(req.params.id), { from: req.query.from, to: req.query.to });
   if (!data) return res.redirect('/assessments');
-  const rows = [];
-  data.swimmers.forEach(function (d) {
-    const s = d.swimmer, att = d.attendance.stats;
-    const levels = d.allLevels.length ? d.allLevels : [null];
-    levels.forEach(function (lvl) {
-      rows.push('<tr>'
-        + xCell(data.group.name)
-        + xCell(s.full_name, 'font-weight:700')
-        + xCell(s.membership_no)
-        + xCell(s.level_name || '—')
-        + xCell(lvl ? lvl.level.name : '—')
-        + xCell(lvl && lvl.assessed ? lvl.count : '—')
-        + xCell(lvl && lvl.ownPercent !== null ? lvl.ownPercent + '%' : '—')
-        + xCell(lvl && lvl.percent !== null ? lvl.percent + '%' : 'لم يُقيَّم')
-        + xCell(lvl && lvl.assessment ? fmtDate(lvl.assessment.date) : '—')
-        + xCell(lvl && lvl.assessment ? (lvl.assessment.coach_name || '—') : '—')
-        + xCell(d.allSkills ? d.grandAvg + '%' : '—')
-        + xCell(att.present) + xCell(att.absent) + xCell(att.excused) + xCell(att.late)
-        + xCell(att.total) + xCell(att.rate + '%')
-        + '</tr>');
-    });
-  });
-  const html = '\uFEFF' + `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8">
-    <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>التقرير الفني</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
-    <style>table{border-collapse:collapse;table-layout:fixed}td,th{border:1px solid #999;padding:4px 7px;font-size:12px;font-family:Tahoma,Arial,sans-serif;vertical-align:top}th{background:#e8eef7;font-weight:700}</style></head>
-    <body dir="rtl"><table dir="rtl" style="width:1500px">
-      <thead><tr><th colspan="18" style="font-size:15px;background:#0284c7;color:#fff">التقرير الفني لمجموعة ${xEsc(data.group.name)} — ${xEsc(data.group.program_name || '')} — ${todayISO()}</th></tr>
-      <tr><th>المجموعة</th><th>اللاعب</th><th>رقم العضوية</th><th>المستوى الحالي</th><th>المستوى المقيَّم</th><th>عدد المهارات</th><th>نسبة المهارات</th><th>النسبة مع العامة</th><th>آخر تقييم</th><th>الكابتن</th><th>المتوسط العام</th><th>حضر</th><th>غاب</th><th>بعذر</th><th>متأخر</th><th>إجمالي الحضور</th><th>نسبة الحضور</th></tr></thead>
-      <tbody>${rows.join('') || '<tr><td colspan="18">لا يوجد لاعبون</td></tr>'}</tbody></table>
-      <br><table dir="rtl" style="width:700px"><tr><th>عدد اللاعبين</th><td>${data.totals.members}</td><th>لاعبون مقيَّمون</th><td>${data.totals.assessed}</td><th>متوسط التقييم</th><td>${data.totals.average}%</td></tr>
-      <tr><th>إجمالي الحضور</th><td>${data.totals.attendance.total}</td><th>حضر</th><td>${data.totals.attendance.present}</td><th>نسبة الحضور</th><td>${data.totals.attendance.rate}%</td></tr></table>
-    </body></html>`;
+  const summary = '<table dir="rtl" style="width:700px"><tr><th>عدد اللاعبين</th><td>' + data.totals.members + '</td><th>لاعبون مقيَّمون</th><td>' + data.totals.assessed + '</td><th>متوسط التقييم</th><td>' + data.totals.average + '%</td></tr>'
+    + '<tr><th>إجمالي الحضور</th><td>' + data.totals.attendance.total + '</td><th>حضر</th><td>' + data.totals.attendance.present + '</td><th>نسبة الحضور</th><td>' + data.totals.attendance.rate + '%</td></tr></table>';
+  const html = xlsWorkbook([{ name: data.group.name || 'المجموعة', html: groupXlsTable(data) }], { body: summary });
   res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
   res.setHeader('Content-Disposition', "attachment; filename=\"group-assessment-report.xls\"; filename*=UTF-8''" + encodeURIComponent('تقرير-فني-' + data.group.name + '.xls'));
+  res.send(html);
+});
+
+router.get('/assessments/reports/all.pdf', async function (req, res) {
+  if (!canView(req.currentUser, 'assessments') || !canExport(req.currentUser, 'assessments')) {
+    return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  }
+  const groups = await assessmentReports.allGroupsReportData(activeSport(req), { from: req.query.from, to: req.query.to });
+  if (!groups.length) return res.redirect('/assessments');
+  const doc = buildAllGroupsReportPdf(groups, todayISO());
+  pdfmake.createPdf(doc).getBuffer().then(function (buf) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="all-groups-assessment-report.pdf"');
+    res.send(buf);
+  }).catch(function (e) {
+    console.error('خطأ في توليد التقرير المجمع PDF:', e.message);
+    res.status(500).send('تعذّر توليد ملف PDF: ' + e.message);
+  });
+});
+
+router.get('/assessments/reports/all.xls', async function (req, res) {
+  if (!canView(req.currentUser, 'assessments') || !canExport(req.currentUser, 'assessments')) {
+    return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  }
+  const groups = await assessmentReports.allGroupsReportData(activeSport(req), { from: req.query.from, to: req.query.to });
+  if (!groups.length) return res.redirect('/assessments');
+  let totalMembers = 0, totalAssessed = 0, grandSum = 0, grandCount = 0, totalPresent = 0, totalSessions = 0;
+  groups.forEach(function (g) {
+    totalMembers += g.totals.members;
+    totalAssessed += g.totals.assessed;
+    g.swimmers.forEach(function (s) {
+      if (s.allSkills) { grandSum += s.grandSum; grandCount += s.allSkills; }
+      totalPresent += s.attendance.stats.present;
+      totalSessions += s.attendance.stats.total;
+    });
+  });
+  const overallAvg = grandCount ? round(grandSum / grandCount) : 0;
+  const overallRate = totalSessions ? Math.round((totalPresent / totalSessions) * 100) : 0;
+  const summary = '<table dir="rtl" style="width:700px"><tr><th>عدد المجموعات</th><td>' + groups.length + '</td><th>عدد اللاعبين</th><td>' + totalMembers + '</td><th>لاعبون مقيَّمون</th><td>' + totalAssessed + '</td></tr>'
+    + '<tr><th>متوسط التقييم</th><td>' + overallAvg + '%</td><th>إجمالي الحضور</th><td>' + totalSessions + '</td><th>نسبة الحضور</th><td>' + overallRate + '%</td></tr></table>';
+  const sheets = groups.map(function (g) { return { name: g.group.name || ('مجموعة ' + g.group.id), html: groupXlsTable(g) }; });
+  const html = xlsWorkbook(sheets, { body: summary });
+  res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+  res.setHeader('Content-Disposition', "attachment; filename=\"all-groups-assessment-report.xls\"; filename*=UTF-8''" + encodeURIComponent('تقرير-فني-كل-المجموعات.xls'));
   res.send(html);
 });
 
