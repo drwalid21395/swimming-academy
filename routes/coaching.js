@@ -617,10 +617,11 @@ function buildGroupXlsRows(data) {
     const attText = att.total ? att.present + '/' + att.total + ' (' + att.rate + '%)' : '—';
     const body = [];
     d.allLevels.forEach(function (lvl) {
-      if (lvl.assessed && lvl.ownSkills.length) {
-        lvl.ownSkills.forEach(function (sk) {
+      const skills = lvl.assessed && lvl.ownSkills.length ? lvl.ownSkills : [];
+      if (skills.length) {
+        skills.forEach(function (sk, i) {
           body.push({
-            levelName: '',
+            levelName: i === 0 ? lvl.level.name : '',
             skillName: sk.name + (sk.isGeneral ? ' (عام)' : ''),
             score: sk.score + '%',
             levelAvg: '',
@@ -630,7 +631,7 @@ function buildGroupXlsRows(data) {
       }
       // summary row per level
       body.push({
-        levelName: lvl.level.name,
+        levelName: skills.length ? '' : lvl.level.name,
         skillName: lvl.assessed ? 'متوسط المستوى' : '—',
         score: lvl.assessed ? String(lvl.count) + ' مهارة' : 'لم يُقيَّم',
         levelAvg: lvl.ownPercent !== null ? lvl.ownPercent + '%' : '—',
