@@ -1,0 +1,436 @@
+/**
+ * بطاقات العضوية:
+ * - إنشاء بطاقة من اسم السباح وتاريخ الميلاد والبرنامج (تُنشئ سجل لاعب إن لم يكن موجوداً)
+ * - عرض البطاقة وتحميلها PDF أو صورة PNG (الصورة تُولَّد من SVG في المتصفح)
+ * - مسح الباركود بالكاميرا لتسجيل الحضور/الغياب مع منع التحضير المكرر
+ * - الصلاحيات عبر وحدة membershipCards (view/add/edit/del/export)
+ */
+const express = require('express');
+const router = express.Router();
+const { db } = require('../lib/db');
+const { audit, canView, canAdd, canEdit, canExport, today } = require('../lib/helpers');
+const { setFlash } = require('../lib/auth-cookie');
+const { nextMembership, isUniqueViolation } = require('../lib/membership');
+const { effectiveSport, activeSport, sportClause } = require('../lib/sport-context');
+const { cardSvg, cardPdfDoc, barcodePng, normalizeBarcode, isoDate } = require('../lib/membership-card');
+const pdfmake = require('../lib/pdf');
+
+function academyName(res) {
+  const acad = res && res.locals && res.locals.academy;
+  return (acad && acad.name) || (res && res.locals && res.locals.siteName) || 'أكاديمية السباحة';
+}
+
+function nowTime() {
+  const d = new Date();
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+async function allProgramOptions(sid) {
+  let rows = await db.prepare('SELECT id, name, sport_id FROM programs WHERE deleted_at IS NULL' + sportClause(sid, 'programs') + ' ORDER BY name').all();
+  if (!rows.length) rows = await db.prepare('SELECT id, name, sport_id FROM programs WHERE deleted_at IS NULL ORDER BY name').all();
+  return rows.map(p => ({ value: p.id, label: p.name }));
+}
+
+const CARD_SELECT = `SELECT s.*, p.name AS program_name, p.sport_id AS program_sport_id,
+    g.name AS group_name, c.full_name AS coach_name, l.name AS level_name,
+    (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id
+      ORDER BY (sub.status = 'نشط') DESC, sub.id DESC LIMIT 1) AS subscription_end
+  FROM swimmers s
+  LEFT JOIN programs p ON p.id = s.program_id
+  LEFT JOIN groups g ON g.id = s.group_id
+  LEFT JOIN coaches c ON c.id = s.coach_id
+  LEFT JOIN levels l ON l.id = s.level_id`;
+
+async function loadCard(id) {
+  return db.prepare(CARD_SELECT + ' WHERE s.id = ? AND s.deleted_at IS NULL').get(Number(id));
+}
+
+/* ============================================================== */
+/*                        قائمة البطاقات                          */
+/* ============================================================== */
+router.get('/membership-cards', async function (req, res) {
+  if (!canView(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const q = String(req.query.q || '').trim();
+  let sql = `SELECT s.id, s.membership_no, s.full_name, s.birth_date, s.avatar, s.status,
+      p.name AS program_name, g.name AS group_name
+    FROM swimmers s
+    LEFT JOIN programs p ON p.id = s.program_id
+    LEFT JOIN groups g ON g.id = s.group_id
+    WHERE s.deleted_at IS NULL`;
+  const params = [];
+  if (q) {
+    sql += ' AND (s.full_name LIKE ? OR s.membership_no LIKE ?)';
+    params.push('%' + q + '%', '%' + q + '%');
+  }
+  sql += ' ORDER BY s.full_name LIMIT 500';
+  const rows = await db.prepare(sql).all(...params);
+  const stats = await db.prepare(`SELECT
+      SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS present,
+      SUM(CASE WHEN a.status = 'absent' THEN 1 ELSE 0 END) AS absent
+    FROM attendance a JOIN sessions s ON s.id = a.session_id
+    WHERE s.date = ? AND s.deleted_at IS NULL`).get(today());
+  res.render('membership_cards', {
+    title: 'بطاقات العضوية', active: 'membershipCards', rows, q,
+    canCreate: canAdd(req.currentUser, 'membershipCards'),
+    canDownload: canExport(req.currentUser, 'membershipCards'),
+    canScan: canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards'),
+    stats: stats || { present: 0, absent: 0 },
+    todayDate: today()
+  });
+});
+
+/* ============================================================== */
+/*                        إنشاء بطاقة جديدة                       */
+/* ============================================================== */
+router.get('/membership-cards/new', async function (req, res) {
+  if (!canAdd(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  res.render('membership_card_form', {
+    title: 'بطاقة عضوية جديدة', active: 'membershipCards', mode: 'new',
+    action: '/membership-cards/new', submitLabel: 'إنشاء البطاقة',
+    programs: await allProgramOptions(activeSport(req)), values: {}, error: ''
+  });
+});
+
+router.post('/membership-cards/new', async function (req, res) {
+  if (!canAdd(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const b = req.body || {};
+  const fullName = String(b.full_name || '').trim();
+  const birthDate = isoDate(b.birth_date);
+  const programId = Number(b.program_id) || 0;
+  const phone = String(b.phone || '').trim();
+  const gender = b.gender === 'أنثى' ? 'أنثى' : 'ذكر';
+  const values = { full_name: fullName, birth_date: birthDate, program_id: programId || '', phone: phone, gender: gender };
+  const programs = await allProgramOptions(activeSport(req));
+
+  const fail = async function (message) {
+    return res.status(400).render('membership_card_form', {
+      title: 'بطاقة عضوية جديدة', active: 'membershipCards', mode: 'new',
+      action: '/membership-cards/new', submitLabel: 'إنشاء البطاقة',
+      programs, values, error: message
+    });
+  };
+  if (!fullName) return fail('يرجى إدخال اسم السباح');
+  if (!birthDate) return fail('يرجى إدخال تاريخ الميلاد');
+  if (!programId) return fail('يرجى اختيار البرنامج');
+  const program = await db.prepare('SELECT id, sport_id FROM programs WHERE id = ? AND deleted_at IS NULL').get(programId);
+  if (!program) return fail('البرنامج المختار غير موجود');
+
+  /* نفس الاسم وتاريخ الميلاد = نفس السباح: نعرض بطاقته بدلاً من تكرار السجل */
+  const existing = await db.prepare('SELECT id FROM swimmers WHERE full_name = ? AND COALESCE(birth_date, \'\') = ? AND deleted_at IS NULL ORDER BY id LIMIT 1')
+    .get(fullName, birthDate);
+  if (existing) {
+    setFlash(res, { type: 'info', message: 'يوجد سباح بهذا الاسم وتاريخ الميلاد بالفعل — تم فتح بطاقته.' });
+    return res.redirect('/membership-cards/' + existing.id);
+  }
+
+  const sportId = Number(program.sport_id) || effectiveSport(req) || null;
+  let created = null;
+  let lastError = null;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const membershipNo = await nextMembership();
+    try {
+      const info = await db.prepare(`INSERT INTO swimmers
+        (membership_no, full_name, birth_date, gender, phone, program_id, sport_id, status, registration_date)
+        VALUES (?,?,?,?,?,?,?,?,?)`)
+        .run(membershipNo, fullName, birthDate, gender, phone || null, programId, sportId, 'نشط', today());
+      created = { id: info.lastInsertRowid, membership_no: membershipNo };
+      break;
+    } catch (e) {
+      lastError = e;
+      if (!isUniqueViolation(e)) break;
+    }
+  }
+  if (!created) {
+    console.error('تعذر إنشاء بطاقة العضوية:', lastError && lastError.message);
+    return fail('تعذر إنشاء البطاقة، يرجى المحاولة مرة أخرى');
+  }
+  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'membershipCards', created.id, 'إنشاء بطاقة عضوية: ' + fullName + ' (' + created.membership_no + ')', req);
+  setFlash(res, { type: 'success', message: 'تم إنشاء بطاقة العضوية بنجاح' });
+  return res.redirect('/membership-cards/' + created.id);
+});
+
+/* ============================================================== */
+/*                        تعديل بيانات البطاقة                    */
+/* ============================================================== */
+router.get('/membership-cards/:id/edit', async function (req, res) {
+  if (!canEdit(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const card = await loadCard(req.params.id);
+  if (!card) return res.redirect('/membership-cards');
+  res.render('membership_card_form', {
+    title: 'تعديل بطاقة العضوية', active: 'membershipCards', mode: 'edit', card,
+    action: '/membership-cards/' + card.id + '/edit', submitLabel: 'حفظ التعديلات',
+    programs: await allProgramOptions(activeSport(req)),
+    values: { full_name: card.full_name, birth_date: isoDate(card.birth_date), program_id: card.program_id || '', phone: card.phone || '', gender: card.gender || 'ذكر' },
+    error: ''
+  });
+});
+
+router.post('/membership-cards/:id/edit', async function (req, res) {
+  if (!canEdit(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const card = await loadCard(req.params.id);
+  if (!card) return res.redirect('/membership-cards');
+  const b = req.body || {};
+  const fullName = String(b.full_name || '').trim();
+  const birthDate = isoDate(b.birth_date);
+  const programId = Number(b.program_id) || 0;
+  const phone = String(b.phone || '').trim();
+  const gender = b.gender === 'أنثى' ? 'أنثى' : 'ذكر';
+  const values = { full_name: fullName, birth_date: birthDate, program_id: programId || '', phone: phone, gender: gender };
+  const programs = await allProgramOptions(activeSport(req));
+  const fail = async function (message) {
+    return res.status(400).render('membership_card_form', {
+      title: 'تعديل بطاقة العضوية', active: 'membershipCards', mode: 'edit', card,
+      action: '/membership-cards/' + card.id + '/edit', submitLabel: 'حفظ التعديلات',
+      programs, values, error: message
+    });
+  };
+  if (!fullName) return fail('يرجى إدخال اسم السباح');
+  if (!birthDate) return fail('يرجى إدخال تاريخ الميلاد');
+  if (!programId) return fail('يرجى اختيار البرنامج');
+  const program = await db.prepare('SELECT id, sport_id FROM programs WHERE id = ? AND deleted_at IS NULL').get(programId);
+  if (!program) return fail('البرنامج المختار غير موجود');
+  const sportId = Number(program.sport_id) || card.sport_id || null;
+  await db.prepare('UPDATE swimmers SET full_name=?, birth_date=?, gender=?, phone=?, program_id=?, sport_id=? WHERE id=?')
+    .run(fullName, birthDate, gender, phone || null, programId, sportId, card.id);
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'membershipCards', card.id, 'تعديل بطاقة عضوية: ' + fullName, req);
+  setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
+  res.redirect('/membership-cards/' + card.id);
+});
+
+/* ============================================================== */
+/*                        عرض البطاقة والتحميل                    */
+/* ============================================================== */
+router.get('/membership-cards/:id(\\d+)', async function (req, res) {
+  if (!canView(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const card = await loadCard(req.params.id);
+  if (!card) return res.redirect('/membership-cards');
+  const svg = cardSvg(card, { academyName: academyName(res) });
+  res.render('membership_card', {
+    title: 'بطاقة عضوية — ' + card.full_name, active: 'membershipCards', card, svg,
+    canEditCard: canEdit(req.currentUser, 'membershipCards'),
+    canDownload: canExport(req.currentUser, 'membershipCards'),
+    canScan: canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards')
+  });
+});
+
+router.get('/membership-cards/:id/card.svg', async function (req, res) {
+  if (!canView(req.currentUser, 'membershipCards')) return res.status(403).send('غير مصرح');
+  const card = await loadCard(req.params.id);
+  if (!card) return res.status(404).send('البطاقة غير موجودة');
+  res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+  if (req.query.dl === '1') {
+    res.setHeader('Content-Disposition', 'attachment; filename="membership-' + String(card.membership_no || card.id).replace(/[^\w\-]/g, '') + '.svg"');
+  }
+  res.send(cardSvg(card, { academyName: academyName(res) }));
+});
+
+router.get('/membership-cards/:id/barcode.png', async function (req, res) {
+  if (!canView(req.currentUser, 'membershipCards')) return res.status(403).send('غير مصرح');
+  const card = await loadCard(req.params.id);
+  if (!card) return res.status(404).send('البطاقة غير موجودة');
+  const png = barcodePng(card.membership_no, { scale: 4, height: 140, quiet: 10 });
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(png);
+});
+
+async function sendCardPdf(req, res) {
+  if (!canExport(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const card = await loadCard(req.params.id);
+  if (!card) return res.redirect('/membership-cards');
+  const doc = cardPdfDoc(card, { academyName: academyName(res) });
+  pdfmake.createPdf(doc).getBuffer().then(function (buf) {
+    const safe = String(card.membership_no || card.id).replace(/[^\w\-]/g, '');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="membership-' + safe + '.pdf"');
+    res.send(buf);
+  }).catch(function (e) {
+    console.error('خطأ في توليد PDF للبطاقة:', e.message);
+    res.status(500).send('تعذر توليد PDF: ' + e.message);
+  });
+}
+router.get('/membership-cards/:id.pdf', sendCardPdf);
+router.get('/membership-cards/:id/pdf', sendCardPdf);
+
+/* ============================================================== */
+/*                    مسح الباركود وتسجيل الحضور                  */
+/* ============================================================== */
+async function recentScans(date) {
+  return db.prepare(`SELECT sc.*, s.full_name, s.program_id, p.name AS program_name
+    FROM membership_card_scans sc
+    LEFT JOIN swimmers s ON s.id = sc.swimmer_id
+    LEFT JOIN programs p ON p.id = s.program_id
+    WHERE sc.scan_date = ?
+    ORDER BY sc.id DESC LIMIT 12`).all(date);
+}
+
+router.get('/membership-cards/scan', async function (req, res) {
+  if (!canView(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const d = today();
+  const stats = await db.prepare(`SELECT
+      SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS present,
+      SUM(CASE WHEN a.status = 'absent' THEN 1 ELSE 0 END) AS absent
+    FROM attendance a JOIN sessions s ON s.id = a.session_id
+    WHERE s.date = ? AND s.deleted_at IS NULL`).get(d);
+  res.render('membership_card_scan', {
+    title: 'مسح بطاقات العضوية', active: 'membershipCards',
+    canScan: canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards'),
+    stats: stats || { present: 0, absent: 0 },
+    recent: await recentScans(d), todayDate: d,
+    pageScripts: ['/vendor/zxing.min.js']
+  });
+});
+
+function attendanceCounts(status) {
+  return status === 'present' || status === 'late';
+}
+
+/* نسخة من منطق خصم الحصة من الاشتراك المستخدم في شاشة الحضور */
+async function syncSubscriptionUsage(swimmerId, groupId, beforeStatus, afterStatus) {
+  const before = attendanceCounts(beforeStatus);
+  const after = attendanceCounts(afterStatus);
+  if (before === after) return;
+  const delta = after ? 1 : -1;
+  const gid = Number(groupId) || 0;
+  const sub = await db.prepare(`SELECT sub.id FROM subscriptions sub
+    LEFT JOIN groups g ON g.id = ?
+    WHERE sub.swimmer_id = ? AND sub.status = 'نشط'
+      AND (sub.group_id = ? OR (sub.group_id IS NULL AND sub.program_id = g.program_id))
+    ORDER BY
+      CASE WHEN sub.group_id = ? THEN 0 ELSE 1 END,
+      CASE WHEN sub.sessions_total > sub.sessions_used THEN 0 ELSE 1 END,
+      sub.id DESC
+    LIMIT 1`).get(gid, Number(swimmerId), gid, gid);
+  if (!sub) return;
+  await db.prepare(`UPDATE subscriptions SET sessions_used = MIN(sessions_total, MAX(0, sessions_used + ?)) WHERE id = ?`)
+    .run(delta, sub.id);
+  await db.prepare(`UPDATE subscriptions SET status = 'منتهي'
+    WHERE id = ? AND status = 'نشط' AND sessions_total > 0 AND sessions_used >= sessions_total`).run(sub.id);
+  await db.prepare(`UPDATE subscriptions SET status = 'نشط'
+    WHERE id = ? AND status = 'منتهي' AND (end_date IS NULL OR date(end_date) >= date(?))
+      AND (sessions_total = 0 OR sessions_used < sessions_total)`).run(sub.id, today());
+}
+
+async function findSwimmerByCode(code) {
+  const clean = normalizeBarcode(code);
+  if (!clean) return null;
+  let swimmer = await db.prepare(CARD_SELECT + ' WHERE UPPER(s.membership_no) = ? AND s.deleted_at IS NULL').get(clean);
+  if (!swimmer && /^\d+$/.test(clean)) {
+    swimmer = await db.prepare(CARD_SELECT + ' WHERE s.id = ? AND s.deleted_at IS NULL').get(Number(clean));
+  }
+  return swimmer || null;
+}
+
+/* جلسة اليوم الخاصة باللاعب (تُنشأ تلقائياً عند أول مسح) */
+async function findOrCreateSession(swimmer, date, req) {
+  let groupId = Number(swimmer.group_id) || 0;
+  if (!groupId) {
+    const row = await db.prepare('SELECT group_id FROM swimmer_group WHERE swimmer_id = ? ORDER BY group_id LIMIT 1').get(swimmer.id);
+    if (row) groupId = Number(row.group_id) || 0;
+  }
+  let session = null;
+  if (groupId) {
+    session = await db.prepare(`SELECT id FROM sessions
+      WHERE date = ? AND deleted_at IS NULL
+        AND (group_id = ? OR EXISTS (SELECT 1 FROM session_groups sg WHERE sg.session_id = sessions.id AND sg.group_id = ?))
+      ORDER BY start_time LIMIT 1`).get(date, groupId, groupId);
+  }
+  if (!session) {
+    session = await db.prepare(`SELECT s.id FROM sessions s
+      JOIN attendance a ON a.session_id = s.id
+      WHERE s.date = ? AND s.deleted_at IS NULL AND a.swimmer_id = ?
+      ORDER BY s.start_time LIMIT 1`).get(date, swimmer.id);
+  }
+  if (!session) {
+    const start = nowTime();
+    const info = await db.prepare(`INSERT INTO sessions
+      (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, note, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(groupId || null, 'حضور الباركود - ' + date, date, start, null, swimmer.coach_id || null, null,
+        'scheduled', 0, 'أُنشئت تلقائياً من مسح بطاقة العضوية', req.currentUser.id);
+    session = { id: info.lastInsertRowid };
+  }
+  return { sessionId: Number(session.id), groupId: groupId };
+}
+
+router.post('/membership-cards/scan', async function (req, res) {
+  const allowed = canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards');
+  if (!allowed) return res.status(403).json({ ok: false, status: 'forbidden', message: 'غير مصرح بتسجيل الحضور' });
+  const mode = req.body && req.body.mode === 'absent' ? 'absent' : 'present';
+  const rawCode = req.body && req.body.code;
+  const code = normalizeBarcode(rawCode);
+  const d = today();
+  const time = nowTime();
+  if (!code) return res.status(400).json({ ok: false, status: 'invalid', message: 'باركود غير صالح' });
+
+  try {
+    const swimmer = await findSwimmerByCode(code);
+    if (!swimmer) {
+      return res.json({ ok: false, status: 'not_found', message: 'بطاقة غير معروفة — تأكد من الباركود أو رقم العضوية', code: code });
+    }
+    const base = {
+      id: swimmer.id, name: swimmer.full_name, membership_no: swimmer.membership_no,
+      program_name: swimmer.program_name || '', birth_date: isoDate(swimmer.birth_date),
+      membership_no_display: swimmer.membership_no
+    };
+
+    const presentRow = await db.prepare(`SELECT a.status, s.start_time FROM attendance a
+      JOIN sessions s ON s.id = a.session_id
+      WHERE a.swimmer_id = ? AND s.date = ? AND s.deleted_at IS NULL AND a.status IN ('present', 'late')
+      ORDER BY a.id DESC LIMIT 1`).get(swimmer.id, d);
+    const absentRow = await db.prepare(`SELECT a.status, s.start_time FROM attendance a
+      JOIN sessions s ON s.id = a.session_id
+      WHERE a.swimmer_id = ? AND s.date = ? AND s.deleted_at IS NULL AND a.status = 'absent'
+      ORDER BY a.id DESC LIMIT 1`).get(swimmer.id, d);
+
+    if (mode === 'present' && presentRow) {
+      await db.prepare(`INSERT INTO membership_card_scans
+        (swimmer_id, membership_no, mode, result, scan_date, scan_time, created_by)
+        VALUES (?,?,?,?,?,?,?)`)
+        .run(swimmer.id, swimmer.membership_no, 'present', 'duplicate', d, time, req.currentUser.id);
+      return res.json({
+        ok: false, status: 'duplicate', message: 'تم تسجيل حضوره اليوم بالفعل — لا يمكن التحضير مرتين',
+        swimmer: base, time: time, first_time: presentRow.start_time || ''
+      });
+    }
+    if (mode === 'absent' && presentRow) {
+      return res.json({
+        ok: false, status: 'already_present', message: 'هذا السباح مسجّل حاضر اليوم بالفعل',
+        swimmer: base, time: time
+      });
+    }
+    if (mode === 'absent' && absentRow) {
+      await db.prepare(`INSERT INTO membership_card_scans
+        (swimmer_id, membership_no, mode, result, scan_date, scan_time, created_by)
+        VALUES (?,?,?,?,?,?,?)`)
+        .run(swimmer.id, swimmer.membership_no, 'absent', 'duplicate', d, time, req.currentUser.id);
+      return res.json({
+        ok: false, status: 'duplicate', message: 'تم تسجيل غيابه اليوم بالفعل',
+        swimmer: base, time: time
+      });
+    }
+
+    const { sessionId, groupId } = await findOrCreateSession(swimmer, d, req);
+    const previous = await db.prepare('SELECT status FROM attendance WHERE session_id = ? AND swimmer_id = ?').get(sessionId, swimmer.id);
+    const nextStatus = mode === 'absent' ? 'absent' : 'present';
+    await db.prepare(`INSERT INTO attendance (session_id, swimmer_id, status, reason, coach_note) VALUES (?,?,?,?,?)
+      ON CONFLICT(session_id, swimmer_id) DO UPDATE SET status=excluded.status, reason=excluded.reason, coach_note=excluded.coach_note`)
+      .run(sessionId, swimmer.id, nextStatus, '', 'تسجيل عبر مسح بطاقة العضوية');
+    try { await syncSubscriptionUsage(swimmer.id, groupId, previous && previous.status, nextStatus); } catch (e) { /* لا نُفشل المسح بسبب الاشتراك */ }
+    await db.prepare(`INSERT INTO membership_card_scans
+      (swimmer_id, membership_no, mode, result, scan_date, scan_time, created_by)
+      VALUES (?,?,?,?,?,?,?)`)
+      .run(swimmer.id, swimmer.membership_no, mode, nextStatus, d, time, req.currentUser.id);
+    audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'membershipCards', swimmer.id,
+      (mode === 'absent' ? 'تسجيل غياب' : 'تسجيل حضور') + ' بمسح الباركود: ' + swimmer.full_name, req);
+    return res.json({
+      ok: true, status: nextStatus, message: mode === 'absent' ? 'تم تسجيل الغياب' : 'تم تسجيل الحضور',
+      swimmer: base, time: time, session_id: sessionId
+    });
+  } catch (e) {
+    console.error('خطأ في مسح بطاقة العضوية:', e.message);
+    return res.status(500).json({ ok: false, status: 'error', message: 'تعذر تسجيل العملية، حاول مرة أخرى' });
+  }
+});
+
+module.exports = router;

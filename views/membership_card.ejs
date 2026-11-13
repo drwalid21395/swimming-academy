@@ -1,0 +1,117 @@
+<%- include('partials/layout_top', { title: title, active: active }) %>
+<style>
+  .mc-view-wrap { max-width:860px; margin:0 auto; }
+  .mc-art { filter:drop-shadow(0 12px 28px rgba(2,42,68,.22)); border-radius:26px; overflow:hidden; }
+  .mc-art svg { display:block; width:100%; height:auto; }
+  .mc-info-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-top:16px; }
+  .mc-info-grid .it { background:var(--card); border:1px solid var(--card-border); border-radius:12px; padding:12px 14px; }
+  .mc-info-grid .it .lab { font-size:11px; color:var(--text-muted); margin-bottom:4px; }
+  .mc-info-grid .it .val { font-weight:700; font-size:14px; overflow-wrap:anywhere; }
+  .mc-tools { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:18px; }
+  .mc-tools .btn { min-height:42px; }
+  @media (max-width:640px) {
+    .mc-tools .btn { flex:1 1 44%; justify-content:center; }
+    .mc-art { border-radius:16px; }
+  }
+  @media print {
+    @page { size:A4 landscape; margin:10mm; }
+    body { background:#fff !important; }
+    .sidebar, .sidebar-overlay, .topbar, footer, .page-head, .no-print, .toast-container, .print-header { display:none !important; }
+    .layout, .main-area, .main-content { display:block !important; margin:0 !important; padding:0 !important; width:100% !important; max-width:none !important; }
+    .mc-view-wrap { max-width:none !important; margin:0 !important; }
+    .mc-art { filter:none !important; border-radius:0 !important; }
+    .mc-art svg { width:100% !important; height:auto !important; }
+  }
+</style>
+
+<div class="page-head no-print">
+  <div>
+    <div class="page-title"><i class="fas fa-id-card"></i> بطاقة عضوية</div>
+    <div class="page-sub"><%= card.full_name %> — <%= card.membership_no %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1" style="flex-wrap:wrap">
+    <% if (canScan) { %><a href="/membership-cards/scan" class="btn btn-success"><i class="fas fa-qrcode"></i> مسح الحضور</a><% } %>
+    <% if (canEditCard) { %><a href="/membership-cards/<%= card.id %>/edit" class="btn btn-outline"><i class="fas fa-pen"></i> تعديل</a><% } %>
+    <a href="/membership-cards" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> البطاقات</a>
+  </div>
+</div>
+
+<div class="mc-view-wrap">
+  <div class="mc-art"><%- svg %></div>
+
+  <div class="mc-info-grid no-print">
+    <div class="it"><div class="lab">البرنامج</div><div class="val"><%= card.program_name || '—' %></div></div>
+    <div class="it"><div class="lab">تاريخ الميلاد</div><div class="val"><%= card.birth_date ? String(card.birth_date).slice(0,10) : '—' %></div></div>
+    <div class="it"><div class="lab">المجموعة</div><div class="val"><%= card.group_name || '—' %></div></div>
+    <div class="it"><div class="lab">الكابتن</div><div class="val"><%= card.coach_name || '—' %></div></div>
+    <div class="it"><div class="lab">حالة الاشتراك</div><div class="val"><%= card.subscription_end ? ('حتى ' + String(card.subscription_end).slice(0,10)) : '—' %></div></div>
+    <div class="it"><div class="lab">رقم العضوية</div><div class="val" style="letter-spacing:1px"><%= card.membership_no %></div></div>
+  </div>
+
+  <div class="mc-tools no-print">
+    <% if (canDownload) { %>
+      <a href="/membership-cards/<%= card.id %>.pdf" class="btn btn-primary" target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i> تحميل PDF</a>
+      <button type="button" class="btn btn-outline" id="downloadPng"><i class="fas fa-image"></i> تحميل صورة PNG</button>
+    <% } %>
+    <button type="button" class="btn btn-outline" id="printCard"><i class="fas fa-print"></i> طباعة البطاقة</button>
+    <a href="/membership-cards/<%= card.id %>/card.svg?dl=1" class="btn btn-ghost"><i class="fas fa-download"></i> SVG</a>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var printBtn = document.getElementById('printCard');
+    if (printBtn) printBtn.addEventListener('click', function () { window.print(); });
+
+    var pngBtn = document.getElementById('downloadPng');
+    if (pngBtn) pngBtn.addEventListener('click', function () {
+      var svg = document.getElementById('cardArt');
+      if (!svg) return;
+      pngBtn.disabled = true;
+      var clone = svg.cloneNode(true);
+      if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      var source = new XMLSerializer().serializeToString(clone);
+      var url = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }));
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var scale = 2;
+          var vb = svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width ? svg.viewBox.baseVal : { width: 1012, height: 638 };
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.round(vb.width * scale);
+          canvas.height = Math.round(vb.height * scale);
+          var ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(function (blob) {
+            URL.revokeObjectURL(url);
+            if (!blob) { pngBtn.disabled = false; return; }
+            var a = document.createElement('a');
+            var dl = URL.createObjectURL(blob);
+            a.href = dl;
+            a.download = 'membership-<%= String(card.membership_no || card.id).replace(/[^\w\-]/g, '') %>.png';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(function () { URL.revokeObjectURL(dl); }, 2500);
+            pngBtn.disabled = false;
+          }, 'image/png');
+        } catch (e) {
+          URL.revokeObjectURL(url);
+          pngBtn.disabled = false;
+          alert('تعذر إنشاء الصورة على هذا المتصفح. استخدم تحميل PDF بدلاً من ذلك.');
+        }
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        pngBtn.disabled = false;
+        alert('تعذر إنشاء الصورة. استخدم تحميل PDF بدلاً من ذلك.');
+      };
+      img.src = url;
+    });
+  })();
+</script>
+
+<%- include('partials/layout_bottom') %>

@@ -301,6 +301,7 @@ app.use('/', require('./routes/ai'));
 app.use('/', require('./routes/schools'));
 app.use('/', require('./routes/reports'));
 app.use('/', require('./routes/attendance'));
+app.use('/', require('./routes/membership-cards'));
 app.use('/', require('./routes/private'));
 app.use('/', require('./routes/water-rentals'));
 app.use('/site', require('./routes/site'));

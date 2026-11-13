@@ -22,6 +22,7 @@ const MODULE_LABELS = {
   dashboard: 'لوحة التحكم', swimmers: 'اللاعبون', guardians: 'أولياء الأمور', coaches: 'الكباتن والمدربون', staff: 'الموظفون',
   programs: 'البرامج والدورات', levels: 'المستويات', groups: 'المجموعات', sessions: 'الحصص والجداول', attendance: 'الحضور والغياب',
   assessments: 'التقييمات الفنية', tests: 'الاختبارات', teams: 'فرق السباحة', competitions: 'البطولات',
+  membershipCards: 'بطاقات العضوية',
   subscriptions: 'الاشتراكات', payments: 'المدفوعات', revenues: 'الإيرادات', expenses: 'المصروفات', coachPayments: 'مستحقات المدربين',
   incoming: 'الوارد', outgoing: 'الصادر', documents: 'المستندات', notifications: 'الإشعارات', complaints: 'الشكاوى والطلبات',
   reservations: 'حجوزات الموقع',
@@ -34,7 +35,7 @@ const MODULE_LABELS = {
 const MODULE_GROUPS = [
   ['الأعضاء والتسجيل', ['swimmers', 'guardians', 'coaches', 'staff']],
   ['البرامج التدريبية', ['programs', 'levels', 'groups']],
-  ['الجداول والحضور', ['sessions', 'attendance', 'waterRentals']],
+  ['الجداول والحضور', ['sessions', 'attendance', 'membershipCards', 'waterRentals']],
   ['الجوانب الفنية', ['assessments', 'tests', 'teams', 'competitions']],
   ['المالية', ['subscriptions', 'payments', 'revenues', 'expenses', 'coachPayments']],
   ['الحضور والمستحقات', ['trainerAttendance', 'staffAttendance', 'payroll']],

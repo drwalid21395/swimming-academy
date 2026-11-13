@@ -1,0 +1,524 @@
+<%- include('partials/layout_top', { title: title, active: active }) %>
+<style>
+  .mc-scan-wrap { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:16px; align-items:start; }
+  .mc-scan-wrap > * { min-width:0; }
+
+  .mc-cam-card { padding:0; overflow:hidden; }
+  .mc-stage { position:relative; background:#04121f; aspect-ratio:4/3; display:flex; align-items:center; justify-content:center; }
+  .mc-stage video { width:100%; height:100%; object-fit:cover; display:block; background:#04121f; }
+  .mc-overlay[hidden], .mc-cam-idle[hidden] { display:none !important; }
+  .mc-overlay { position:absolute; inset:0; pointer-events:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:24px; }
+  .mc-frame { position:relative; width:78%; max-width:420px; aspect-ratio:2.6/1; border-radius:14px; box-shadow:0 0 0 100vmax rgba(2,15,26,.42); border:2px solid rgba(125,211,252,.75); }
+  .mc-frame::before, .mc-frame::after { content:''; position:absolute; width:22px; height:22px; border:3px solid #38bdf8; }
+  .mc-frame::before { inset-block-start:-3px; inset-inline-start:-3px; border-inline-end:0; border-block-end:0; border-start-start-radius:12px; }
+  .mc-frame::after { inset-block-end:-3px; inset-inline-end:-3px; border-inline-start:0; border-block-start:0; border-end-end-radius:12px; }
+  .mc-laser { position:absolute; inset-inline:6px; height:2px; background:linear-gradient(90deg, transparent, #38bdf8, transparent); box-shadow:0 0 12px #38bdf8; animation:mcLaser 2.1s ease-in-out infinite; }
+  @keyframes mcLaser { 0%,100% { top:12%; } 50% { top:86%; } }
+  .mc-cam-hint { font-size:12px; color:#e0f2fe; background:rgba(2,15,26,.6); padding:5px 12px; border-radius:20px; }
+  .mc-cam-idle { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; text-align:center; padding:24px; background:radial-gradient(circle at 50% 30%, #0b2b45, #04121f 70%); color:#e0f2fe; }
+  .mc-cam-idle i { font-size:44px; color:#38bdf8; }
+  .mc-cam-idle p { margin:0; font-size:14px; font-weight:700; }
+  .mc-cam-idle small { color:#94a3b8; font-size:12px; max-width:280px; line-height:1.7; }
+  .mc-cam-idle .btn { min-height:44px; }
+
+  .mc-cam-toolbar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:12px 14px; border-top:1px solid var(--card-border); }
+  .mc-mode-group { display:inline-flex; background:var(--bg-soft); border:1px solid var(--card-border); border-radius:12px; padding:3px; gap:3px; }
+  .mc-mode-group button { border:0; background:transparent; color:var(--text-muted); font-weight:700; font-size:13px; padding:8px 16px; border-radius:9px; cursor:pointer; }
+  .mc-mode-group button.active[data-mode="present"] { background:#16a34a; color:#fff; box-shadow:0 2px 8px rgba(22,163,74,.35); }
+  .mc-mode-group button.active[data-mode="absent"] { background:#dc2626; color:#fff; box-shadow:0 2px 8px rgba(220,38,38,.35); }
+  .mc-vol { display:flex; align-items:center; gap:8px; color:var(--text-muted); font-size:12px; flex:1 1 190px; min-width:0; }
+  .mc-vol input[type="range"] { flex:1; min-width:70px; accent-color:var(--primary); }
+  .mc-vol span { min-width:34px; text-align:center; font-weight:700; }
+  .mc-vol button { border:1px solid var(--card-border); background:var(--card); color:var(--text-muted); border-radius:8px; padding:5px 9px; font-size:11px; cursor:pointer; }
+  .mc-cam-toolbar .btn { min-height:38px; }
+
+  .mc-result { border-radius:16px; padding:20px; border:2px solid var(--card-border); background:var(--card); text-align:center; transition:border-color .2s, background .2s; }
+  .mc-result .rs-icon { width:62px; height:62px; border-radius:50%; margin:0 auto 12px; display:flex; align-items:center; justify-content:center; font-size:25px; background:var(--bg-soft); color:var(--text-muted); }
+  .mc-result .rs-name { font-size:21px; font-weight:800; overflow-wrap:anywhere; }
+  .mc-result .rs-meta { font-size:12px; color:var(--text-muted); margin-top:4px; overflow-wrap:anywhere; }
+  .mc-result .rs-msg { font-size:13px; margin-top:10px; font-weight:700; }
+  .mc-result .rs-time { font-size:11px; color:var(--text-muted); margin-top:6px; letter-spacing:1px; }
+  .mc-result[data-state="success"] { border-color:#16a34a; background:rgba(22,163,74,.06); }
+  .mc-result[data-state="success"] .rs-icon { background:#dcfce7; color:#16a34a; }
+  .mc-result[data-state="success"] .rs-msg { color:#15803d; }
+  .mc-result[data-state="duplicate"] { border-color:#f59e0b; background:rgba(245,158,11,.08); }
+  .mc-result[data-state="duplicate"] .rs-icon { background:#fef3c7; color:#b45309; }
+  .mc-result[data-state="duplicate"] .rs-msg { color:#b45309; }
+  .mc-result[data-state="error"] { border-color:#dc2626; background:rgba(220,38,38,.06); }
+  .mc-result[data-state="error"] .rs-icon { background:#fee2e2; color:#dc2626; }
+  .mc-result[data-state="error"] .rs-msg { color:#b91c1c; }
+  .mc-result[data-state="scanning"] .rs-icon { background:var(--primary-soft); color:var(--primary); }
+
+  .mc-stat-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
+  .mc-stat-row .it { background:var(--card); border:1px solid var(--card-border); border-radius:12px; padding:10px 12px; display:flex; align-items:center; gap:10px; }
+  .mc-stat-row .it i { font-size:16px; }
+  .mc-stat-row .it b { font-size:18px; display:block; line-height:1.1; }
+  .mc-stat-row .it span { font-size:11px; color:var(--text-muted); }
+  .mc-stat-row .present i { color:#16a34a; }
+  .mc-stat-row .absent i { color:#dc2626; }
+
+  .mc-manual { margin-top:14px; }
+  .mc-manual label { font-size:12px; color:var(--text-muted); font-weight:700; margin-bottom:6px; display:block; }
+  .mc-manual .row { display:flex; gap:8px; }
+  .mc-manual input { flex:1; min-width:0; direction:ltr; text-align:left; letter-spacing:1px; font-weight:700; }
+  .mc-manual .btn { flex:none; min-height:42px; }
+
+  .mc-recent { margin-top:14px; }
+  .mc-recent h4 { margin:0 0 10px; font-size:13px; display:flex; align-items:center; gap:8px; }
+  .mc-recent h4 .badge { background:var(--bg-soft); border:1px solid var(--card-border); border-radius:20px; padding:2px 9px; font-size:11px; color:var(--text-muted); }
+  .mc-recent-list { display:flex; flex-direction:column; gap:8px; max-height:330px; overflow:auto; }
+  .mc-scan-item { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:11px; background:var(--bg-soft); border:1px solid var(--card-border); animation:mcIn .25s ease; }
+  @keyframes mcIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
+  .mc-scan-item .ic { width:32px; height:32px; border-radius:9px; display:flex; align-items:center; justify-content:center; flex:none; font-size:13px; }
+  .mc-scan-item.present .ic { background:#dcfce7; color:#16a34a; }
+  .mc-scan-item.absent .ic { background:#fee2e2; color:#dc2626; }
+  .mc-scan-item.duplicate .ic { background:#fef3c7; color:#b45309; }
+  .mc-scan-item .tx { min-width:0; flex:1; }
+  .mc-scan-item .tx b { display:block; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mc-scan-item .tx small { color:var(--text-muted); font-size:11px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mc-scan-item .tm { font-size:11px; color:var(--text-muted); flex:none; direction:ltr; }
+  .mc-recent .empty-mini { font-size:12px; color:var(--text-muted); text-align:center; padding:14px 0; }
+
+  @media (max-width:900px) {
+    .mc-scan-wrap { grid-template-columns:1fr; }
+    .mc-stage { aspect-ratio:3/2; }
+  }
+  @media (max-width:520px) {
+    .mc-cam-toolbar { gap:8px; }
+    .mc-mode-group { flex:1 1 100%; justify-content:center; }
+    .mc-mode-group button { flex:1; }
+    .mc-vol { flex:1 1 100%; }
+    .mc-result .rs-name { font-size:18px; }
+    .mc-manual .row { flex-wrap:wrap; }
+    .mc-manual .btn { flex:1 1 100%; }
+  }
+</style>
+
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-qrcode"></i> مسح بطاقات العضوية</div>
+    <div class="page-sub">وجّه الباركود أمام الكاميرا لتسجيل الحضور أو الغياب — يُمنع تسجيل نفس السباح مرتين في نفس اليوم</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1" style="flex-wrap:wrap">
+    <a href="/membership-cards" class="btn btn-outline"><i class="fas fa-id-card"></i> البطاقات</a>
+    <a href="/membership-cards" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> رجوع</a>
+  </div>
+</div>
+
+<div class="mc-scan-wrap">
+  <div class="card mc-cam-card">
+    <div class="mc-stage" id="stage">
+      <video id="cam" playsinline autoplay muted></video>
+      <div class="mc-overlay" id="overlay" hidden>
+        <div class="mc-frame"><div class="mc-laser"></div></div>
+        <div class="mc-cam-hint"><i class="fas fa-camera"></i> ضع الباركود داخل الإطار</div>
+      </div>
+      <div class="mc-cam-idle" id="camIdle">
+        <i class="fas fa-camera-retro"></i>
+        <p>الكاميرا متوقفة</p>
+        <small>اضغط الزر لبدء المسح. سيطلب المتصفح إذن استخدام الكاميرا — اسمح به لتسجيل الحضور بالباركود.</small>
+        <button type="button" class="btn btn-primary" id="startCam"><i class="fas fa-play"></i> تشغيل الكاميرا</button>
+      </div>
+    </div>
+
+    <div class="mc-cam-toolbar">
+      <div class="mc-mode-group" id="modeGroup">
+        <button type="button" data-mode="present" class="active"><i class="fas fa-user-check"></i> حضور</button>
+        <button type="button" data-mode="absent"><i class="fas fa-user-xmark"></i> غياب</button>
+      </div>
+      <div class="mc-vol">
+        <i class="fas fa-volume-high"></i>
+        <input type="range" id="volume" min="0" max="100" step="5" value="70" aria-label="مستوى صوت المسح">
+        <span id="volLabel">70%</span>
+        <button type="button" id="testSound" title="تجربة الصوت">تجربة</button>
+      </div>
+      <button type="button" class="btn btn-outline" id="stopCam" disabled><i class="fas fa-stop"></i> إيقاف</button>
+    </div>
+  </div>
+
+  <div>
+    <div class="mc-result" id="result" data-state="idle">
+      <div class="rs-icon"><i class="fas fa-barcode"></i></div>
+      <div class="rs-name" id="rsName">جاهز للمسح</div>
+      <div class="rs-meta" id="rsMeta">شغّل الكاميرا أو أدخل رقم العضوية يدوياً</div>
+      <div class="rs-msg" id="rsMsg"></div>
+      <div class="rs-time" id="rsTime"></div>
+    </div>
+
+    <div class="mc-stat-row">
+      <div class="it present"><i class="fas fa-user-check"></i><div><b id="statPresent"><%= Number(stats.present || 0) %></b><span>حضور اليوم</span></div></div>
+      <div class="it absent"><i class="fas fa-user-xmark"></i><div><b id="statAbsent"><%= Number(stats.absent || 0) %></b><span>غياب اليوم</span></div></div>
+    </div>
+
+    <div class="card mc-manual">
+      <div class="card-body">
+        <form id="manualForm" autocomplete="off">
+          <label for="manualCode"><i class="fas fa-keyboard"></i> إدخال يدوي / قارئ باركود USB</label>
+          <div class="row">
+            <input type="text" id="manualCode" class="form-control" placeholder="SW-0001" inputmode="text" maxlength="40">
+            <button type="submit" class="btn btn-primary"><i class="fas fa-arrow-left"></i> تسجيل</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mc-recent">
+      <div class="card-body">
+        <h4><i class="fas fa-clock-rotate-left"></i> أحدث عمليات المسح <span class="badge" id="recentCount"><%= (recent || []).length %></span></h4>
+        <div class="mc-recent-list" id="recentList">
+          <% (recent || []).forEach(function (r) { %>
+            <% var stateClass = r.result === 'duplicate' ? 'duplicate' : (r.mode === 'absent' ? 'absent' : 'present'); %>
+            <div class="mc-scan-item <%= stateClass %>">
+              <div class="ic"><i class="fas <%= stateClass === 'present' ? 'fa-check' : stateClass === 'absent' ? 'fa-xmark' : 'fa-triangle-exclamation' %>"></i></div>
+              <div class="tx">
+                <b><%= r.full_name || '—' %></b>
+                <small><%= r.program_name || (r.mode === 'absent' ? 'غياب' : 'حضور') %><%= r.result === 'duplicate' ? ' — مسجّل مسبقاً' : '' %></small>
+              </div>
+              <div class="tm"><%= r.scan_time || '' %></div>
+            </div>
+          <% }); %>
+          <% if (!recent || !recent.length) { %>
+            <div class="empty-mini" id="recentEmpty">لا توجد عمليات مسح اليوم بعد</div>
+          <% } %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var canScan = <%- canScan ? 'true' : 'false' %>;
+  var video = document.getElementById('cam');
+  var overlay = document.getElementById('overlay');
+  var camIdle = document.getElementById('camIdle');
+  var startBtn = document.getElementById('startCam');
+  var stopBtn = document.getElementById('stopCam');
+  var modeGroup = document.getElementById('modeGroup');
+  var volumeInput = document.getElementById('volume');
+  var volLabel = document.getElementById('volLabel');
+  var testSoundBtn = document.getElementById('testSound');
+  var manualForm = document.getElementById('manualForm');
+  var manualCode = document.getElementById('manualCode');
+  var resultBox = document.getElementById('result');
+  var rsName = document.getElementById('rsName');
+  var rsMeta = document.getElementById('rsMeta');
+  var rsMsg = document.getElementById('rsMsg');
+  var rsTime = document.getElementById('rsTime');
+  var recentList = document.getElementById('recentList');
+  var recentCount = document.getElementById('recentCount');
+  var statPresent = document.getElementById('statPresent');
+  var statAbsent = document.getElementById('statAbsent');
+
+  var mode = 'present';
+  var reader = null;
+  var scanning = false;
+  var submitting = false;
+  var lastCode = '';
+  var lastCodeAt = 0;
+  var audioCtx = null;
+  var volume = 0.7;
+  var torchTrack = null;
+  var torchOn = false;
+
+  try {
+    var saved = parseFloat(localStorage.getItem('mcScanVolume'));
+    if (!isNaN(saved)) volume = Math.min(1, Math.max(0, saved));
+  } catch (e) { /* التخزين غير متاح */ }
+  volumeInput.value = String(Math.round(volume * 100));
+  volLabel.textContent = Math.round(volume * 100) + '%';
+
+  /* ---------------- الصوت ---------------- */
+  function ensureAudio() {
+    if (!audioCtx) {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      try { audioCtx = new Ctx(); } catch (e) { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') { try { audioCtx.resume(); } catch (e) { } }
+    return audioCtx;
+  }
+
+  function tone(ctx, freq, start, duration, type, gainValue) {
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    var t0 = ctx.currentTime + start;
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.linearRampToValueAtTime(Math.max(0.0001, gainValue), t0 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + duration + 0.03);
+  }
+
+  function playSound(kind) {
+    if (volume <= 0) return;
+    var ctx = ensureAudio();
+    if (!ctx) return;
+    var v = Math.min(1, volume);
+    if (kind === 'success') {
+      tone(ctx, 880, 0, 0.1, 'sine', v * 0.55);
+      tone(ctx, 1320, 0.1, 0.14, 'sine', v * 0.5);
+    } else if (kind === 'duplicate') {
+      tone(ctx, 620, 0, 0.13, 'triangle', v * 0.5);
+      tone(ctx, 420, 0.15, 0.2, 'triangle', v * 0.5);
+    } else {
+      tone(ctx, 220, 0, 0.32, 'sawtooth', v * 0.4);
+    }
+    if (navigator.vibrate) {
+      try { navigator.vibrate(kind === 'success' ? 55 : [40, 55, 40]); } catch (e) { }
+    }
+  }
+
+  /* ---------------- عرض النتيجة ---------------- */
+  function showResult(state, name, meta, message) {
+    resultBox.setAttribute('data-state', state);
+    var icons = {
+      idle: 'fa-barcode', scanning: 'fa-qrcode', success: 'fa-circle-check',
+      duplicate: 'fa-triangle-exclamation', error: 'fa-circle-xmark'
+    };
+    resultBox.querySelector('.rs-icon').innerHTML = '<i class="fas ' + (icons[state] || icons.idle) + '"></i>';
+    rsName.textContent = name || '';
+    rsMeta.textContent = meta || '';
+    rsMsg.textContent = message || '';
+    var d = new Date();
+    rsTime.textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
+  }
+
+  function prependRecent(data, ok) {
+    var empty = document.getElementById('recentEmpty');
+    if (empty) empty.remove();
+    var stateClass = data.status === 'duplicate' ? 'duplicate' : (data.mode === 'absent' ? 'absent' : 'present');
+    var item = document.createElement('div');
+    item.className = 'mc-scan-item ' + stateClass;
+    var icon = stateClass === 'present' ? 'fa-check' : stateClass === 'absent' ? 'fa-xmark' : 'fa-triangle-exclamation';
+    var name = (data.swimmer && data.swimmer.name) || '—';
+    var sub = (data.swimmer && data.swimmer.program_name) || (data.mode === 'absent' ? 'غياب' : 'حضور');
+    if (stateClass === 'duplicate') sub += ' — مسجّل مسبقاً';
+    item.innerHTML = '<div class="ic"><i class="fas ' + icon + '"></i></div>' +
+      '<div class="tx"><b></b><small></small></div>' +
+      '<div class="tm"></div>';
+    item.querySelector('b').textContent = name;
+    item.querySelector('small').textContent = sub;
+    item.querySelector('.tm').textContent = data.time || '';
+    recentList.insertBefore(item, recentList.firstChild);
+    var count = recentList.querySelectorAll('.mc-scan-item').length;
+    recentCount.textContent = String(count);
+    while (recentList.querySelectorAll('.mc-scan-item').length > 20) {
+      recentList.removeChild(recentList.lastElementChild);
+    }
+  }
+
+  /* ---------------- تسجيل المسح ---------------- */
+  function handleCode(rawCode, fromManual) {
+    var code = String(rawCode == null ? '' : rawCode).trim();
+    if (!code) return;
+    var now = Date.now();
+    if (code === lastCode && (now - lastCodeAt) < 3000) return;
+    if (submitting) return;
+    lastCode = code;
+    lastCodeAt = now;
+    submitting = true;
+    showResult('scanning', 'جارٍ التحقق...', code, '');
+
+    fetch('/membership-cards/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: code, mode: mode })
+    }).then(function (r) {
+      return r.json().catch(function () { return { ok: false, status: 'error', message: 'تعذر قراءة استجابة الخادم' }; });
+    }).then(function (data) {
+      submitting = false;
+      if (data.ok) {
+        playSound('success');
+        showResult('success', data.swimmer.name, (data.swimmer.program_name || '') + ' • ' + (data.swimmer.membership_no || code),
+          data.message || (mode === 'absent' ? 'تم تسجيل الغياب' : 'تم تسجيل الحضور'));
+        var p = parseInt(statPresent.textContent, 10) || 0;
+        var a = parseInt(statAbsent.textContent, 10) || 0;
+        if (mode === 'absent') statAbsent.textContent = String(a + 1);
+        else statPresent.textContent = String(p + 1);
+        prependRecent({ status: data.status, mode: mode, swimmer: data.swimmer, time: data.time }, true);
+      } else if (data.status === 'duplicate') {
+        playSound('duplicate');
+        showResult('duplicate', (data.swimmer && data.swimmer.name) || 'مسجّل مسبقاً',
+          (data.swimmer && data.swimmer.membership_no) || code, data.message || 'مسجّل مسبقاً اليوم');
+        prependRecent({ status: 'duplicate', mode: mode, swimmer: data.swimmer, time: data.time }, false);
+      } else {
+        playSound('error');
+        showResult('error', 'لم يتم التسجيل', code, data.message || 'تعذر تسجيل العملية');
+      }
+      if (fromManual) manualCode.value = '';
+      if (fromManual) manualCode.focus();
+      if (window.App && window.App.showToast) {
+        var toastType = data.ok ? 'success' : (data.status === 'duplicate' ? 'warning' : 'error');
+        window.App.showToast((data.swimmer && data.swimmer.name ? data.swimmer.name + ' — ' : '') + (data.message || ''), toastType);
+      }
+    }).catch(function () {
+      submitting = false;
+      playSound('error');
+      showResult('error', 'تعذر الاتصال', code, 'تحقق من الاتصال بالإنترنت وحاول مرة أخرى');
+    });
+  }
+
+  /* ---------------- الكاميرا ---------------- */
+  function setCamUI(on) {
+    if (on) {
+      overlay.hidden = false;
+      camIdle.hidden = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+    } else {
+      overlay.hidden = true;
+      camIdle.hidden = false;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      torchOn = false;
+      torchTrack = null;
+    }
+  }
+
+  function stopCamera() {
+    scanning = false;
+    if (reader) {
+      try { reader.reset(); } catch (e) { }
+      reader = null;
+    }
+    try {
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(function (t) { t.stop(); });
+      }
+    } catch (e) { }
+    video.srcObject = null;
+    setCamUI(false);
+  }
+
+  function startCamera() {
+    if (!canScan) {
+      if (window.App && window.App.showToast) window.App.showToast('غير مصرح لك بتسجيل الحضور', 'error');
+      return;
+    }
+    if (scanning) return;
+    if (!window.ZXing || !window.ZXing.BrowserMultiFormatReader) {
+      showResult('error', 'مكتبة المسح غير متاحة', '', 'أعد تحميل الصفحة ثم حاول مرة أخرى');
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showResult('error', 'الكاميرا غير مدعومة', '', 'المتصفح لا يدعم الوصول للكاميرا — استخدم الإدخال اليدوي');
+      return;
+    }
+    ensureAudio();
+    startBtn.disabled = true;
+    showResult('scanning', 'جارٍ تشغيل الكاميرا...', 'اسمح بالوصول للكاميرا عند سؤال المتصفح', '');
+
+    var hints = new Map();
+    try {
+      hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+        window.ZXing.BarcodeFormat.CODE_39,
+        window.ZXing.BarcodeFormat.CODE_128,
+        window.ZXing.BarcodeFormat.EAN_13,
+        window.ZXing.BarcodeFormat.CODE_93,
+        window.ZXing.BarcodeFormat.ITF
+      ]);
+      hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
+    } catch (e) { }
+    reader = new window.ZXing.BrowserMultiFormatReader(hints, 120);
+    scanning = true;
+
+    var constraints = {
+      audio: false,
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    };
+
+    var result = reader.decodeFromConstraints(constraints, video, function (res, err) {
+      if (!res) { void err; return; }
+      handleCode(res.getText(), false);
+    });
+
+    function markCamReady() {
+      if (!scanning) return;
+      if (!video.srcObject) return;
+      setCamUI(true);
+      showResult('scanning', 'الكاميرا تعمل', 'وجّه الباركود داخل الإطار', '');
+      if (window.App && window.App.showToast) window.App.showToast('الكاميرا جاهزة للمسح', 'success');
+    }
+
+    video.addEventListener('playing', markCamReady);
+    var readyPoll = setInterval(function () {
+      if (!scanning) { clearInterval(readyPoll); return; }
+      if (video.srcObject && video.readyState >= 2) { markCamReady(); clearInterval(readyPoll); }
+    }, 400);
+
+    if (result && result.then) {
+      result.then(function () { markCamReady(); }).catch(function (e) {
+        clearInterval(readyPoll);
+        scanning = false;
+        if (reader) { try { reader.reset(); } catch (x) { } reader = null; }
+        setCamUI(false);
+        var errName = (e && e.name) || '';
+        var reason = 'تعذر تشغيل الكاميرا، تأكد من منح الإذن للمتصفح';
+        if (errName === 'NotAllowedError' || errName === 'SecurityError') reason = 'تم رفض إذن الكاميرا — اسمح بالوصول للكاميرا من إعدادات المتصفح ثم أعد المحاولة';
+        else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') reason = 'لا توجد كاميرا متاحة على هذا الجهاز';
+        else if (errName === 'NotReadableError') reason = 'الكاميرا مستخدمة من تطبيق آخر — أغلق التطبيقات الأخرى وحاول مرة أخرى';
+        showResult('error', 'تعذر تشغيل الكاميرا', reason, 'يمكنك استخدام الإدخال اليدوي أو قارئ الباركود USB');
+        if (window.App && window.App.showToast) window.App.showToast(reason, 'error');
+      });
+    }
+  }
+
+  /* ---------------- الأحداث ---------------- */
+  startBtn.addEventListener('click', startCamera);
+  stopBtn.addEventListener('click', function () { stopCamera(); showResult('idle', 'تم إيقاف الكاميرا', 'شغّلها مرة أخرى أو استخدم الإدخال اليدوي', ''); });
+
+  modeGroup.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-mode]');
+    if (!btn) return;
+    mode = btn.getAttribute('data-mode') === 'absent' ? 'absent' : 'present';
+    Array.prototype.forEach.call(modeGroup.querySelectorAll('button'), function (b) {
+      b.classList.toggle('active', b === btn);
+    });
+    if (window.App && window.App.showToast) {
+      window.App.showToast(mode === 'absent' ? 'الوضع: تسجيل الغياب' : 'الوضع: تسجيل الحضور', 'info');
+    }
+    manualCode.focus();
+  });
+
+  volumeInput.addEventListener('input', function () {
+    volume = Math.min(1, Math.max(0, (parseFloat(volumeInput.value) || 0) / 100));
+    volLabel.textContent = Math.round(volume * 100) + '%';
+    try { localStorage.setItem('mcScanVolume', String(volume)); } catch (e) { }
+  });
+  volumeInput.addEventListener('change', function () { playSound('success'); });
+  testSoundBtn.addEventListener('click', function () { playSound('success'); });
+
+  manualForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = manualCode.value.trim();
+    if (!v) { manualCode.focus(); return; }
+    handleCode(v, true);
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden && scanning) stopCamera();
+  });
+  window.addEventListener('pagehide', function () { if (scanning) stopCamera(); });
+
+  if (canScan) {
+    manualCode.focus();
+  } else {
+    startBtn.disabled = true;
+    stopBtn.disabled = true;
+    showResult('error', 'غير مصرح', '', 'ليست لديك صلاحية تسجيل الحضور بمسح البطاقات');
+  }
+})();
+</script>
+
+<%- include('partials/layout_bottom') %>

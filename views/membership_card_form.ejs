@@ -1,0 +1,110 @@
+<%- include('partials/layout_top', { title: title, active: active }) %>
+<style>
+  .mc-form-wrap { display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:16px; align-items:start; }
+  .mc-preview { background:linear-gradient(135deg,#062a44,#075985 55%,#0ea5e9); border-radius:18px; color:#fff; padding:22px; position:relative; overflow:hidden; }
+  .mc-preview::after { content:'\f5a4'; font-family:'Font Awesome 6 Free'; font-weight:900; position:absolute; inset-inline-start:-14px; bottom:-22px; font-size:110px; opacity:.12; }
+  .mc-preview .pv-title { font-size:13px; color:#bae6fd; letter-spacing:1px; }
+  .mc-preview .pv-name { font-size:23px; font-weight:800; margin:8px 0 2px; overflow-wrap:anywhere; }
+  .mc-preview .pv-prog { font-size:13px; color:#bae6fd; min-height:18px; }
+  .mc-preview .pv-no { margin-top:18px; background:rgba(255,255,255,.14); border:1px dashed rgba(255,255,255,.45); border-radius:10px; padding:8px 10px; text-align:center; letter-spacing:2px; direction:ltr; font-weight:700; }
+  .mc-preview .pv-hint { font-size:11px; color:#e0f2fe; opacity:.9; margin-top:10px; line-height:1.7; }
+  @media (max-width:900px) { .mc-form-wrap { grid-template-columns:1fr; } .mc-preview { order:-1; } }
+</style>
+
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-id-card"></i> <%= title %></div>
+    <div class="page-sub"><%= mode === 'edit' ? 'تعديل بيانات البطاقة — رقم العضوية والباركود لا يتغيران' : 'أدخل اسم السباح وتاريخ الميلاد واختر البرنامج لإصدار البطاقة' %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1" style="flex-wrap:wrap">
+    <a href="/membership-cards" class="btn btn-outline"><i class="fas fa-arrow-right"></i> البطاقات</a>
+    <% if (mode === 'edit' && card) { %><a href="/membership-cards/<%= card.id %>" class="btn btn-ghost"><i class="fas fa-eye"></i> عرض البطاقة</a><% } %>
+  </div>
+</div>
+
+<% if (error) { %>
+  <div class="alert alert-danger" style="margin-bottom:14px"><i class="fas fa-circle-exclamation"></i> <%= error %></div>
+<% } %>
+
+<div class="mc-form-wrap">
+  <div class="card">
+    <div class="card-body">
+      <form method="POST" action="<%= action %>" novalidate>
+        <input type="hidden" name="_csrf" value="<%= typeof csrf !== 'undefined' ? csrf : '' %>">
+        <div class="form-grid">
+          <div class="form-group full">
+            <label>اسم السباح <span class="req">*</span></label>
+            <input type="text" name="full_name" class="form-control" value="<%= values.full_name || '' %>" placeholder="الاسم الكامل كما سيظهر على البطاقة" required maxlength="120" autofocus>
+          </div>
+          <div class="form-group">
+            <label>تاريخ الميلاد <span class="req">*</span></label>
+            <input type="date" name="birth_date" class="form-control" value="<%= values.birth_date || '' %>" required>
+          </div>
+          <div class="form-group">
+            <label>البرنامج <span class="req">*</span></label>
+            <select name="program_id" class="form-control" required>
+              <option value="">— اختر البرنامج —</option>
+              <% programs.forEach(function (p) { %>
+                <option value="<%= p.value %>" <%= String(values.program_id) === String(p.value) ? 'selected' : '' %>><%= p.label %></option>
+              <% }); %>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>النوع</label>
+            <select name="gender" class="form-control">
+              <option value="ذكر" <%= values.gender !== 'أنثى' ? 'selected' : '' %>>ذكر</option>
+              <option value="أنثى" <%= values.gender === 'أنثى' ? 'selected' : '' %>>أنثى</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>هاتف ولي الأمر (اختياري)</label>
+            <input type="tel" name="phone" class="form-control" value="<%= values.phone || '' %>" placeholder="01xxxxxxxxx" maxlength="20">
+          </div>
+          <% if (mode === 'edit' && card) { %>
+            <div class="form-group full">
+              <div class="form-hint"><i class="fas fa-barcode"></i> رقم العضوية الحالي: <b style="letter-spacing:1px"><%= card.membership_no %></b> — يبقى كما هو لضمان عمل الباركود المطبوع.</div>
+            </div>
+          <% } %>
+        </div>
+        <div class="flex gap-1" style="margin-top:18px;flex-wrap:wrap">
+          <button type="submit" class="btn btn-primary"><i class="fas fa-floppy-disk"></i> <%= submitLabel %></button>
+          <a href="/membership-cards" class="btn btn-outline">إلغاء</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="mc-preview">
+    <div class="pv-title">MEMBERSHIP CARD</div>
+    <div class="pv-name" id="pvName"><%= values.full_name || 'اسم السباح' %></div>
+    <div class="pv-prog" id="pvProgram">
+      <% var chosen = programs.filter(function (p) { return String(p.value) === String(values.program_id); })[0]; %>
+      <%= chosen ? chosen.label : 'البرنامج' %>
+    </div>
+    <div class="pv-no" id="pvNo"><%= mode === 'edit' && card ? card.membership_no : 'SW-••••' %></div>
+    <div class="pv-hint"><i class="fas fa-circle-info"></i> يتم توليد رقم العضوية والباركود تلقائياً عند الإنشاء. يمكن تحميل البطاقة PDF أو صورة PNG بعد إنشائها.</div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var nameInput = document.querySelector('input[name="full_name"]');
+    var namePreview = document.getElementById('pvName');
+    var programSelect = document.querySelector('select[name="program_id"]');
+    var programPreview = document.getElementById('pvProgram');
+    if (nameInput && namePreview) {
+      nameInput.addEventListener('input', function () {
+        namePreview.textContent = nameInput.value.trim() || 'اسم السباح';
+      });
+    }
+    if (programSelect && programPreview) {
+      programSelect.addEventListener('change', function () {
+        var opt = programSelect.options[programSelect.selectedIndex];
+        programPreview.textContent = opt && opt.value ? opt.textContent : 'البرنامج';
+      });
+    }
+  })();
+</script>
+
+<%- include('partials/layout_bottom') %>

@@ -1,0 +1,110 @@
+<%- include('partials/layout_top', { title: title, active: active }) %>
+<style>
+  .mc-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+  .mc-stat { background:var(--card); border:1px solid var(--card-border); border-radius:14px; padding:14px 16px; display:flex; align-items:center; gap:12px; }
+  .mc-stat .ico { width:42px; height:42px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:17px; background:var(--primary-soft); color:var(--primary); flex:none; }
+  .mc-stat.green .ico { background:#dcfce7; color:#16a34a; }
+  .mc-stat.red .ico { background:#fee2e2; color:#dc2626; }
+  .mc-stat b { display:block; font-size:19px; line-height:1.1; }
+  .mc-stat span { font-size:12px; color:var(--text-muted); }
+  .mc-search { max-width:320px; width:100%; }
+  .mc-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(275px,1fr)); gap:14px; }
+  .mc-item { background:var(--card); border:1px solid var(--card-border); border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:12px; box-shadow:var(--shadow-sm); min-width:0; }
+  .mc-item-top { display:flex; align-items:center; gap:12px; min-width:0; }
+  .mc-avatar { width:48px; height:48px; border-radius:14px; background:linear-gradient(135deg,var(--primary-light),var(--primary)); color:#fff; font-weight:800; font-size:20px; display:flex; align-items:center; justify-content:center; flex:none; overflow:hidden; }
+  .mc-avatar img { width:100%; height:100%; object-fit:cover; }
+  .mc-name { font-weight:800; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mc-sub { font-size:12px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mc-no { background:var(--bg-soft); border:1px dashed var(--card-border); border-radius:10px; padding:8px 10px; display:flex; align-items:center; gap:8px; font-weight:700; letter-spacing:1px; font-size:13px; direction:ltr; justify-content:center; }
+  .mc-no i { color:var(--primary); }
+  .mc-meta { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12px; color:var(--text-muted); }
+  .mc-meta span { display:inline-flex; align-items:center; gap:5px; }
+  .mc-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:auto; }
+  @media (max-width:640px) {
+    .mc-grid { grid-template-columns:1fr; }
+    .mc-actions .btn { flex:1 1 auto; justify-content:center; }
+  }
+</style>
+
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-id-card"></i> بطاقات العضوية</div>
+    <div class="page-sub">إنشاء بطاقات السباحين وطباعتها، وتسجيل الحضور بمسح الباركود</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex wrap gap-1" style="flex-wrap:wrap">
+    <% if (canScan) { %>
+      <a href="/membership-cards/scan" class="btn btn-success"><i class="fas fa-qrcode"></i> مسح الحضور</a>
+    <% } %>
+    <% if (canCreate) { %>
+      <a href="/membership-cards/new" class="btn btn-primary"><i class="fas fa-plus"></i> بطاقة جديدة</a>
+    <% } %>
+  </div>
+</div>
+
+<div class="mc-stats">
+  <div class="mc-stat">
+    <div class="ico"><i class="fas fa-id-card"></i></div>
+    <div><b><%= rows.length %></b><span>بطاقة معروضة</span></div>
+  </div>
+  <div class="mc-stat green">
+    <div class="ico"><i class="fas fa-user-check"></i></div>
+    <div><b><%= Number(stats.present || 0) %></b><span>حضور اليوم</span></div>
+  </div>
+  <div class="mc-stat red">
+    <div class="ico"><i class="fas fa-user-xmark"></i></div>
+    <div><b><%= Number(stats.absent || 0) %></b><span>غياب اليوم</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <form method="GET" action="/membership-cards" class="flex gap-1" style="flex-wrap:wrap;align-items:center">
+      <input type="search" name="q" value="<%= q %>" class="form-control mc-search" placeholder="ابحث بالاسم أو رقم العضوية...">
+      <button class="btn btn-outline" type="submit"><i class="fas fa-magnifying-glass"></i> بحث</button>
+      <% if (q) { %><a href="/membership-cards" class="btn btn-ghost"><i class="fas fa-xmark"></i> مسح البحث</a><% } %>
+    </form>
+  </div>
+</div>
+
+<% if (rows.length) { %>
+  <div class="mc-grid">
+    <% rows.forEach(function (r) { %>
+      <div class="mc-item">
+        <div class="mc-item-top">
+          <div class="mc-avatar"><% if (r.avatar) { %><img src="<%= r.avatar %>" alt=""><% } else { %><%= (r.full_name || 'س').trim().charAt(0) %><% } %></div>
+          <div style="min-width:0">
+            <div class="mc-name" title="<%= r.full_name %>"><%= r.full_name %></div>
+            <div class="mc-sub"><%= r.program_name || 'بدون برنامج' %></div>
+          </div>
+        </div>
+        <div class="mc-no"><i class="fas fa-barcode"></i> <%= r.membership_no %></div>
+        <div class="mc-meta">
+          <span><i class="fas fa-cake-candles"></i> <%= r.birth_date ? String(r.birth_date).slice(0, 10) : '—' %></span>
+          <% if (r.group_name) { %><span><i class="fas fa-people-group"></i> <%= r.group_name %></span><% } %>
+        </div>
+        <div class="mc-actions">
+          <a href="/membership-cards/<%= r.id %>" class="btn btn-primary btn-sm"><i class="fas fa-eye"></i> عرض البطاقة</a>
+          <% if (canDownload) { %>
+            <a href="/membership-cards/<%= r.id %>.pdf" class="btn btn-outline btn-sm" target="_blank" rel="noopener"><i class="fas fa-file-pdf text-danger"></i> PDF</a>
+          <% } %>
+          <% if (canEdit(user, 'membershipCards')) { %>
+            <a href="/membership-cards/<%= r.id %>/edit" class="btn btn-ghost btn-sm"><i class="fas fa-pen"></i> تعديل</a>
+          <% } %>
+        </div>
+      </div>
+    <% }); %>
+  </div>
+<% } else { %>
+  <div class="card">
+    <div class="card-body">
+      <div class="empty-state">
+        <i class="fas fa-id-card"></i>
+        <p><%= q ? 'لا توجد نتائج مطابقة للبحث' : 'لا توجد بطاقات عضوية بعد' %></p>
+        <% if (canCreate && !q) { %><a href="/membership-cards/new" class="btn btn-primary"><i class="fas fa-plus"></i> إنشاء أول بطاقة</a><% } %>
+      </div>
+    </div>
+  </div>
+<% } %>
+
+<%- include('partials/layout_bottom') %>
