@@ -14,6 +14,7 @@
       <input type="date" name="date" class="form-control" value="<%= date %>">
       <button class="btn btn-outline" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
     </form>
+    <% if (canScan) { %><a href="/attendance/scan" class="btn btn-success"><i class="fas fa-qrcode"></i> مسح الباركود</a><% } %>
     <% if (canAddSession) { %><a href="/sessions/bulk-new?date=<%= date %>" class="btn btn-outline" title="إضافة حصة ثم تسجيل حضورها"><i class="fas fa-plus"></i> حصة جديدة</a><% } %>
     <a href="/reports/attendance/daily?date=<%= date %>" class="btn btn-primary" title="طباعة / تحميل PDF لهذا اليوم"><i class="fas fa-file-pdf"></i> طباعة PDF</a>
   </div>

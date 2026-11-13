@@ -13,7 +13,7 @@ const { setFlash } = require('../lib/auth-cookie');
 const { nextMembership, isUniqueViolation } = require('../lib/membership');
 const { effectiveSport, activeSport, sportClause } = require('../lib/sport-context');
 const { cardSvg, cardPdfDoc, cardsPdfDoc, barcodePng, normalizeBarcode, isoDate } = require('../lib/membership-card');
-const { buildCardMessage, waLinkFor, logMessage } = require('../lib/whatsapp');
+const { buildCardMessage, waLinkFor, logMessage, sendCardImageViaApi } = require('../lib/whatsapp');
 const pdfmake = require('../lib/pdf');
 
 function academyName(res) {
@@ -79,7 +79,6 @@ router.get('/membership-cards', async function (req, res) {
     title: 'بطاقات العضوية', active: 'membershipCards', rows, q,
     canCreate: canAdd(req.currentUser, 'membershipCards'),
     canDownload: canExport(req.currentUser, 'membershipCards'),
-    canScan: canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards'),
     stats: stats || { present: 0, absent: 0 },
     todayDate: today()
   });
@@ -240,8 +239,7 @@ router.get('/membership-cards/:id(\\d+)', async function (req, res) {
   res.render('membership_card', {
     title: 'بطاقة عضوية — ' + card.full_name, active: 'membershipCards', card, svg,
     canEditCard: canEdit(req.currentUser, 'membershipCards'),
-    canDownload: canExport(req.currentUser, 'membershipCards'),
-    canScan: canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards')
+    canDownload: canExport(req.currentUser, 'membershipCards')
   });
 });
 
@@ -287,59 +285,74 @@ router.get('/membership-cards/:id(\\d+)/pdf', sendCardPdf);
 /* ============================================================== */
 /*              إرسال صورة بطاقة العضوية عبر واتساب               */
 /* ============================================================== */
-router.get('/membership-cards/:id(\\d+)/whatsapp', async function (req, res) {
-  if (!canView(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const card = await loadCard(req.params.id);
-  if (!card) return res.redirect('/membership-cards');
+async function cardWhatsAppPayload(id, req) {
+  const card = await loadCard(id);
+  if (!card) return null;
   const phone = String(card.guardian_phone || '').trim();
-  const acad = academyName(res);
+  const acad = academyName(resLocals(req));
   const text = buildCardMessage({
-    academyName: acad,
-    guardianName: card.guardian_name || '',
-    swimmerName: card.full_name,
-    membershipNo: card.membership_no,
-    programName: card.program_name || '',
-    groupName: card.group_name || '',
+    academyName: acad, guardianName: card.guardian_name || '', swimmerName: card.full_name,
+    membershipNo: card.membership_no, programName: card.program_name || '', groupName: card.group_name || '',
     birthDate: isoDate(card.birth_date) || ''
   });
+  const st = await db.prepare('SELECT key, value FROM settings').all();
+  const sm = {}; st.forEach(r => { sm[r.key] = r.value; });
+  const apiConfigured = !!(String(sm.whatsapp_api_token || '').trim() && String(sm.whatsapp_phone_id || '').trim());
+  return { card, phone, text, waUrl: phone ? waLinkFor(phone, text, req.get('user-agent')) : '', apiConfigured, sm };
+}
+
+function resLocals(req) {
+  return req.res && req.res.locals ? req.res.locals : {};
+}
+
+function dataUrlToBuffer(dataUrl) {
+  const m = String(dataUrl).match(/^data:image\/png;base64,(.*)$/i);
+  return m ? Buffer.from(m[1], 'base64') : null;
+}
+
+router.get('/membership-cards/:id(\\d+)/whatsapp', async function (req, res) {
+  if (!canView(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const pay = await cardWhatsAppPayload(req.params.id, req);
+  if (!pay) return res.redirect('/membership-cards');
   res.render('membership_card_whatsapp', {
-    title: 'إرسال بطاقة العضوية — ' + card.full_name, active: 'membershipCards',
-    card,
-    svg: cardSvg(card, { academyName: acad }),
-    phone,
-    text,
-    waUrl: phone ? waLinkFor(phone, text, req.get('user-agent')) : '',
-    from: String(req.query.from || ''),
-    canDownload: canExport(req.currentUser, 'membershipCards')
+    title: 'إرسال بطاقة العضوية — ' + pay.card.full_name, active: 'membershipCards',
+    card: pay.card, svg: cardSvg(pay.card, { academyName: academyName(res) }),
+    phone: pay.phone, text: pay.text, waUrl: pay.waUrl, from: String(req.query.from || ''),
+    apiConfigured: pay.apiConfigured, canDownload: canExport(req.currentUser, 'membershipCards')
   });
 });
 
-/* تسجيل أن البطاقة أُرسلت (بعد نجاح المشاركة/فتح واتساب) */
-router.post('/membership-cards/:id(\\d+)/whatsapp/log', async function (req, res) {
+/* إرسال الصورة تلقائياً عبر WhatsApp Cloud API؛ إذا لم يكن API مفعلاً يُرجع رابط fallback */
+router.post('/membership-cards/:id(\\d+)/whatsapp/send', async function (req, res) {
   if (!canView(req.currentUser, 'membershipCards')) return res.status(403).json({ ok: false });
-  const card = await loadCard(req.params.id);
-  if (!card) return res.status(404).json({ ok: false });
-  const mode = req.body && req.body.mode === 'share' ? 'share' : 'link';
-  const phone = String(card.guardian_phone || '').trim();
+  const pay = await cardWhatsAppPayload(req.params.id, req);
+  if (!pay) return res.status(404).json({ ok: false });
+  if (!pay.phone) return res.status(400).json({ ok: false, error: 'no_phone', message: 'لا يوجد رقم واتساب مسجل' });
+  const token = String(pay.sm.whatsapp_api_token || '').trim();
+  const phoneId = String(pay.sm.whatsapp_phone_id || '').trim();
+  const countryCode = String(pay.sm.whatsapp_country_code || '').trim() || '20';
+  const imageBuf = dataUrlToBuffer(req.body && req.body.image);
+  if (!imageBuf) return res.status(400).json({ ok: false, error: 'no_image', message: 'لم يتم إرسال صورة البطاقة' });
+
+  if (!token || !phoneId) {
+    return res.json({ ok: false, mode: 'link', waUrl: pay.waUrl, error: 'api_not_configured' });
+  }
+
+  const r = await sendCardImageViaApi({ phone: pay.phone, imageBuffer: imageBuf, caption: pay.text, token, phoneId, countryCode });
+  if (r.ok) {
+    await logMessage({
+      swimmer_id: pay.card.id, swimmer_name: pay.card.full_name, guardian_name: pay.card.guardian_name || '',
+      phone: pay.phone, message: pay.text, mode: 'api', status: 'sent', trigger: 'membership_card', created_by: req.currentUser.id
+    });
+    audit(req.currentUser.id, req.currentUser.full_name, 'send', 'membershipCards', pay.card.id, 'إرسال صورة بطاقة العضوية عبر واتساب API: ' + pay.card.full_name, req);
+    return res.json({ ok: true, mode: 'api' });
+  }
+
   await logMessage({
-    swimmer_id: card.id,
-    swimmer_name: card.full_name,
-    guardian_name: card.guardian_name || '',
-    phone,
-    message: buildCardMessage({
-      academyName: academyName(res), guardianName: card.guardian_name || '',
-      swimmerName: card.full_name, membershipNo: card.membership_no,
-      programName: card.program_name || '', groupName: card.group_name || '',
-      birthDate: isoDate(card.birth_date) || ''
-    }),
-    mode,
-    status: 'sent',
-    trigger: 'membership_card',
-    created_by: req.currentUser.id
+    swimmer_id: pay.card.id, swimmer_name: pay.card.full_name, guardian_name: pay.card.guardian_name || '',
+    phone: pay.phone, message: pay.text, mode: 'api', status: 'failed', trigger: 'membership_card', error: r.error || '', created_by: req.currentUser.id
   });
-  audit(req.currentUser.id, req.currentUser.full_name, 'send', 'membershipCards', card.id,
-    (mode === 'share' ? 'إرسال صورة بطاقة العضوية واتساب: ' : 'فتح واتساب لبطاقة العضوية: ') + card.full_name, req);
-  res.json({ ok: true });
+  return res.json({ ok: false, mode: 'link', waUrl: pay.waUrl, error: r.error });
 });
 
 /* ============================================================== */
@@ -354,8 +367,8 @@ async function recentScans(date) {
     ORDER BY sc.id DESC LIMIT 12`).all(date);
 }
 
-router.get('/membership-cards/scan', async function (req, res) {
-  if (!canView(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+router.get('/attendance/scan', async function (req, res) {
+  if (!canView(req.currentUser, 'attendance') && !canView(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const d = today();
   const stats = await db.prepare(`SELECT
       SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS present,
@@ -363,13 +376,15 @@ router.get('/membership-cards/scan', async function (req, res) {
     FROM attendance a JOIN sessions s ON s.id = a.session_id
     WHERE s.date = ? AND s.deleted_at IS NULL`).get(d);
   res.render('membership_card_scan', {
-    title: 'مسح بطاقات العضوية', active: 'membershipCards',
-    canScan: canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards'),
+    title: 'مسح الباركود — الحضور والغياب', active: 'attendance',
+    canScan: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance') || canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards'),
     stats: stats || { present: 0, absent: 0 },
     recent: await recentScans(d), todayDate: d,
     pageScripts: ['/vendor/zxing.min.js']
   });
 });
+
+/* بقية مسارات بطاقات العضوية ... */
 
 function attendanceCounts(status) {
   return status === 'present' || status === 'late';
@@ -444,7 +459,8 @@ async function findOrCreateSession(swimmer, date, req) {
 }
 
 router.post('/membership-cards/scan', async function (req, res) {
-  const allowed = canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards');
+  const allowed = canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance') ||
+    canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards');
   if (!allowed) return res.status(403).json({ ok: false, status: 'forbidden', message: 'غير مصرح بتسجيل الحضور' });
   const mode = req.body && req.body.mode === 'absent' ? 'absent' : 'present';
   const rawCode = req.body && req.body.code;

@@ -36,9 +36,6 @@
     <% if (canDownload) { %>
       <a href="/membership-cards/all.pdf<%= q ? ('?q=' + encodeURIComponent(q)) : '' %>" class="btn btn-danger" target="_blank" rel="noopener" title="ملف PDF واحد يضم كل البطاقات المعروضة — جاهز للطباعة"><i class="fas fa-file-pdf"></i> تحميل كل البطاقات PDF</a>
     <% } %>
-    <% if (canScan) { %>
-      <a href="/membership-cards/scan" class="btn btn-success"><i class="fas fa-qrcode"></i> مسح الحضور</a>
-    <% } %>
     <% if (canCreate) { %>
       <a href="/membership-cards/new" class="btn btn-primary"><i class="fas fa-plus"></i> بطاقة جديدة</a>
     <% } %>

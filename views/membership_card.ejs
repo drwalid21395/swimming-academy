@@ -31,7 +31,6 @@
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
-    <% if (canScan) { %><a href="/membership-cards/scan" class="btn btn-success"><i class="fas fa-qrcode"></i> مسح الحضور</a><% } %>
     <% if (canEditCard) { %><a href="/membership-cards/<%= card.id %>/edit" class="btn btn-outline"><i class="fas fa-pen"></i> تعديل</a><% } %>
     <a href="/membership-cards" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> البطاقات</a>
   </div>

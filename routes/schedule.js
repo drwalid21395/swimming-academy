@@ -363,6 +363,7 @@ router.get('/attendance', async function (req, res) {
   };
   res.render('attendance', { title: 'الحضور والغياب', active: 'attendance', groups, daily, date, today: today(), canSave: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance'),
     canAddSession: canAdd(req.currentUser, 'sessions'),
+    canScan: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance') || canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards'),
     yday: addDays(today(), -1), dyday: addDays(today(), -2), tomorrow: addDays(today(), 1), isPast: date < today() });
 });
 

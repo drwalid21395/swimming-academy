@@ -69,8 +69,13 @@
           <div class="mcwa-note" style="margin-top:14px;">
             <i class="fas fa-circle-info"></i>
             <div>
-              على الجوال تُفتح قائمة المشاركة ومعها <b>صورة البطاقة جاهزة</b> — اختر واتساب ثم ولي الأمر.<br>
-              على الحاسوب يتم تحميل الصورة وفتح محادثة واتساب — أرفق الصورة التي تم تحميلها ثم اضغط إرسال.
+              <% if (apiConfigured) { %>
+                سيتم إرسال الصورة <b>تلقائياً</b> لرقم ولي الأمر عبر واتساب بمجرد الضغط على «إرسال الآن».<br>
+                إذا فشل الإرسال التلقائي (مثلاً الرقم غير مسجل في واتساب) سيتم فتح المحادثة مع تحميل الصورة.
+              <% } else { %>
+                إرسال الواتساب التلقائي غير مفعل (يلزم ربط WhatsApp Cloud API من الإعدادات).<br>
+                عند الضغط على «إرسال الآن» سيتم تحميل صورة البطاقة وفتح محادثة واتساب على الرقم المسجل.
+              <% } %>
             </div>
           </div>
         </div>
@@ -80,15 +85,15 @@
     <div class="card">
       <div class="card-body">
         <div class="mcwa-actions">
-          <button type="button" class="btn btn-success" id="waShareBtn"><i class="fab fa-whatsapp"></i> إرسال صورة البطاقة عبر واتساب</button>
-          <button type="button" class="btn btn-outline" id="downloadImg"><i class="fas fa-image"></i> تحميل الصورة فقط</button>
-          <a href="<%= waUrl %>" id="waTextBtn" target="_blank" rel="noopener" class="btn btn-ghost"><i class="fas fa-comment"></i> فتح واتساب برسالة بدون صورة</a>
+          <button type="button" class="btn btn-success" id="waSendBtn"><i class="fab fa-whatsapp"></i> إرسال الآن</button>
+          <button type="button" class="btn btn-outline" id="downloadImg"><i class="fas fa-image"></i> تحميل الصورة</button>
+          <a href="<%= waUrl %>" id="waTextBtn" target="_blank" rel="noopener" class="btn btn-ghost"><i class="fas fa-comment"></i> فتح واتساب يدوياً</a>
         </div>
         <div class="mcwa-status" id="waStatus"></div>
       </div>
       <div class="card-body text-muted" style="padding-top:0;display:flex;gap:16px;flex-wrap:wrap;font-size:12px;">
-        <span><i class="fas fa-shield-halved"></i> الصورة تُنشأ داخل المتصفح من بطاقة اللاعب ولا تُخزَّن على أي خدمة خارجية.</span>
-        <span><i class="fas fa-lightbulb"></i> إن لم تظهر قائمة المشاركة سيتم تحميل الصورة وفتح واتساب تلقائياً.</span>
+        <span><i class="fas fa-shield-halved"></i> الصورة تُنشأ داخل المتصفح من بطاقة اللاعب.</span>
+        <span><i class="fas fa-lightbulb"></i> تأكد من تسجيل دخولك إلى واتساب ويب إذا كنت على الحاسوب.</span>
       </div>
     </div>
   <% } %>
@@ -100,8 +105,8 @@
   var WA_URL = <%- JSON.stringify(waUrl || '') %>;
   var MESSAGE = <%- JSON.stringify(text).replace(/</g, '\\u003c') %>;
   var MEMBER = <%- JSON.stringify(String(card.membership_no || card.id)).replace(/</g, '\\u003c') %>;
-  var LOG_URL = '/membership-cards/<%= card.id %>/whatsapp/log';
-  var shareBtn = document.getElementById('waShareBtn');
+  var SEND_URL = '/membership-cards/<%= card.id %>/whatsapp/send';
+  var sendBtn = document.getElementById('waSendBtn');
   var downloadBtn = document.getElementById('downloadImg');
   var statusBox = document.getElementById('waStatus');
 
@@ -111,17 +116,7 @@
     statusBox.innerHTML = html;
   }
 
-  function logSend(mode) {
-    try {
-      fetch(LOG_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: mode })
-      });
-    } catch (e) { /* تجاهل */ }
-  }
-
-  function makeFile() {
+  function makeCard() {
     return new Promise(function (resolve, reject) {
       var svg = document.getElementById('cardArt');
       if (!svg) return reject(new Error('card missing'));
@@ -144,7 +139,7 @@
           URL.revokeObjectURL(url);
           canvas.toBlob(function (blob) {
             if (!blob) return reject(new Error('blob failed'));
-            resolve({ blob: blob, filename: 'membership-' + MEMBER.replace(/[^\w\-]/g, '') + '.png' });
+            resolve({ blob: blob, dataUrl: canvas.toDataURL('image/png'), filename: 'membership-' + MEMBER.replace(/[^\w\-]/g, '') + '.png' });
           }, 'image/png');
         } catch (e) {
           URL.revokeObjectURL(url);
@@ -173,39 +168,56 @@
     } catch (e) { return false; }
   }
 
-  var ready = makeFile();
-  ready.catch(function () { /* يُعالَج عند الضغط */ });
-
-  function fallbackShare(res) {
+  function downloadAndOpen(res, url) {
     saveBlob(res.blob, res.filename);
-    logSend('link');
-    if (WA_URL) {
-      try { window.open(WA_URL, '_blank', 'noopener'); } catch (e) { window.location.href = WA_URL; }
+    if (url) {
+      try { window.open(url, '_blank', 'noopener'); } catch (e) { window.location.href = url; }
     }
-    setStatus('warn', '<i class="fas fa-download"></i> تم تحميل صورة البطاقة — إن لم تُفتح محادثة واتساب تلقائياً استخدم زر «فتح واتساب» ثم أرفق الصورة.');
+    setStatus('warn', '<i class="fas fa-download"></i> تم تحميل صورة البطاقة — أرفقها في محادثة واتساب المفتوحة ثم اضغط إرسال.');
   }
 
-  if (shareBtn) {
-    shareBtn.addEventListener('click', function () {
-      if (shareBtn.disabled) return;
-      shareBtn.disabled = true;
+  function fallbackShare(res, url) {
+    var file = null;
+    try { file = new File([res.blob], res.filename, { type: 'image/png' }); } catch (e) { file = null; }
+    if (file && canShareFile(file)) {
+      navigator.share({ files: [file], text: MESSAGE }).then(function () {
+        setStatus('ok', '<i class="fas fa-circle-check"></i> تم تجهيز الصورة للمشاركة.');
+      }).catch(function (err) {
+        if (err && err.name === 'AbortError') return;
+        downloadAndOpen(res, url);
+      });
+      return;
+    }
+    downloadAndOpen(res, url);
+  }
+
+  var ready = makeCard();
+  ready.catch(function () { /* يُعالَج عند الضغط */ });
+
+  if (sendBtn) {
+    sendBtn.addEventListener('click', function () {
+      if (sendBtn.disabled) return;
+      sendBtn.disabled = true;
+      setStatus('warn', '<i class="fas fa-spinner fa-spin"></i> جارٍ إرسال الصورة...');
       ready.then(function (res) {
-        var file = null;
-        try { file = new File([res.blob], res.filename, { type: 'image/png' }); } catch (e) { file = null; }
-        if (file && canShareFile(file)) {
-          return navigator.share({ files: [file], text: MESSAGE }).then(function () {
-            logSend('share');
-            setStatus('ok', '<i class="fas fa-circle-check"></i> تم تجهيز البطاقة للمشاركة عبر واتساب.');
-          }).catch(function (err) {
-            if (err && err.name === 'AbortError') return;
-            fallbackShare(res);
-          }).then(function () { shareBtn.disabled = false; });
-        }
-        fallbackShare(res);
-        shareBtn.disabled = false;
+        fetch(SEND_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: res.dataUrl, message: MESSAGE })
+        }).then(function (r) {
+          return r.json().catch(function () { return { ok: false }; });
+        }).then(function (data) {
+          if (data.ok && data.mode === 'api') {
+            setStatus('ok', '<i class="fas fa-circle-check"></i> تم إرسال صورة البطاقة تلقائياً لولي الأمر.');
+            return;
+          }
+          fallbackShare(res, (data && data.waUrl) ? data.waUrl : WA_URL);
+        }).catch(function () {
+          fallbackShare(res, WA_URL);
+        }).then(function () { sendBtn.disabled = false; });
       }).catch(function () {
-        shareBtn.disabled = false;
-        setStatus('warn', '<i class="fas fa-triangle-exclamation"></i> تعذر إنشاء صورة البطاقة على هذا المتصفح — استخدم تحميل PDF أو جرّب متصفحاً آخر.');
+        sendBtn.disabled = false;
+        setStatus('warn', '<i class="fas fa-triangle-exclamation"></i> تعذر إنشاء صورة البطاقة على هذا المتصفح.');
       });
     });
   }
@@ -219,7 +231,7 @@
         downloadBtn.disabled = false;
       }).catch(function () {
         downloadBtn.disabled = false;
-        setStatus('warn', '<i class="fas fa-triangle-exclamation"></i> تعذر إنشاء صورة البطاقة على هذا المتصفح.');
+        setStatus('warn', '<i class="fas fa-triangle-exclamation"></i> تعذر إنشاء صورة البطاقة.');
       });
     });
   }

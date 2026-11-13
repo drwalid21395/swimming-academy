@@ -96,13 +96,13 @@
 
 <div class="page-head">
   <div>
-    <div class="page-title"><i class="fas fa-qrcode"></i> مسح بطاقات العضوية</div>
-    <div class="page-sub">وجّه الباركود أمام الكاميرا لتسجيل الحضور أو الغياب — يُمنع تسجيل نفس السباح مرتين في نفس اليوم</div>
+    <div class="page-title"><i class="fas fa-qrcode"></i> مسح الباركود</div>
+    <div class="page-sub">تسجيل الحضور والغياب بمسح باركود بطاقة العضوية</div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
-    <a href="/membership-cards" class="btn btn-outline"><i class="fas fa-id-card"></i> البطاقات</a>
-    <a href="/membership-cards" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> رجوع</a>
+    <a href="/attendance" class="btn btn-outline"><i class="fas fa-clipboard-user"></i> الحضور والغياب</a>
+    <a href="/attendance" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> رجوع</a>
   </div>
 </div>
 
@@ -417,13 +417,6 @@
 
     var hints = new Map();
     try {
-      hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-        window.ZXing.BarcodeFormat.CODE_39,
-        window.ZXing.BarcodeFormat.CODE_128,
-        window.ZXing.BarcodeFormat.EAN_13,
-        window.ZXing.BarcodeFormat.CODE_93,
-        window.ZXing.BarcodeFormat.ITF
-      ]);
       hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
     } catch (e) { }
     reader = new window.ZXing.BrowserMultiFormatReader(hints, 120);
@@ -434,7 +427,8 @@
       video: {
         facingMode: { ideal: 'environment' },
         width: { ideal: 1280 },
-        height: { ideal: 720 }
+        height: { ideal: 720 },
+        focusMode: { ideal: 'continuous' }
       }
     };
 
