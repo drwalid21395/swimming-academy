@@ -1,0 +1,229 @@
+<%- include('partials/layout_top', { title: title, active: active }) %>
+<style>
+  .mcwa-wrap { max-width:980px; margin:0 auto; }
+  .mcwa-art { border-radius:22px; overflow:hidden; box-shadow:0 10px 26px rgba(2,42,68,.18); background:#fff; }
+  .mcwa-art svg { display:block; width:100%; height:auto; }
+  .mcwa-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
+  .mcwa-actions .btn { min-height:44px; }
+  .mcwa-note { display:flex; gap:12px; align-items:flex-start; background:var(--primary-soft,#e0f2fe); border:1px solid var(--card-border); border-radius:14px; padding:14px 16px; font-size:13px; line-height:1.9; color:var(--text-soft,#334155); }
+  .mcwa-note i { color:#0284c7; font-size:18px; margin-top:3px; flex:none; }
+  .mcwa-status { display:none; margin-top:12px; border-radius:12px; padding:10px 14px; font-size:13px; font-weight:700; }
+  .mcwa-status.ok { display:block; background:#dcfce7; color:#166534; }
+  .mcwa-status.warn { display:block; background:#fef9c3; color:#854d0e; }
+  .wa-bubble { background:#dcf8c6; border-radius:10px; padding:12px 14px; font-size:13px; line-height:1.9; white-space:pre-wrap; box-shadow:0 1px 1px rgba(0,0,0,.12); }
+  @media (max-width:640px) {
+    .mcwa-actions .btn { flex:1 1 100%; justify-content:center; }
+    .mcwa-art { border-radius:14px; }
+  }
+</style>
+
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fab fa-whatsapp" style="color:#25d366"></i> إرسال بطاقة العضوية</div>
+    <div class="page-sub"><b><%= card.full_name %></b> · <%= card.membership_no %><% if (phone) { %> · سيتم الإرسال إلى <b dir="ltr"><%= phone %></b><% } %></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1" style="flex-wrap:wrap">
+    <% if (from === 'convert') { %>
+      <a href="/swimmers/<%= card.id %>" class="btn btn-outline"><i class="fas fa-user"></i> متابعة إلى ملف اللاعب</a>
+    <% } else { %>
+      <a href="/membership-cards/<%= card.id %>" class="btn btn-outline"><i class="fas fa-id-card"></i> عرض البطاقة</a>
+    <% } %>
+  </div>
+</div>
+
+<div class="mcwa-wrap">
+  <% if (!phone) { %>
+    <div class="card">
+      <div class="card-body">
+        <div class="empty-state">
+          <i class="fas fa-phone-slash"></i>
+          <p>لا يوجد رقم واتساب أو هاتف مسجل لولي أمر هذا اللاعب.</p>
+          <a href="/swimmers/<%= card.id %>/edit" class="btn btn-primary"><i class="fas fa-pen"></i> إضافة رقم واتساب ولي الأمر</a>
+        </div>
+      </div>
+    </div>
+  <% } else { %>
+    <div class="dash-grid">
+      <div class="card">
+        <div class="card-header"><h3><i class="fas fa-id-card"></i> معاينة البطاقة</h3></div>
+        <div class="card-body">
+          <div class="mcwa-art"><%- svg %></div>
+          <div class="detail-grid" style="margin-top:14px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+            <div class="detail-item"><div class="dl">اللاعب</div><div class="dv"><%= card.full_name %></div></div>
+            <div class="detail-item"><div class="dl">رقم العضوية</div><div class="dv" dir="ltr"><%= card.membership_no %></div></div>
+            <div class="detail-item"><div class="dl">البرنامج</div><div class="dv"><%= card.program_name || '—' %></div></div>
+            <div class="detail-item"><div class="dl">المجموعة</div><div class="dv"><%= card.group_name || '—' %></div></div>
+            <div class="detail-item"><div class="dl">ولي الأمر</div><div class="dv"><%= card.guardian_name || '—' %></div></div>
+            <div class="detail-item"><div class="dl">رقم الواتساب</div><div class="dv" dir="ltr"><%= phone %></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3><i class="fab fa-whatsapp" style="color:#25d366"></i> الرسالة المرفقة مع الصورة</h3></div>
+        <div class="card-body">
+          <div style="background:#e5ddd5;border-radius:14px;padding:16px;max-width:520px;">
+            <div class="wa-bubble"><%= text %></div>
+            <div style="font-size:11px;color:#667;margin-top:6px;text-align:left;">WhatsApp · صورة البطاقة مرفقة</div>
+          </div>
+          <div class="mcwa-note" style="margin-top:14px;">
+            <i class="fas fa-circle-info"></i>
+            <div>
+              على الجوال تُفتح قائمة المشاركة ومعها <b>صورة البطاقة جاهزة</b> — اختر واتساب ثم ولي الأمر.<br>
+              على الحاسوب يتم تحميل الصورة وفتح محادثة واتساب — أرفق الصورة التي تم تحميلها ثم اضغط إرسال.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div class="mcwa-actions">
+          <button type="button" class="btn btn-success" id="waShareBtn"><i class="fab fa-whatsapp"></i> إرسال صورة البطاقة عبر واتساب</button>
+          <button type="button" class="btn btn-outline" id="downloadImg"><i class="fas fa-image"></i> تحميل الصورة فقط</button>
+          <a href="<%= waUrl %>" id="waTextBtn" target="_blank" rel="noopener" class="btn btn-ghost"><i class="fas fa-comment"></i> فتح واتساب برسالة بدون صورة</a>
+        </div>
+        <div class="mcwa-status" id="waStatus"></div>
+      </div>
+      <div class="card-body text-muted" style="padding-top:0;display:flex;gap:16px;flex-wrap:wrap;font-size:12px;">
+        <span><i class="fas fa-shield-halved"></i> الصورة تُنشأ داخل المتصفح من بطاقة اللاعب ولا تُخزَّن على أي خدمة خارجية.</span>
+        <span><i class="fas fa-lightbulb"></i> إن لم تظهر قائمة المشاركة سيتم تحميل الصورة وفتح واتساب تلقائياً.</span>
+      </div>
+    </div>
+  <% } %>
+</div>
+
+<% if (phone) { %>
+<script>
+(function () {
+  var WA_URL = <%- JSON.stringify(waUrl || '') %>;
+  var MESSAGE = <%- JSON.stringify(text).replace(/</g, '\\u003c') %>;
+  var MEMBER = <%- JSON.stringify(String(card.membership_no || card.id)).replace(/</g, '\\u003c') %>;
+  var LOG_URL = '/membership-cards/<%= card.id %>/whatsapp/log';
+  var shareBtn = document.getElementById('waShareBtn');
+  var downloadBtn = document.getElementById('downloadImg');
+  var statusBox = document.getElementById('waStatus');
+
+  function setStatus(kind, html) {
+    if (!statusBox) return;
+    statusBox.className = 'mcwa-status ' + kind;
+    statusBox.innerHTML = html;
+  }
+
+  function logSend(mode) {
+    try {
+      fetch(LOG_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: mode })
+      });
+    } catch (e) { /* تجاهل */ }
+  }
+
+  function makeFile() {
+    return new Promise(function (resolve, reject) {
+      var svg = document.getElementById('cardArt');
+      if (!svg) return reject(new Error('card missing'));
+      var clone = svg.cloneNode(true);
+      if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      var source = new XMLSerializer().serializeToString(clone);
+      var url = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }));
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var scale = 2;
+          var vb = svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width ? svg.viewBox.baseVal : { width: 1012, height: 638 };
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.round(vb.width * scale);
+          canvas.height = Math.round(vb.height * scale);
+          var ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(url);
+          canvas.toBlob(function (blob) {
+            if (!blob) return reject(new Error('blob failed'));
+            resolve({ blob: blob, filename: 'membership-' + MEMBER.replace(/[^\w\-]/g, '') + '.png' });
+          }, 'image/png');
+        } catch (e) {
+          URL.revokeObjectURL(url);
+          reject(e);
+        }
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('image failed')); };
+      img.src = url;
+    });
+  }
+
+  function saveBlob(blob, filename) {
+    var a = document.createElement('a');
+    var dl = URL.createObjectURL(blob);
+    a.href = dl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(dl); }, 2500);
+  }
+
+  function canShareFile(file) {
+    try {
+      return !!(navigator.share && navigator.canShare && navigator.canShare({ files: [file] }));
+    } catch (e) { return false; }
+  }
+
+  var ready = makeFile();
+  ready.catch(function () { /* يُعالَج عند الضغط */ });
+
+  function fallbackShare(res) {
+    saveBlob(res.blob, res.filename);
+    logSend('link');
+    if (WA_URL) {
+      try { window.open(WA_URL, '_blank', 'noopener'); } catch (e) { window.location.href = WA_URL; }
+    }
+    setStatus('warn', '<i class="fas fa-download"></i> تم تحميل صورة البطاقة — إن لم تُفتح محادثة واتساب تلقائياً استخدم زر «فتح واتساب» ثم أرفق الصورة.');
+  }
+
+  if (shareBtn) {
+    shareBtn.addEventListener('click', function () {
+      if (shareBtn.disabled) return;
+      shareBtn.disabled = true;
+      ready.then(function (res) {
+        var file = null;
+        try { file = new File([res.blob], res.filename, { type: 'image/png' }); } catch (e) { file = null; }
+        if (file && canShareFile(file)) {
+          return navigator.share({ files: [file], text: MESSAGE }).then(function () {
+            logSend('share');
+            setStatus('ok', '<i class="fas fa-circle-check"></i> تم تجهيز البطاقة للمشاركة عبر واتساب.');
+          }).catch(function (err) {
+            if (err && err.name === 'AbortError') return;
+            fallbackShare(res);
+          }).then(function () { shareBtn.disabled = false; });
+        }
+        fallbackShare(res);
+        shareBtn.disabled = false;
+      }).catch(function () {
+        shareBtn.disabled = false;
+        setStatus('warn', '<i class="fas fa-triangle-exclamation"></i> تعذر إنشاء صورة البطاقة على هذا المتصفح — استخدم تحميل PDF أو جرّب متصفحاً آخر.');
+      });
+    });
+  }
+
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', function () {
+      if (downloadBtn.disabled) return;
+      downloadBtn.disabled = true;
+      ready.then(function (res) {
+        saveBlob(res.blob, res.filename);
+        downloadBtn.disabled = false;
+      }).catch(function () {
+        downloadBtn.disabled = false;
+        setStatus('warn', '<i class="fas fa-triangle-exclamation"></i> تعذر إنشاء صورة البطاقة على هذا المتصفح.');
+      });
+    });
+  }
+})();
+</script>
+<% } %>
+<%- include('partials/layout_bottom') %>

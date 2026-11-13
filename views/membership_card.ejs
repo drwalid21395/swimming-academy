@@ -50,6 +50,9 @@
   </div>
 
   <div class="mc-tools no-print">
+    <% if (card.guardian_phone) { %>
+      <a href="/membership-cards/<%= card.id %>/whatsapp" class="btn btn-success"><i class="fab fa-whatsapp"></i> إرسال البطاقة واتساب</a>
+    <% } %>
     <% if (canDownload) { %>
       <a href="/membership-cards/<%= card.id %>.pdf" class="btn btn-primary" target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i> تحميل PDF</a>
       <button type="button" class="btn btn-outline" id="downloadPng"><i class="fas fa-image"></i> تحميل صورة PNG</button>

@@ -266,7 +266,9 @@ const swimmerFields = async function (values, req) {
     { key: 'coach_id', label: 'الكابتن المسؤول', type: 'coach_auto', groupField: 'group_id', coaches },
     { key: 'status', label: 'حالة اللاعب', type: 'select', options: SW_STATUS.map(v => ({ value: v, label: v })) },
     { key: 'notes', label: 'ملاحظات عامة', type: 'textarea', full: true }
-  ];
+  ].concat(values && values.id ? [] : [
+    { key: 'send_card_whatsapp', label: 'بطاقة العضوية', type: 'checkbox', checkLabel: 'إرسال صورة بطاقة العضوية عبر واتساب بعد حفظ اللاعب', hint: 'يفتح صفحة إرسال البطاقة إلى رقم واتساب ولي الأمر المسجل', full: true }
+  ]);
 };
 
 /* القائمة */
@@ -476,6 +478,10 @@ router.post('/swimmers/new', uploadAndStore('avatar'), async function (req, res)
       await syncSwimmerGroups(tx, Number(info.lastInsertRowid), b.group_id);
       await tx.commit();
       audit(req.currentUser.id, req.currentUser.full_name, 'add', 'swimmers', info.lastInsertRowid, 'تسجيل لاعب جديد: ' + String(b.full_name || '').trim(), req);
+      if (String(b.send_card_whatsapp || '') === '1' && canView(req.currentUser, 'membershipCards')) {
+        setFlash(res, { type: 'success', message: 'تم تسجيل اللاعب بنجاح — أرسل الآن صورة بطاقة العضوية عبر واتساب' });
+        return res.redirect('/membership-cards/' + info.lastInsertRowid + '/whatsapp');
+      }
       setFlash(res, { type: 'success', message: 'تم تسجيل اللاعب بنجاح' });
       return res.redirect('/swimmers/' + info.lastInsertRowid);
     } catch (e) {

@@ -162,10 +162,14 @@ async function convertReservation(req, res, r) {
         for (const rc of rcpts) await insR.run(n.lastInsertRowid, rc.id);
       } catch (e) { /* تجاهل أخطاء الإشعار */ }
 
+      const canSendCard = canView(req.currentUser, 'membershipCards') &&
+        String(r.guardian_whatsapp || r.guardian_phone || r.phone || '').trim() !== '';
       setFlash(res, {
         type: 'success',
-        message: 'تم تحويل الحجز إلى اللاعب ' + r.swimmer_name + ' (' + membership_no + ') وولي الأمر — بقي فقط تسكين المجموعة من صفحة اللاعب'
+        message: 'تم تحويل الحجز إلى اللاعب ' + r.swimmer_name + ' (' + membership_no + ') وولي الأمر' +
+          (canSendCard ? ' — يمكنك الآن إرسال صورة بطاقة العضوية عبر واتساب' : ' — بقي فقط تسكين المجموعة من صفحة اللاعب')
       });
+      if (canSendCard) return res.redirect('/membership-cards/' + swimmerId + '/whatsapp?from=convert');
       return res.redirect('/swimmers/' + swimmerId);
     } catch (e) {
       if (tx && tx.rollback) await tx.rollback().catch(() => {});

@@ -12,7 +12,8 @@ const { audit, canView, canAdd, canEdit, canExport, today } = require('../lib/he
 const { setFlash } = require('../lib/auth-cookie');
 const { nextMembership, isUniqueViolation } = require('../lib/membership');
 const { effectiveSport, activeSport, sportClause } = require('../lib/sport-context');
-const { cardSvg, cardPdfDoc, barcodePng, normalizeBarcode, isoDate } = require('../lib/membership-card');
+const { cardSvg, cardPdfDoc, cardsPdfDoc, barcodePng, normalizeBarcode, isoDate } = require('../lib/membership-card');
+const { buildCardMessage, waLinkFor, logMessage } = require('../lib/whatsapp');
 const pdfmake = require('../lib/pdf');
 
 function academyName(res) {
@@ -33,13 +34,16 @@ async function allProgramOptions(sid) {
 
 const CARD_SELECT = `SELECT s.*, p.name AS program_name, p.sport_id AS program_sport_id,
     g.name AS group_name, c.full_name AS coach_name, l.name AS level_name,
+    gu.full_name AS guardian_name,
+    COALESCE(NULLIF(TRIM(gu.whatsapp), ''), NULLIF(TRIM(gu.phone), ''), NULLIF(TRIM(s.phone), '')) AS guardian_phone,
     (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id
       ORDER BY (sub.status = 'نشط') DESC, sub.id DESC LIMIT 1) AS subscription_end
   FROM swimmers s
   LEFT JOIN programs p ON p.id = s.program_id
   LEFT JOIN groups g ON g.id = s.group_id
   LEFT JOIN coaches c ON c.id = s.coach_id
-  LEFT JOIN levels l ON l.id = s.level_id`;
+  LEFT JOIN levels l ON l.id = s.level_id
+  LEFT JOIN guardians gu ON gu.id = s.guardian_id`;
 
 async function loadCard(id) {
   return db.prepare(CARD_SELECT + ' WHERE s.id = ? AND s.deleted_at IS NULL').get(Number(id));
@@ -52,10 +56,12 @@ router.get('/membership-cards', async function (req, res) {
   if (!canView(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const q = String(req.query.q || '').trim();
   let sql = `SELECT s.id, s.membership_no, s.full_name, s.birth_date, s.avatar, s.status,
-      p.name AS program_name, g.name AS group_name
+      p.name AS program_name, g.name AS group_name,
+      COALESCE(NULLIF(TRIM(gu.whatsapp), ''), NULLIF(TRIM(gu.phone), ''), NULLIF(TRIM(s.phone), '')) AS guardian_phone
     FROM swimmers s
     LEFT JOIN programs p ON p.id = s.program_id
     LEFT JOIN groups g ON g.id = s.group_id
+    LEFT JOIN guardians gu ON gu.id = s.guardian_id
     WHERE s.deleted_at IS NULL`;
   const params = [];
   if (q) {
@@ -76,6 +82,32 @@ router.get('/membership-cards', async function (req, res) {
     canScan: canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards'),
     stats: stats || { present: 0, absent: 0 },
     todayDate: today()
+  });
+});
+
+/* ============================================================== */
+/*                 تحميل جميع البطاقات في ملف PDF                 */
+/* ============================================================== */
+router.get('/membership-cards/all.pdf', async function (req, res) {
+  if (!canExport(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const q = String(req.query.q || '').trim();
+  let sql = CARD_SELECT + ' WHERE s.deleted_at IS NULL';
+  const params = [];
+  if (q) {
+    sql += ' AND (s.full_name LIKE ? OR s.membership_no LIKE ?)';
+    params.push('%' + q + '%', '%' + q + '%');
+  }
+  sql += ' ORDER BY s.full_name LIMIT 500';
+  const cards = await db.prepare(sql).all(...params);
+  const doc = cardsPdfDoc(cards, { academyName: academyName(res) });
+  pdfmake.createPdf(doc).getBuffer().then(function (buf) {
+    const name = 'membership-cards' + (q ? '-search' : '') + '.pdf';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="' + name + '"');
+    res.send(buf);
+  }).catch(function (e) {
+    console.error('خطأ في توليد PDF لكل البطاقات:', e.message);
+    res.status(500).send('تعذر توليد ملف البطاقات: ' + e.message);
   });
 });
 
@@ -249,8 +281,66 @@ async function sendCardPdf(req, res) {
     res.status(500).send('تعذر توليد PDF: ' + e.message);
   });
 }
-router.get('/membership-cards/:id.pdf', sendCardPdf);
-router.get('/membership-cards/:id/pdf', sendCardPdf);
+router.get('/membership-cards/:id(\\d+).pdf', sendCardPdf);
+router.get('/membership-cards/:id(\\d+)/pdf', sendCardPdf);
+
+/* ============================================================== */
+/*              إرسال صورة بطاقة العضوية عبر واتساب               */
+/* ============================================================== */
+router.get('/membership-cards/:id(\\d+)/whatsapp', async function (req, res) {
+  if (!canView(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const card = await loadCard(req.params.id);
+  if (!card) return res.redirect('/membership-cards');
+  const phone = String(card.guardian_phone || '').trim();
+  const acad = academyName(res);
+  const text = buildCardMessage({
+    academyName: acad,
+    guardianName: card.guardian_name || '',
+    swimmerName: card.full_name,
+    membershipNo: card.membership_no,
+    programName: card.program_name || '',
+    groupName: card.group_name || '',
+    birthDate: isoDate(card.birth_date) || ''
+  });
+  res.render('membership_card_whatsapp', {
+    title: 'إرسال بطاقة العضوية — ' + card.full_name, active: 'membershipCards',
+    card,
+    svg: cardSvg(card, { academyName: acad }),
+    phone,
+    text,
+    waUrl: phone ? waLinkFor(phone, text, req.get('user-agent')) : '',
+    from: String(req.query.from || ''),
+    canDownload: canExport(req.currentUser, 'membershipCards')
+  });
+});
+
+/* تسجيل أن البطاقة أُرسلت (بعد نجاح المشاركة/فتح واتساب) */
+router.post('/membership-cards/:id(\\d+)/whatsapp/log', async function (req, res) {
+  if (!canView(req.currentUser, 'membershipCards')) return res.status(403).json({ ok: false });
+  const card = await loadCard(req.params.id);
+  if (!card) return res.status(404).json({ ok: false });
+  const mode = req.body && req.body.mode === 'share' ? 'share' : 'link';
+  const phone = String(card.guardian_phone || '').trim();
+  await logMessage({
+    swimmer_id: card.id,
+    swimmer_name: card.full_name,
+    guardian_name: card.guardian_name || '',
+    phone,
+    message: buildCardMessage({
+      academyName: academyName(res), guardianName: card.guardian_name || '',
+      swimmerName: card.full_name, membershipNo: card.membership_no,
+      programName: card.program_name || '', groupName: card.group_name || '',
+      birthDate: isoDate(card.birth_date) || ''
+    }),
+    mode,
+    status: 'sent',
+    trigger: 'membership_card',
+    created_by: req.currentUser.id
+  });
+  audit(req.currentUser.id, req.currentUser.full_name, 'send', 'membershipCards', card.id,
+    (mode === 'share' ? 'إرسال صورة بطاقة العضوية واتساب: ' : 'فتح واتساب لبطاقة العضوية: ') + card.full_name, req);
+  res.json({ ok: true });
+});
 
 /* ============================================================== */
 /*                    مسح الباركود وتسجيل الحضور                  */

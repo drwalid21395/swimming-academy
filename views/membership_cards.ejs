@@ -33,6 +33,9 @@
   </div>
   <div class="spacer"></div>
   <div class="flex wrap gap-1" style="flex-wrap:wrap">
+    <% if (canDownload) { %>
+      <a href="/membership-cards/all.pdf<%= q ? ('?q=' + encodeURIComponent(q)) : '' %>" class="btn btn-danger" target="_blank" rel="noopener" title="ملف PDF واحد يضم كل البطاقات المعروضة — جاهز للطباعة"><i class="fas fa-file-pdf"></i> تحميل كل البطاقات PDF</a>
+    <% } %>
     <% if (canScan) { %>
       <a href="/membership-cards/scan" class="btn btn-success"><i class="fas fa-qrcode"></i> مسح الحضور</a>
     <% } %>
@@ -85,6 +88,9 @@
         </div>
         <div class="mc-actions">
           <a href="/membership-cards/<%= r.id %>" class="btn btn-primary btn-sm"><i class="fas fa-eye"></i> عرض البطاقة</a>
+          <% if (r.guardian_phone) { %>
+            <a href="/membership-cards/<%= r.id %>/whatsapp" class="btn btn-success btn-sm" title="إرسال صورة البطاقة إلى واتساب ولي الأمر"><i class="fab fa-whatsapp"></i> واتساب</a>
+          <% } %>
           <% if (canDownload) { %>
             <a href="/membership-cards/<%= r.id %>.pdf" class="btn btn-outline btn-sm" target="_blank" rel="noopener"><i class="fas fa-file-pdf text-danger"></i> PDF</a>
           <% } %>

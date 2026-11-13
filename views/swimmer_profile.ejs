@@ -4,6 +4,9 @@
   <div class="flex items-center gap-1">
     <a href="/swimmers" class="btn btn-outline btn-sm"><i class="fas fa-arrow-right"></i> اللاعبون</a>
     <a href="/swimmers/<%= s.id %>/assessment-report" class="btn btn-primary btn-sm"><i class="fas fa-clipboard-check"></i> تقرير التقييمات</a>
+    <% if (canView(user, 'membershipCards') && (s.guardian_whatsapp || s.guardian_phone || s.phone)) { %>
+      <a href="/membership-cards/<%= s.id %>/whatsapp" class="btn btn-success btn-sm"><i class="fab fa-whatsapp"></i> بطاقة العضوية واتساب</a>
+    <% } %>
     <a href="/swimmers/<%= s.id %>/edit" class="btn btn-primary btn-sm"><i class="fas fa-pen"></i> تعديل</a>
   </div>
 </div>
