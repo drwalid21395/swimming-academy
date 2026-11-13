@@ -71,10 +71,9 @@
             <div>
               <% if (apiConfigured) { %>
                 سيتم إرسال الصورة <b>تلقائياً</b> لرقم ولي الأمر عبر واتساب بمجرد الضغط على «إرسال الآن».<br>
-                إذا فشل الإرسال التلقائي (مثلاً الرقم غير مسجل في واتساب) سيتم فتح المحادثة مع تحميل الصورة.
+                إذا فشل الإرسال التلقائي سيتم فتح واتساب على الرقم مع نسخ الرسالة جاهزة للإرسال.
               <% } else { %>
-                إرسال الواتساب التلقائي غير مفعل (يلزم ربط WhatsApp Cloud API من الإعدادات).<br>
-                عند الضغط على «إرسال الآن» سيتم تحميل صورة البطاقة وفتح محادثة واتساب على الرقم المسجل.
+                عند الضغط على «إرسال الآن» سيتم فتح واتساب على رقم ولي الأمر وكتابة الرسالة في الدردشة، مع تحميل صورة البطاقة لتقوم بإرفاقها ثم الضغط على إرسال.
               <% } %>
             </div>
           </div>
@@ -162,33 +161,12 @@
     setTimeout(function () { URL.revokeObjectURL(dl); }, 2500);
   }
 
-  function canShareFile(file) {
-    try {
-      return !!(navigator.share && navigator.canShare && navigator.canShare({ files: [file] }));
-    } catch (e) { return false; }
-  }
-
-  function downloadAndOpen(res, url) {
+  function openWhatsApp(res, url) {
     saveBlob(res.blob, res.filename);
     if (url) {
       try { window.open(url, '_blank', 'noopener'); } catch (e) { window.location.href = url; }
     }
-    setStatus('warn', '<i class="fas fa-download"></i> تم تحميل صورة البطاقة — أرفقها في محادثة واتساب المفتوحة ثم اضغط إرسال.');
-  }
-
-  function fallbackShare(res, url) {
-    var file = null;
-    try { file = new File([res.blob], res.filename, { type: 'image/png' }); } catch (e) { file = null; }
-    if (file && canShareFile(file)) {
-      navigator.share({ files: [file], text: MESSAGE }).then(function () {
-        setStatus('ok', '<i class="fas fa-circle-check"></i> تم تجهيز الصورة للمشاركة.');
-      }).catch(function (err) {
-        if (err && err.name === 'AbortError') return;
-        downloadAndOpen(res, url);
-      });
-      return;
-    }
-    downloadAndOpen(res, url);
+    setStatus('warn', '<i class="fas fa-paper-plane"></i> تم فتح محادثة واتساب مع كتابة الرسالة وتحميل صورة البطاقة — أرفق الصورة في الدردشة ثم اضغط إرسال.');
   }
 
   var ready = makeCard();
@@ -198,7 +176,7 @@
     sendBtn.addEventListener('click', function () {
       if (sendBtn.disabled) return;
       sendBtn.disabled = true;
-      setStatus('warn', '<i class="fas fa-spinner fa-spin"></i> جارٍ إرسال الصورة...');
+      setStatus('warn', '<i class="fas fa-spinner fa-spin"></i> جارٍ تجهيز الصورة وفتح واتساب...');
       ready.then(function (res) {
         fetch(SEND_URL, {
           method: 'POST',
@@ -211,9 +189,9 @@
             setStatus('ok', '<i class="fas fa-circle-check"></i> تم إرسال صورة البطاقة تلقائياً لولي الأمر.');
             return;
           }
-          fallbackShare(res, (data && data.waUrl) ? data.waUrl : WA_URL);
+          openWhatsApp(res, (data && data.waUrl) ? data.waUrl : WA_URL);
         }).catch(function () {
-          fallbackShare(res, WA_URL);
+          openWhatsApp(res, WA_URL);
         }).then(function () { sendBtn.disabled = false; });
       }).catch(function () {
         sendBtn.disabled = false;

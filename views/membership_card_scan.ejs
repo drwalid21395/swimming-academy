@@ -397,6 +397,117 @@
     setCamUI(false);
   }
 
+  function pickCamera(devices) {
+    var cams = devices.filter(function (d) { return d.kind === 'videoinput'; });
+    if (!cams.length) return null;
+    var back = cams.filter(function (d) {
+      var label = String(d.label || '').toLowerCase();
+      return /back|rear|environment|خلف/i.test(label);
+    });
+    return (back.length ? back : cams)[0].deviceId;
+  }
+
+  function buildConstraints(deviceId) {
+    var base = {
+      audio: false,
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    };
+    if (deviceId) base.video.deviceId = { exact: deviceId };
+    else base.video.facingMode = { ideal: 'environment' };
+    return base;
+  }
+
+  function tryStartCamera(deviceId) {
+    var constraints = buildConstraints(deviceId);
+    showResult('scanning', 'جارٍ تشغيل الكاميرا...', deviceId ? 'جاري تجربة كاميرا بديلة' : 'اسمح بالوصول للكاميرا عند سؤال المتصفح', '');
+
+    var hints = new Map();
+    try {
+      hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
+      if (window.ZXing.BarcodeFormat && window.ZXing.BarcodeFormat.CODE_39) {
+        hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+          window.ZXing.BarcodeFormat.CODE_39,
+          window.ZXing.BarcodeFormat.CODE_128,
+          window.ZXing.BarcodeFormat.EAN_13,
+          window.ZXing.BarcodeFormat.CODE_93
+        ]);
+      }
+    } catch (e) { }
+    reader = new window.ZXing.BrowserMultiFormatReader(hints, 140);
+    scanning = true;
+
+    var decodePromise = reader.decodeFromConstraints(constraints, video, function (res, err) {
+      if (!res) {
+        if (err && err.message) {
+          var msg = String(err.message);
+          if (msg.indexOf('No MultiFormat Readers') > -1 || msg.indexOf('No QR code') > -1) return;
+          console.log('ZXing decode error:', msg);
+        }
+        return;
+      }
+      handleCode(res.getText(), false);
+    });
+
+    function markCamReady() {
+      if (!scanning) return;
+      if (!video.srcObject) return;
+      setCamUI(true);
+      showResult('scanning', 'الكاميرا تعمل', 'وجّه الباركود داخل الإطار ببطء وحافظ على الإضاءة', '');
+    }
+
+    video.addEventListener('playing', markCamReady);
+    var readyPoll = setInterval(function () {
+      if (!scanning) { clearInterval(readyPoll); return; }
+      if (video.srcObject && video.readyState >= 2) { markCamReady(); clearInterval(readyPoll); }
+    }, 350);
+
+    function onFail(e) {
+      clearInterval(readyPoll);
+      scanning = false;
+      if (reader) { try { reader.reset(); } catch (x) { } reader = null; }
+      video.removeEventListener('playing', markCamReady);
+      return e;
+    }
+
+    function showCamError(e, fallbackPossible) {
+      onFail(e);
+      setCamUI(false);
+      var errName = (e && e.name) || '';
+      var reason = 'تعذر تشغيل الكاميرا، تأكد من منح الإذن للمتصفح';
+      if (errName === 'NotAllowedError' || errName === 'SecurityError') reason = 'تم رفض إذن الكاميرا — اسمح بالوصول للكاميرا من إعدادات المتصفح';
+      else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') reason = 'لا توجد كاميرا متاحة على هذا الجهاز';
+      else if (errName === 'NotReadableError' || errName === 'TrackStartError') reason = 'الكاميرا مستخدمة من تطبيق آخر — أغلق التطبيقات الأخرى';
+      else if (errName === 'OverconstrainedError') reason = 'إعدادات الكاميرا غير مدعومة';
+      if (fallbackPossible) {
+        showResult('error', 'تعذر تشغيل الكاميرا الحالية', reason, 'جاري تجربة كاميرا أخرى...');
+      } else {
+        showResult('error', 'تعذر تشغيل الكاميرا', reason, 'يمكنك استخدام الإدخال اليدوي أو قارئ الباركود USB');
+        if (window.App && window.App.showToast) window.App.showToast(reason, 'error');
+      }
+    }
+
+    if (decodePromise && decodePromise.then) {
+      decodePromise.then(function () { markCamReady(); }).catch(function (e) {
+        var errName = (e && e.name) || '';
+        if (!deviceId && errName !== 'NotAllowedError' && errName !== 'SecurityError' && navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+          showCamError(e, true);
+          navigator.mediaDevices.enumerateDevices().then(function (devices) {
+            var id = pickCamera(devices);
+            if (id) tryStartCamera(id);
+            else { setCamUI(false); showResult('error', 'لا توجد كاميرا أخرى', 'لم يتم العثور على كاميرا بديلة', 'استخدم الإدخال اليدوي'); }
+          }).catch(function () {
+            showCamError(e, false);
+          });
+        } else {
+          showCamError(e, false);
+        }
+      });
+    }
+  }
+
   function startCamera() {
     if (!canScan) {
       if (window.App && window.App.showToast) window.App.showToast('غير مصرح لك بتسجيل الحضور', 'error');
@@ -413,59 +524,7 @@
     }
     ensureAudio();
     startBtn.disabled = true;
-    showResult('scanning', 'جارٍ تشغيل الكاميرا...', 'اسمح بالوصول للكاميرا عند سؤال المتصفح', '');
-
-    var hints = new Map();
-    try {
-      hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
-    } catch (e) { }
-    reader = new window.ZXing.BrowserMultiFormatReader(hints, 120);
-    scanning = true;
-
-    var constraints = {
-      audio: false,
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        focusMode: { ideal: 'continuous' }
-      }
-    };
-
-    var result = reader.decodeFromConstraints(constraints, video, function (res, err) {
-      if (!res) { void err; return; }
-      handleCode(res.getText(), false);
-    });
-
-    function markCamReady() {
-      if (!scanning) return;
-      if (!video.srcObject) return;
-      setCamUI(true);
-      showResult('scanning', 'الكاميرا تعمل', 'وجّه الباركود داخل الإطار', '');
-      if (window.App && window.App.showToast) window.App.showToast('الكاميرا جاهزة للمسح', 'success');
-    }
-
-    video.addEventListener('playing', markCamReady);
-    var readyPoll = setInterval(function () {
-      if (!scanning) { clearInterval(readyPoll); return; }
-      if (video.srcObject && video.readyState >= 2) { markCamReady(); clearInterval(readyPoll); }
-    }, 400);
-
-    if (result && result.then) {
-      result.then(function () { markCamReady(); }).catch(function (e) {
-        clearInterval(readyPoll);
-        scanning = false;
-        if (reader) { try { reader.reset(); } catch (x) { } reader = null; }
-        setCamUI(false);
-        var errName = (e && e.name) || '';
-        var reason = 'تعذر تشغيل الكاميرا، تأكد من منح الإذن للمتصفح';
-        if (errName === 'NotAllowedError' || errName === 'SecurityError') reason = 'تم رفض إذن الكاميرا — اسمح بالوصول للكاميرا من إعدادات المتصفح ثم أعد المحاولة';
-        else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') reason = 'لا توجد كاميرا متاحة على هذا الجهاز';
-        else if (errName === 'NotReadableError') reason = 'الكاميرا مستخدمة من تطبيق آخر — أغلق التطبيقات الأخرى وحاول مرة أخرى';
-        showResult('error', 'تعذر تشغيل الكاميرا', reason, 'يمكنك استخدام الإدخال اليدوي أو قارئ الباركود USB');
-        if (window.App && window.App.showToast) window.App.showToast(reason, 'error');
-      });
-    }
+    tryStartCamera(null);
   }
 
   /* ---------------- الأحداث ---------------- */

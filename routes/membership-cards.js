@@ -384,6 +384,11 @@ router.get('/attendance/scan', async function (req, res) {
   });
 });
 
+/* الرابط القديم يحوّل تلقائياً إلى الحضور */
+router.get('/membership-cards/scan', function (req, res) {
+  res.redirect('/attendance/scan');
+});
+
 /* بقية مسارات بطاقات العضوية ... */
 
 function attendanceCounts(status) {
