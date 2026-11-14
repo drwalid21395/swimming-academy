@@ -266,6 +266,13 @@
         html += '</div></div>';
       }
       html += '</div>';
+    } else if (r.assessment && r.assessment.criteriaScores && r.assessment.criteriaScores.length) {
+      html += '<div class="pp-section"><h3><i class="fas fa-clipboard-check"></i> التقرير الفني الشامل</h3>';
+      html += '<div class="pp-score-list">';
+      r.assessment.criteriaScores.forEach(function (c) {
+        html += '<div class="pp-score-row"><span class="pp-score-name">' + esc(c.name) + '</span><span class="pp-score-val">' + (c.score || 0) + '</span></div>';
+      });
+      html += '</div></div>';
     }
 
     if (r.test) {
