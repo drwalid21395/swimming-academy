@@ -34,7 +34,8 @@
   <div class="spacer"></div>
   <div class="flex wrap gap-1" style="flex-wrap:wrap">
     <% if (canDownload) { %>
-      <a href="/membership-cards/all.pdf<%= q ? ('?q=' + encodeURIComponent(q)) : '' %>" class="btn btn-danger" target="_blank" rel="noopener" title="ملف PDF واحد يضم كل البطاقات المعروضة — جاهز للطباعة"><i class="fas fa-file-pdf"></i> تحميل كل البطاقات PDF</a>
+      <a href="/membership-cards/all.pdf<%= q ? ('?q=' + encodeURIComponent(q)) : '' %>" class="btn btn-danger" download title="ملف PDF واحد يضم كل البطاقات المعروضة — جاهز للطباعة"><i class="fas fa-file-pdf"></i> تحميل كل البطاقات PDF</a>
+      <a href="/membership-cards/all.zip<%= q ? ('?q=' + encodeURIComponent(q)) : '' %>" class="btn btn-outline" download title="ملف ZIP مضغوط يحتوي على كل البطاقات كصور SVG"><i class="fas fa-file-archive"></i> تحميل كل البطاقات ZIP</a>
     <% } %>
     <% if (canCreate) { %>
       <a href="/membership-cards/new" class="btn btn-primary"><i class="fas fa-plus"></i> بطاقة جديدة</a>

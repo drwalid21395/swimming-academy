@@ -14,6 +14,7 @@ const { nextMembership, isUniqueViolation } = require('../lib/membership');
 const { effectiveSport, activeSport, sportClause, groupClause } = require('../lib/sport-context');
 const { ensureGroupSession, findGroupSession, groupRoster, sessionRoster, sessionGroupIds, attendanceStatuses, seedAbsentForSession, syncGroupMembers, groupStartTime } = require('../lib/attendance');
 const { cardSvg, cardPdfDoc, cardsPdfDoc, barcodePng, normalizeBarcode, isoDate } = require('../lib/membership-card');
+const { buildZip } = require('../lib/zip');
 const { buildCardMessage, waLinkFor, logMessage, sendCardImageViaApi } = require('../lib/whatsapp');
 const pdfmake = require('../lib/pdf');
 
@@ -103,12 +104,42 @@ router.get('/membership-cards/all.pdf', async function (req, res) {
   pdfmake.createPdf(doc).getBuffer().then(function (buf) {
     const name = 'membership-cards' + (q ? '-search' : '') + '.pdf';
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'inline; filename="' + name + '"');
+    res.setHeader('Content-Disposition', 'attachment; filename="' + name + '"');
     res.send(buf);
   }).catch(function (e) {
     console.error('خطأ في توليد PDF لكل البطاقات:', e.message);
     res.status(500).send('تعذر توليد ملف البطاقات: ' + e.message);
   });
+});
+
+/* ============================================================== */
+/*            تحميل جميع البطاقات في ملف ZIP (صور SVG)            */
+/* ============================================================== */
+router.get('/membership-cards/all.zip', async function (req, res) {
+  if (!canExport(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const q = String(req.query.q || '').trim();
+  let sql = CARD_SELECT + ' WHERE s.deleted_at IS NULL';
+  const params = [];
+  if (q) {
+    sql += ' AND (s.full_name LIKE ? OR s.membership_no LIKE ?)';
+    params.push('%' + q + '%', '%' + q + '%');
+  }
+  sql += ' ORDER BY s.full_name LIMIT 500';
+  try {
+    const cards = await db.prepare(sql).all(...params);
+    const files = cards.map(function (card) {
+      const safeNo = String(card.membership_no || card.id).replace(/[^\w\-]/g, '') || ('id-' + card.id);
+      return { name: safeNo + '.svg', data: Buffer.from(cardSvg(card, { academyName: academyName(res) })) };
+    });
+    const zip = buildZip(files);
+    const name = 'membership-cards' + (q ? '-search' : '') + '.zip';
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="' + name + '"');
+    res.send(zip);
+  } catch (e) {
+    console.error('خطأ في توليد ZIP لكل البطاقات:', e.message);
+    res.status(500).send('تعذر توليد ملف البطاقات المضغوط: ' + e.message);
+  }
 });
 
 /* ============================================================== */
@@ -273,7 +304,7 @@ async function sendCardPdf(req, res) {
   pdfmake.createPdf(doc).getBuffer().then(function (buf) {
     const safe = String(card.membership_no || card.id).replace(/[^\w\-]/g, '');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'inline; filename="membership-' + safe + '.pdf"');
+    res.setHeader('Content-Disposition', 'attachment; filename="membership-' + safe + '.pdf"');
     res.send(buf);
   }).catch(function (e) {
     console.error('خطأ في توليد PDF للبطاقة:', e.message);

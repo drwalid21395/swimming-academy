@@ -53,7 +53,7 @@
       <a href="/membership-cards/<%= card.id %>/whatsapp" class="btn btn-success"><i class="fab fa-whatsapp"></i> إرسال البطاقة واتساب</a>
     <% } %>
     <% if (canDownload) { %>
-      <a href="/membership-cards/<%= card.id %>.pdf" class="btn btn-primary" target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i> تحميل PDF</a>
+      <a href="/membership-cards/<%= card.id %>.pdf" class="btn btn-primary" download><i class="fas fa-file-pdf"></i> تحميل PDF</a>
       <button type="button" class="btn btn-outline" id="downloadPng"><i class="fas fa-image"></i> تحميل صورة PNG</button>
     <% } %>
     <button type="button" class="btn btn-outline" id="printCard"><i class="fas fa-print"></i> طباعة البطاقة</button>
