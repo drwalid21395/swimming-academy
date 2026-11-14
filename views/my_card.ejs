@@ -231,7 +231,8 @@
       }
     }
 
-    if (r.technical && r.technical.levels && r.technical.levels.length) {
+    var hasTech = r.technical && ((r.technical.levels && r.technical.levels.length) || (r.technical.general && r.technical.general.skills && r.technical.general.skills.length));
+    if (hasTech) {
       var tech = r.technical;
       html += '<div class="pp-section"><h3><i class="fas fa-clipboard-check"></i> التقرير الفني الشامل</h3>';
       html += '<div class="pp-grid">';
@@ -256,6 +257,14 @@
         }
         html += '</div>';
       });
+      if (tech.general && tech.general.skills && tech.general.skills.length) {
+        html += '<div style="margin-top:12px"><b style="color:var(--primary);font-size:14px"><i class="fas fa-star"></i> المعايير العامة</b>';
+        html += '<div class="pp-score-list" style="margin-top:8px">';
+        tech.general.skills.forEach(function (sk) {
+          html += '<div class="pp-score-row"><span class="pp-score-name">' + esc(sk.name) + '</span><span class="pp-score-val">' + (sk.score || 0) + '</span></div>';
+        });
+        html += '</div></div>';
+      }
       html += '</div>';
     }
 
