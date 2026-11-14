@@ -387,6 +387,34 @@ router.post('/membership-cards/:id(\\d+)/whatsapp/send', async function (req, re
   return res.json({ ok: false, mode: 'link', waUrl: pay.waUrl, error: r.error });
 });
 
+/* تسجيل/تحديث رقم ولي أمر لاعب مباشرة من شاشة البطاقة */
+router.post('/membership-cards/:id(\\d+)/guardian-phone', async function (req, res) {
+  const allowed = canEdit(req.currentUser, 'swimmers') || canEdit(req.currentUser, 'membershipCards') ||
+    canAdd(req.currentUser, 'membershipCards');
+  if (!allowed) return res.status(403).json({ ok: false, message: 'غير مصرح' });
+  const card = await loadCard(req.params.id);
+  if (!card) return res.status(404).json({ ok: false, message: 'البطاقة غير موجودة' });
+  const raw = String((req.body && req.body.phone) || '').trim();
+  const phone = raw.replace(/\D/g, '');
+  if (!phone || phone.length < 7) return res.status(400).json({ ok: false, message: 'رقم الهاتف غير صالح' });
+  try {
+    let guardianId = Number(card.guardian_id) || 0;
+    if (guardianId) {
+      await db.prepare('UPDATE guardians SET phone = ?, whatsapp = ? WHERE id = ?').run(raw, raw, guardianId);
+    } else {
+      const info = await db.prepare('INSERT INTO guardians (full_name, relation, phone, whatsapp) VALUES (?,?,?,?)')
+        .run(card.full_name + ' - ولي الأمر', 'أب', raw, raw);
+      guardianId = Number(info.lastInsertRowid);
+      await db.prepare('UPDATE swimmers SET guardian_id = ? WHERE id = ?').run(guardianId, card.id);
+    }
+    audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'membershipCards', card.id, 'تحديث رقم ولي الأمر: ' + card.full_name + ' (' + raw + ')', req);
+    return res.json({ ok: true, phone: raw, guardian_id: guardianId });
+  } catch (e) {
+    console.error('خطأ في تحديث رقم ولي الأمر:', e.message);
+    return res.status(500).json({ ok: false, message: 'تعذر حفظ الرقم' });
+  }
+});
+
 /* ============================================================== */
 /*                    مسح الباركود وتسجيل الحضور                  */
 /* ============================================================== */
