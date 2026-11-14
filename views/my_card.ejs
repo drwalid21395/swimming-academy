@@ -17,8 +17,12 @@
     .pp-stage video { width: 100%; height: 100%; object-fit: cover; display: block; }
     .pp-idle { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #fff; text-align: center; padding: 20px; }
     .pp-idle small { opacity: 0.8; max-width: 280px; }
-    .pp-frame { position: absolute; inset: 10%; border: 2px dashed rgba(255,255,255,0.6); border-radius: 12px; }
+    .pp-frame { position: absolute; inset: 10%; border: 2px dashed rgba(255,255,255,0.85); border-radius: 12px; box-shadow: 0 0 0 9999px rgba(15,23,42,0.45), inset 0 0 20px rgba(255,255,255,0.1); pointer-events: none; }
+    .pp-scan-status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(15,23,42,0.7); color: #fff; padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; backdrop-filter: blur(4px); }
+    .pp-scan-status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse-dot 1.2s infinite; }
+    @keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.7)} }
     .pp-tools { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 14px; }
+    [hidden] { display: none !important; }
     .pp-form { display: flex; gap: 8px; margin-bottom: 14px; }
     .pp-form input { flex: 1; }
     .pp-result { display: none; }
@@ -32,12 +36,36 @@
     .pp-stat { text-align: center; background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px; }
     .pp-stat b { display: block; font-size: 18px; }
     .pp-stat span { font-size: 11px; color: var(--text-muted); }
-    .pp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .pp-table th, .pp-table td { padding: 8px; border-bottom: 1px solid var(--card-border); text-align: right; }
-    .pp-table th { color: var(--text-muted); font-weight: 600; }
     .pp-empty { text-align: center; color: var(--text-muted); padding: 20px; font-size: 13px; }
-    .pp-actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
-    @media (max-width: 480px) { .pp-grid { grid-template-columns: 1fr; } .pp-stats { grid-template-columns: repeat(2, 1fr); } }
+    .pp-actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
+    .pp-score-list { display: flex; flex-direction: column; gap: 8px; }
+    .pp-score-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 12px; }
+    .pp-score-name { font-size: 14px; color: var(--text); }
+    .pp-score-val { font-size: 15px; font-weight: 800; color: var(--primary); background: var(--primary-soft); padding: 4px 12px; border-radius: 8px; min-width: 46px; text-align: center; }
+    .pp-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; border: 1px solid var(--card-border); }
+    .pp-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 420px; }
+    .pp-table th, .pp-table td { padding: 8px; border-bottom: 1px solid var(--card-border); text-align: right; }
+    .pp-table th { color: var(--text-muted); font-weight: 600; background: var(--bg-soft); }
+    @media (max-width: 640px) {
+      body { padding: 8px; align-items: flex-start; }
+      .pp-card { padding: 14px; border-radius: 14px; }
+      .pp-title { font-size: 18px; }
+      .pp-sub { font-size: 12px; }
+      .pp-stage { aspect-ratio: 3/4; }
+      .pp-idle { padding: 14px; }
+      .pp-idle small { max-width: 240px; }
+      .pp-tools { gap: 6px; }
+      .pp-form { flex-direction: column; }
+      .pp-form button { width: 100%; }
+      .pp-grid { grid-template-columns: 1fr; gap: 8px; }
+      .pp-stats { grid-template-columns: repeat(2, 1fr); }
+      .pp-item { padding: 8px 10px; }
+      .pp-item .v { font-size: 14px; }
+      .pp-actions .btn { flex: 1 1 100%; }
+      .pp-score-row { padding: 8px 10px; }
+      .pp-score-name { font-size: 13px; }
+      .pp-score-val { font-size: 14px; }
+    }
   </style>
 </head>
 <body>
@@ -49,6 +77,7 @@
     <div class="pp-stage" id="stage">
       <video id="cam" playsinline autoplay muted></video>
       <div class="pp-frame" id="frame" hidden></div>
+      <div class="pp-scan-status" id="scanStatus" hidden>جارٍ المسح... ضع الباركود داخل المربع</div>
       <div class="pp-idle" id="idle">
         <i class="fas fa-camera-retro fa-2x"></i>
         <p>الكاميرا متوقفة</p>
@@ -85,6 +114,7 @@
   'use strict';
   var video = document.getElementById('cam');
   var frame = document.getElementById('frame');
+  var scanStatus = document.getElementById('scanStatus');
   var idle = document.getElementById('idle');
   var startBtn = document.getElementById('startCam');
   var stopBtn = document.getElementById('stopCam');
@@ -137,11 +167,11 @@
     html += stat(r.stats.late, 'متأخر', 'blue');
     html += '</div>';
     if (r.recentAttendance && r.recentAttendance.length) {
-      html += '<table class="pp-table" style="margin-top:10px"><thead><tr><th>التاريخ</th><th>الحصة</th><th>الحالة</th></tr></thead><tbody>';
+      html += '<div class="pp-table-wrap" style="margin-top:10px"><table class="pp-table"><thead><tr><th>التاريخ</th><th>الحصة</th><th>الحالة</th></tr></thead><tbody>';
       r.recentAttendance.forEach(function (a) {
         html += '<tr><td>' + (a.date || '—') + '</td><td>' + (a.title || '—') + '</td><td>' + statusLabel(a.status) + '</td></tr>';
       });
-      html += '</tbody></table>';
+      html += '</tbody></table></div>';
     }
     html += '</div>';
 
@@ -162,23 +192,35 @@
     }
 
     if (r.payments && r.payments.length) {
-      html += '<div class="pp-section"><h3><i class="fas fa-money-bill-wave"></i> المدفوعات</h3><table class="pp-table"><thead><tr><th>التاريخ</th><th>المبلغ</th><th>الطريقة</th><th>الإيصال</th></tr></thead><tbody>';
+      html += '<div class="pp-section"><h3><i class="fas fa-money-bill-wave"></i> المدفوعات</h3><div class="pp-table-wrap"><table class="pp-table"><thead><tr><th>التاريخ</th><th>المبلغ</th><th>الطريقة</th><th>الإيصال</th></tr></thead><tbody>';
       r.payments.forEach(function (p) {
         html += '<tr><td>' + (p.paid_date || '—') + '</td><td>' + formatMoney(p.amount || 0) + '</td><td>' + (p.method || '—') + '</td><td>' + (p.receipt_no || '—') + '</td></tr>';
       });
-      html += '</tbody></table></div>';
+      html += '</tbody></table></div></div>';
     }
 
     if (r.assessment) {
       var a = r.assessment;
-      html += '<div class="pp-section"><h3><i class="fas fa-chart-line"></i> آخر تقييم</h3><div class="pp-grid">';
+      html += '<div class="pp-section"><h3><i class="fas fa-chart-line"></i> آخر تقييم فني</h3><div class="pp-grid">';
       html += item('التاريخ', a.date || '—');
       html += item('المستوى', a.level_name || '—');
-      html += item('النسبة', (a.overall_percent || 0) + '%');
+      html += item('الكابتن المقيّم', a.coach_name || '—');
+      html += item('النسبة النهائية', (a.overall_percent || 0) + '%');
+      html += item('متوسط الدرجات', (a.levelPercent || 0) + '%');
+      html += item('مجموع الدرجات', (a.levelTotal || 0) + ' / ' + ((a.levelCount || 0) * 100));
+      html += item('جاهز للترقية', a.ready_to_advance ? 'نعم' : 'لا');
       html += item('نقاط القوة', a.strengths || '—');
       html += item('نقاط الضعف', a.weaknesses || '—');
       html += item('التوصيات', a.recommendations || '—');
+      if (a.notes) html += item('ملاحظات', a.notes);
       html += '</div></div>';
+      if (a.criteriaScores && a.criteriaScores.length) {
+        html += '<div class="pp-section"><h3><i class="fas fa-gauge-high"></i> درجات المعايير</h3><div class="pp-score-list">';
+        a.criteriaScores.forEach(function (c) {
+          html += '<div class="pp-score-row"><span class="pp-score-name">' + esc(c.name) + '</span><span class="pp-score-val">' + (c.score || 0) + '</span></div>';
+        });
+        html += '</div></div>';
+      }
     }
 
     if (r.test) {
@@ -246,31 +288,44 @@
     return hints;
   }
 
+  function setCameraUI(active) {
+    scanning = active;
+    idle.hidden = active;
+    frame.hidden = !active;
+    scanStatus.hidden = !active;
+  }
+
   async function startCamera() {
     if (scanning) return;
+    clearMsg();
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
       video.srcObject = stream;
       await video.play();
-      scanning = true;
-      idle.hidden = true;
-      frame.hidden = false;
-      reader = new window.ZXing.BrowserMultiFormatReader(buildHints(), 60);
+      setCameraUI(true);
+      reader = new window.ZXing.BrowserMultiFormatReader(buildHints(), 80);
       reader.decodeFromVideoElement(video, function (res, err) {
-        if (res && res.getText) { lookup(res.getText()); stopCamera(); }
+        if (res && res.getText) {
+          var code = res.getText();
+          if (code) { lookup(code); stopCamera(); }
+        }
+      }).then(function () {
+        // decode loop ended normally
+      }).catch(function (e) {
+        if (scanning) showMsg('توقف الماسح: ' + (e && e.message ? e.message : ''), 'warning');
       });
     } catch (e) {
-      showMsg('تعذر تشغيل الكاميرا: ' + (e.message || ''), 'error');
+      console.error('camera error', e);
+      showMsg('تعذر تشغيل الكاميرا: ' + (e && e.message ? e.message : ''), 'error');
+      setCameraUI(false);
     }
   }
 
   function stopCamera() {
-    scanning = false;
-    frame.hidden = true;
-    idle.hidden = false;
+    setCameraUI(false);
     if (reader) { try { reader.reset(); } catch (e) {} reader = null; }
     if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
-    video.srcObject = null;
+    try { video.srcObject = null; } catch (e) {}
   }
 
   function getSnapReader() {
