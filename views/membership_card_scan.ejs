@@ -133,6 +133,8 @@
         <span id="volLabel">70%</span>
         <button type="button" id="testSound" title="تجربة الصوت">تجربة</button>
       </div>
+      <button type="button" class="btn btn-outline" id="captureScan" disabled title="التقاط صورة وقراءة الباركود يدوياً"><i class="fas fa-camera"></i> مسح لقطة</button>
+      <button type="button" class="btn btn-outline" id="torchBtn" disabled title="تشغيل/إطفاء الفلاش"><i class="fas fa-bolt"></i></button>
       <button type="button" class="btn btn-outline" id="stopCam" disabled><i class="fas fa-stop"></i> إيقاف</button>
     </div>
   </div>
@@ -144,6 +146,7 @@
       <div class="rs-meta" id="rsMeta">شغّل الكاميرا أو أدخل رقم العضوية يدوياً</div>
       <div class="rs-msg" id="rsMsg"></div>
       <div class="rs-time" id="rsTime"></div>
+      <div class="rs-attempts" id="rsAttempts" style="font-size:11px;color:var(--text-muted);margin-top:6px;min-height:16px;"></div>
     </div>
 
     <div class="mc-stat-row">
@@ -196,6 +199,8 @@
   var camIdle = document.getElementById('camIdle');
   var startBtn = document.getElementById('startCam');
   var stopBtn = document.getElementById('stopCam');
+  var captureBtn = document.getElementById('captureScan');
+  var torchBtn = document.getElementById('torchBtn');
   var modeGroup = document.getElementById('modeGroup');
   var volumeInput = document.getElementById('volume');
   var volLabel = document.getElementById('volLabel');
@@ -207,6 +212,7 @@
   var rsMeta = document.getElementById('rsMeta');
   var rsMsg = document.getElementById('rsMsg');
   var rsTime = document.getElementById('rsTime');
+  var rsAttempts = document.getElementById('rsAttempts');
   var recentList = document.getElementById('recentList');
   var recentCount = document.getElementById('recentCount');
   var statPresent = document.getElementById('statPresent');
@@ -222,6 +228,12 @@
   var volume = 0.7;
   var torchTrack = null;
   var torchOn = false;
+  var activeStream = null;
+  var scanAttempts = 0;
+  var snapReader = null;
+  var snapCanvas = null;
+  var snapBusy = false;
+  var noReadTimer = null;
 
   try {
     var saved = parseFloat(localStorage.getItem('mcScanVolume'));
@@ -290,6 +302,28 @@
     rsTime.textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
   }
 
+  function bumpAttempt() {
+    scanAttempts++;
+    if (rsAttempts) rsAttempts.textContent = 'محاولات القراءة: ' + scanAttempts;
+  }
+
+  function clearAttempts() {
+    scanAttempts = 0;
+    if (rsAttempts) rsAttempts.textContent = '';
+  }
+
+  function clearNoReadTimer() {
+    if (noReadTimer) { clearTimeout(noReadTimer); noReadTimer = null; }
+  }
+
+  function scheduleNoReadHint() {
+    clearNoReadTimer();
+    noReadTimer = setTimeout(function () {
+      if (!scanning || submitting) return;
+      showResult('scanning', 'لم يُقرأ الباركود بعد', 'قرّب الكاميرا من الباركود وثبّتها، أو اضغط «مسح لقطة»', 'تأكد من وضوح الإضاءة وعدم انعكاس الضوء على البطاقة');
+    }, 9000);
+  }
+
   function prependRecent(data, ok) {
     var empty = document.getElementById('recentEmpty');
     if (empty) empty.remove();
@@ -324,6 +358,7 @@
     lastCode = code;
     lastCodeAt = now;
     submitting = true;
+    clearNoReadTimer();
     showResult('scanning', 'جارٍ التحقق...', code, '');
 
     fetch('/membership-cards/scan', {
@@ -372,28 +407,155 @@
       camIdle.hidden = true;
       startBtn.disabled = true;
       stopBtn.disabled = false;
+      if (captureBtn) captureBtn.disabled = false;
     } else {
       overlay.hidden = true;
       camIdle.hidden = false;
       startBtn.disabled = false;
       stopBtn.disabled = true;
-      torchOn = false;
-      torchTrack = null;
+      if (captureBtn) captureBtn.disabled = true;
+      if (torchBtn) torchBtn.disabled = true;
     }
+  }
+
+  function updateTorchUI() {
+    if (!torchBtn) return;
+    torchBtn.classList.toggle('btn-primary', torchOn);
+    torchBtn.classList.toggle('btn-outline', !torchOn);
+    torchBtn.innerHTML = '<i class="fas fa-bolt"></i> ' + (torchOn ? 'مفعّل' : 'فلاش');
+  }
+
+  function findTorchTrack() {
+    if (!activeStream) return null;
+    var tracks = activeStream.getVideoTracks();
+    for (var i = 0; i < tracks.length; i++) {
+      var c = tracks[i].getCapabilities();
+      if (c && c.torch) return tracks[i];
+    }
+    return null;
+  }
+
+  function toggleTorch() {
+    var track = findTorchTrack();
+    if (!track) {
+      if (window.App && window.App.showToast) window.App.showToast('الفلاش غير مدعوم على هذا الجهاز', 'warning');
+      return;
+    }
+    torchOn = !torchOn;
+    track.applyConstraints({ advanced: [{ torch: torchOn }] }).then(function () {
+      updateTorchUI();
+    }).catch(function () {
+      torchOn = !torchOn;
+      updateTorchUI();
+      if (window.App && window.App.showToast) window.App.showToast('تعذر تغيير حالة الفلاش', 'error');
+    });
+  }
+
+  function getSnapReader() {
+    if (snapReader) return snapReader;
+    var hints = new Map();
+    try {
+      hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
+      if (window.ZXing.BarcodeFormat && window.ZXing.BarcodeFormat.CODE_39) {
+        hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+          window.ZXing.BarcodeFormat.CODE_39,
+          window.ZXing.BarcodeFormat.CODE_128,
+          window.ZXing.BarcodeFormat.EAN_13,
+          window.ZXing.BarcodeFormat.CODE_93
+        ]);
+      }
+    } catch (e) { }
+    snapReader = new window.ZXing.BrowserMultiFormatReader(hints);
+    return snapReader;
+  }
+
+  /* التقاط إطار من الفيديو وتحويله لصورة ثابتة ثم قراءته بقارئ مستقل
+     (لا يتعارض مع الماسح المستمر) */
+  function snapshotDecode() {
+    return new Promise(function (resolve, reject) {
+      if (!video || !video.srcObject || !video.videoWidth) return reject(new Error('no frame'));
+      if (snapBusy) return reject(new Error('busy'));
+      snapBusy = true;
+      try {
+        if (!snapCanvas) snapCanvas = document.createElement('canvas');
+        var vw = video.videoWidth;
+        var vh = video.videoHeight;
+        /* قص المنطقة الوسطى (منطقة الإطار) لتحسين فرصة القراءة */
+        var cw = Math.round(vw * 0.92);
+        var chh = Math.round(vh * 0.62);
+        var sx = Math.round((vw - cw) / 2);
+        var sy = Math.round((vh - chh) / 2);
+        var outW = Math.min(cw, 1280);
+        var outH = Math.round(chh * (outW / cw));
+        snapCanvas.width = outW;
+        snapCanvas.height = outH;
+        var ctx = snapCanvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(video, sx, sy, cw, chh, 0, 0, outW, outH);
+        var dataUrl = snapCanvas.toDataURL('image/png');
+        var img = new Image();
+        img.onload = function () {
+          getSnapReader().decodeFromImage(img, dataUrl).then(function (res) {
+            snapBusy = false;
+            resolve(res);
+          }).catch(function (e) {
+            snapBusy = false;
+            reject(e);
+          });
+        };
+        img.onerror = function () { snapBusy = false; reject(new Error('image load failed')); };
+        img.src = dataUrl;
+      } catch (e) {
+        snapBusy = false;
+        reject(e);
+      }
+    });
+  }
+
+  function captureAndDecode() {
+    if (!scanning || !video.srcObject) return;
+    showResult('scanning', 'جارٍ قراءة اللقطة...', 'حافظ على ثبات الكاميرا', '');
+    var tries = 0;
+    function tryOnce() {
+      tries++;
+      snapshotDecode().then(function (res) {
+        if (res && res.getText) { clearAttempts(); handleCode(res.getText(), false); }
+        else if (tries < 3) setTimeout(tryOnce, 200);
+        else showResult('error', 'لم يقرأ اللقطة', 'جرب تقريب الكاميرا أو تشغيل الفلاش أو استخدم الإدخال اليدوي', 'يمكنك المحاولة مرة أخرى');
+      }).catch(function () {
+        if (tries < 3) { setTimeout(tryOnce, 200); bumpAttempt(); }
+        else showResult('error', 'لم يقرأ اللقطة', 'جرب تقريب الكاميرا أو تشغيل الفلاش أو استخدم الإدخال اليدوي', 'يمكنك المحاولة مرة أخرى');
+      });
+    }
+    tryOnce();
   }
 
   function stopCamera() {
     scanning = false;
+    clearNoReadTimer();
+    if (window._mcFallbackInterval) { clearInterval(window._mcFallbackInterval); window._mcFallbackInterval = null; }
     if (reader) {
       try { reader.reset(); } catch (e) { }
       reader = null;
     }
+    if (snapReader) {
+      try { snapReader.reset(); } catch (e) { }
+      snapReader = null;
+    }
+    snapBusy = false;
     try {
-      if (video.srcObject) {
-        video.srcObject.getTracks().forEach(function (t) { t.stop(); });
+      if (activeStream) {
+        activeStream.getTracks().forEach(function (t) { t.stop(); });
       }
     } catch (e) { }
+    activeStream = null;
     video.srcObject = null;
+    torchTrack = null;
+    torchOn = false;
+    updateTorchUI();
+    if (captureBtn) captureBtn.disabled = true;
+    if (torchBtn) torchBtn.disabled = true;
+    clearAttempts();
     setCamUI(false);
   }
 
@@ -411,8 +573,8 @@
     var base = {
       audio: false,
       video: {
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
       }
     };
     if (deviceId) base.video.deviceId = { exact: deviceId };
@@ -436,26 +598,56 @@
         ]);
       }
     } catch (e) { }
-    reader = new window.ZXing.BrowserMultiFormatReader(hints, 140);
+    reader = new window.ZXing.BrowserMultiFormatReader(hints, 160);
     scanning = true;
+    clearAttempts();
 
     var decodePromise = reader.decodeFromConstraints(constraints, video, function (res, err) {
       if (!res) {
         if (err && err.message) {
           var msg = String(err.message);
-          if (msg.indexOf('No MultiFormat Readers') > -1 || msg.indexOf('No QR code') > -1) return;
+          if (msg.indexOf('No MultiFormat Readers') > -1 || msg.indexOf('No QR code') > -1 || msg.indexOf('No barcode') > -1) {
+            bumpAttempt();
+            return;
+          }
           console.log('ZXing decode error:', msg);
         }
         return;
       }
+      clearAttempts();
       handleCode(res.getText(), false);
     });
 
     function markCamReady() {
       if (!scanning) return;
       if (!video.srcObject) return;
+      activeStream = video.srcObject;
       setCamUI(true);
-      showResult('scanning', 'الكاميرا تعمل', 'وجّه الباركود داخل الإطار ببطء وحافظ على الإضاءة', '');
+      var track = findTorchTrack();
+      if (torchBtn) torchBtn.disabled = !track;
+      updateTorchUI();
+      showResult('scanning', 'الكاميرا تعمل', 'وجّه الباركود داخل الإطار ببطء وحافظ على الإضاءة', 'يمكنك الضغط على «مسح لقطة» إذا لم يقرأ تلقائياً');
+      if (window.App && window.App.showToast) window.App.showToast('الكاميرا جاهزة للمسح', 'success');
+      scheduleNoReadHint();
+
+      /* محاولة تفعيل التركيز التلقائي إن كان متاحاً */
+      try {
+        if (track && track.applyConstraints) {
+          var caps = track.getCapabilities();
+          if (caps && caps.focusMode) {
+            track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {});
+          }
+        }
+      } catch (e) { }
+
+      /* محاولة قراءة إطار ثابت كل 1.2 ثانية كخطة احتياطية للماسح المستمر */
+      if (window._mcFallbackInterval) clearInterval(window._mcFallbackInterval);
+      window._mcFallbackInterval = setInterval(function () {
+        if (!scanning || submitting) return;
+        snapshotDecode().then(function (res) {
+          if (res && res.getText) { clearAttempts(); handleCode(res.getText(), false); }
+        }).catch(function () { /* لا نزعج المستخدم بمحاولات فاشلة صامتة */ });
+      }, 1200);
     }
 
     video.addEventListener('playing', markCamReady);
@@ -466,9 +658,14 @@
 
     function onFail(e) {
       clearInterval(readyPoll);
+      clearNoReadTimer();
+      if (window._mcFallbackInterval) { clearInterval(window._mcFallbackInterval); window._mcFallbackInterval = null; }
       scanning = false;
       if (reader) { try { reader.reset(); } catch (x) { } reader = null; }
+      if (snapReader) { try { snapReader.reset(); } catch (x) { } snapReader = null; }
+      snapBusy = false;
       video.removeEventListener('playing', markCamReady);
+      activeStream = null;
       return e;
     }
 
@@ -530,6 +727,8 @@
   /* ---------------- الأحداث ---------------- */
   startBtn.addEventListener('click', startCamera);
   stopBtn.addEventListener('click', function () { stopCamera(); showResult('idle', 'تم إيقاف الكاميرا', 'شغّلها مرة أخرى أو استخدم الإدخال اليدوي', ''); });
+  if (captureBtn) captureBtn.addEventListener('click', captureAndDecode);
+  if (torchBtn) torchBtn.addEventListener('click', toggleTorch);
 
   modeGroup.addEventListener('click', function (e) {
     var btn = e.target.closest('button[data-mode]');
