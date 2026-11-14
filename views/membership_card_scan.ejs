@@ -92,6 +92,18 @@
     .mc-manual .row { flex-wrap:wrap; }
     .mc-manual .btn { flex:1 1 100%; }
   }
+
+  .mc-roster-card { margin-top:16px; }
+  .mc-roster-head { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .mc-roster-search { min-width:180px; max-width:280px; }
+  .mc-roster-group { padding:0; margin-bottom:14px; border:1px solid var(--card-border); border-radius:14px; overflow:hidden; }
+  .mc-roster-group:last-child { margin-bottom:0; }
+  .mc-roster-group .att-group-head { padding:12px 14px; background:var(--bg-soft); display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .mc-roster-group .att-group-head h4 { margin:0; font-size:15px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .mc-roster-group .att-card { padding:8px 14px 14px; }
+  .mc-roster-group .att-row { padding:8px 0; }
+  .mc-row-hit { background:rgba(22,163,74,.12); border-radius:10px; transition:background .3s; }
+  .mc-empty-roster { text-align:center; color:var(--text-muted); padding:18px; font-size:13px; }
 </style>
 
 <div class="page-head">
@@ -190,10 +202,88 @@
   </div>
 </div>
 
+<div class="card mc-roster-card" id="rosterCard">
+  <div class="card-header mc-roster-head">
+    <h3 style="margin:0"><i class="fas fa-users"></i> قائمة الحضور التلقائي
+      <span class="badge badge-primary"><%= attDate %></span>
+      <% if (sessionId) { %><span class="badge badge-warning">حصة محددة</span><% } %>
+    </h3>
+    <div class="spacer" style="flex:1"></div>
+    <input type="search" id="rosterSearch" class="form-control mc-roster-search" placeholder="ابحث باسم اللاعب أو رقم العضوية..." autocomplete="off">
+    <span class="badge badge-success"><i class="fas fa-bolt"></i> حفظ تلقائي</span>
+  </div>
+  <div class="card-body">
+    <p class="text-muted font-12" style="margin:0 0 12px">
+      كل أسماء اللاعبين ظاهرة تلقائياً. المسح يسجّل اللاعب <b>حاضراً</b>، وباقي اللاعبين يُسجّلون <b>غائبين تلقائياً</b> عند أول مسح.
+      يمكنك أيضاً تغيير حالة أي لاعب بالضغط على الزر المناسب — يُحفظ فوراً.
+    </p>
+    <% if (!groups || !groups.length) { %>
+      <div class="mc-empty-roster"><i class="fas fa-people-group"></i> لا توجد مجموعات أو لاعبون لعرضهم.</div>
+    <% } %>
+    <% groups.forEach(function (g) { %>
+      <% var cardSession = g.session_id || (g.session && g.session.id) || ''; %>
+      <div class="mc-roster-group" data-session-card="<%= cardSession %>" data-group-card="<%= g.id %>">
+        <div class="att-group-head">
+          <h4><i class="fas fa-people-group"></i> <%= g.name %>
+            <% if (g.session) { %><span class="badge badge-success"><i class="fas fa-clock"></i> <%= g.session.start_time || '' %></span><% } else { %><span class="badge badge-gray">لا توجد حصة</span><% } %>
+          </h4>
+          <span class="text-muted font-12"><i class="fas fa-user-tie"></i> <%= g.coach_name || '—' %> · <b><%= g.members.length %></b> لاعب</span>
+          <div class="spacer" style="flex:1"></div>
+          <span class="badge badge-success" data-group-present="<%= g.id %>">0 حاضر</span>
+          <span class="badge badge-danger" data-group-absent="<%= g.id %>">0 غائب</span>
+        </div>
+        <div class="att-card">
+          <% if (!g.members || !g.members.length) { %>
+            <div class="mc-empty-roster">لا يوجد لاعبون في هذه المجموعة.</div>
+          <% } else if (!cardSession || !canScan) { %>
+            <div class="mc-empty-roster">لا يمكن تعديل الحضور لهذه المجموعة.</div>
+          <% } else { %>
+            <div class="flex gap-1" style="margin:8px 0 10px;flex-wrap:wrap">
+              <button type="button" class="btn btn-success btn-sm" data-mark-all="present" data-session="<%= cardSession %>"><i class="fas fa-check"></i> الكل حاضر</button>
+              <button type="button" class="btn btn-outline-danger btn-sm" data-mark-all="absent" data-session="<%= cardSession %>"><i class="fas fa-xmark"></i> الكل غائب</button>
+              <button type="button" class="btn btn-outline-warning btn-sm" data-mark-all="excused" data-session="<%= cardSession %>"><i class="fas fa-book"></i> الكل معتذر</button>
+            </div>
+            <div class="att-row" style="border-bottom-width:2px">
+              <div class="att-name"><b>اللاعب</b></div>
+              <div class="att-btns">
+                <span class="att-btn att-head" title="حاضر" style="cursor:default"><i class="fas fa-check"></i> <span>حاضر</span></span>
+                <span class="att-btn att-head" title="غائب" style="cursor:default"><i class="fas fa-xmark"></i> <span>غائب</span></span>
+                <span class="att-btn att-head" title="معتذر" style="cursor:default"><i class="fas fa-book"></i> <span>معتذر</span></span>
+                <span class="att-btn att-head" title="متأخر" style="cursor:default"><i class="fas fa-clock"></i> <span>متأخر</span></span>
+              </div>
+            </div>
+            <% g.members.forEach(function (m) { %>
+              <% var st = g.attMap[m.id] || 'absent'; %>
+              <div class="att-row" data-swimmer-row="<%= m.id %>" data-search="<%= (m.full_name + ' ' + (m.membership_no || '')).toLowerCase() %>">
+                <div class="att-name">
+                  <div class="flex items-center gap-1">
+                    <div class="avatar-sm"><%= (m.full_name || 'س').trim().charAt(0) %></div>
+                    <div>
+                      <b><%= m.full_name %></b>
+                      <div class="font-11 text-muted"><%= m.membership_no || '' %></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="att-btns">
+                  <button type="button" class="att-btn <%= st === 'present' ? 'active-present' : '' %>" data-status="present" data-swimmer="<%= m.id %>" data-session="<%= cardSession %>" title="حاضر"><i class="fas fa-check"></i> <span>حاضر</span></button>
+                  <button type="button" class="att-btn <%= st === 'absent' ? 'active-absent' : '' %>" data-status="absent" data-swimmer="<%= m.id %>" data-session="<%= cardSession %>" title="غائب"><i class="fas fa-xmark"></i> <span>غائب</span></button>
+                  <button type="button" class="att-btn <%= st === 'excused' ? 'active-excused' : '' %>" data-status="excused" data-swimmer="<%= m.id %>" data-session="<%= cardSession %>" title="معتذر"><i class="fas fa-book"></i> <span>معتذر</span></button>
+                  <button type="button" class="att-btn <%= st === 'late' ? 'active-late' : '' %>" data-status="late" data-swimmer="<%= m.id %>" data-session="<%= cardSession %>" title="متأخر"><i class="fas fa-clock"></i> <span>متأخر</span></button>
+                </div>
+              </div>
+            <% }); %>
+          <% } %>
+        </div>
+      </div>
+    <% }); %>
+  </div>
+</div>
+
 <script>
 (function () {
   'use strict';
   var canScan = <%- canScan ? 'true' : 'false' %>;
+  var pageSessionId = <%- sessionId || 0 %>;
   var video = document.getElementById('cam');
   var overlay = document.getElementById('overlay');
   var camIdle = document.getElementById('camIdle');
@@ -348,6 +438,85 @@
     }
   }
 
+  /* ---------------- قائمة الحضور التلقائي ---------------- */
+  function setRowStatus(row, status) {
+    var btns = row.querySelectorAll('.att-btn[data-status]');
+    btns.forEach(function (b) {
+      b.classList.remove('active-present', 'active-absent', 'active-excused', 'active-late');
+      if (b.getAttribute('data-status') === status) b.classList.add('active-' + status);
+    });
+  }
+
+  function refreshRosterCounts() {
+    var totalPresent = 0;
+    var totalAbsent = 0;
+    document.querySelectorAll('.mc-roster-group').forEach(function (card) {
+      var p = 0, a = 0;
+      card.querySelectorAll('.att-btn[data-status]').forEach(function (b) {
+        if (b.classList.contains('active-present')) p++;
+        else if (b.classList.contains('active-absent')) a++;
+      });
+      totalPresent += p;
+      totalAbsent += a;
+      var gid = card.getAttribute('data-group-card');
+      var pEl = card.querySelector('[data-group-present]');
+      var aEl = card.querySelector('[data-group-absent]');
+      if (pEl) pEl.textContent = p + ' حاضر';
+      if (aEl) aEl.textContent = a + ' غائب';
+      void gid;
+    });
+    if (statPresent) statPresent.textContent = String(totalPresent);
+    if (statAbsent) statAbsent.textContent = String(totalAbsent);
+  }
+
+  function applyStatuses(sessionId, statuses) {
+    if (!sessionId || !statuses) return;
+    var cards = document.querySelectorAll('[data-session-card="' + sessionId + '"]');
+    if (!cards.length) return;
+    cards.forEach(function (card) {
+      card.querySelectorAll('.att-row[data-swimmer-row]').forEach(function (row) {
+        var btn = row.querySelector('.att-btn[data-swimmer]');
+        if (!btn) return;
+        var id = btn.getAttribute('data-swimmer');
+        setRowStatus(row, statuses[id] || 'absent');
+      });
+    });
+    refreshRosterCounts();
+  }
+
+  function highlightSwimmer(sessionId, swimmerId) {
+    if (!sessionId || !swimmerId) return;
+    var row = document.querySelector('[data-session-card="' + sessionId + '"] [data-swimmer-row="' + swimmerId + '"]');
+    if (!row) return;
+    row.classList.add('mc-row-hit');
+    try { row.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { }
+    setTimeout(function () { row.classList.remove('mc-row-hit'); }, 1800);
+  }
+
+  var rosterSearch = document.getElementById('rosterSearch');
+  if (rosterSearch) {
+    rosterSearch.addEventListener('input', function () {
+      var q = String(rosterSearch.value || '').trim().toLowerCase();
+      document.querySelectorAll('.mc-roster-group').forEach(function (card) {
+        var visible = 0;
+        card.querySelectorAll('.att-row[data-swimmer-row]').forEach(function (row) {
+          var show = !q || String(row.getAttribute('data-search') || '').indexOf(q) > -1;
+          row.style.display = show ? '' : 'none';
+          if (show) visible++;
+        });
+        card.style.display = (q && !visible) ? 'none' : '';
+      });
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target && ev.target.closest ? ev.target.closest('.att-btn[data-status]') : null;
+    if (!btn) return;
+    setTimeout(refreshRosterCounts, 80);
+  });
+
+  refreshRosterCounts();
+
   /* ---------------- تسجيل المسح ---------------- */
   function handleCode(rawCode, fromManual) {
     var code = String(rawCode == null ? '' : rawCode).trim();
@@ -361,28 +530,33 @@
     clearNoReadTimer();
     showResult('scanning', 'جارٍ التحقق...', code, '');
 
+    var payload = { code: code, mode: mode };
+    if (pageSessionId) payload.session_id = pageSessionId;
     fetch('/membership-cards/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: code, mode: mode })
+      body: JSON.stringify(payload)
     }).then(function (r) {
       return r.json().catch(function () { return { ok: false, status: 'error', message: 'تعذر قراءة استجابة الخادم' }; });
     }).then(function (data) {
       submitting = false;
+      if (data.stats) {
+        if (statPresent) statPresent.textContent = String(Number(data.stats.present) || 0);
+        if (statAbsent) statAbsent.textContent = String(Number(data.stats.absent) || 0);
+      }
+      if (data.session_id && data.statuses) applyStatuses(data.session_id, data.statuses);
       if (data.ok) {
         playSound('success');
         showResult('success', data.swimmer.name, (data.swimmer.program_name || '') + ' • ' + (data.swimmer.membership_no || code),
           data.message || (mode === 'absent' ? 'تم تسجيل الغياب' : 'تم تسجيل الحضور'));
-        var p = parseInt(statPresent.textContent, 10) || 0;
-        var a = parseInt(statAbsent.textContent, 10) || 0;
-        if (mode === 'absent') statAbsent.textContent = String(a + 1);
-        else statPresent.textContent = String(p + 1);
         prependRecent({ status: data.status, mode: mode, swimmer: data.swimmer, time: data.time }, true);
+        highlightSwimmer(data.session_id, data.swimmer.id);
       } else if (data.status === 'duplicate') {
         playSound('duplicate');
         showResult('duplicate', (data.swimmer && data.swimmer.name) || 'مسجّل مسبقاً',
-          (data.swimmer && data.swimmer.membership_no) || code, data.message || 'مسجّل مسبقاً اليوم');
+          (data.swimmer && data.swimmer.membership_no) || code, data.message || 'مسجّل مسبقاً');
         prependRecent({ status: 'duplicate', mode: mode, swimmer: data.swimmer, time: data.time }, false);
+        highlightSwimmer(data.session_id, data.swimmer && data.swimmer.id);
       } else {
         playSound('error');
         showResult('error', 'لم يتم التسجيل', code, data.message || 'تعذر تسجيل العملية');
@@ -459,9 +633,7 @@
       if (window.ZXing.BarcodeFormat && window.ZXing.BarcodeFormat.CODE_39) {
         hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [
           window.ZXing.BarcodeFormat.CODE_39,
-          window.ZXing.BarcodeFormat.CODE_128,
-          window.ZXing.BarcodeFormat.EAN_13,
-          window.ZXing.BarcodeFormat.CODE_93
+          window.ZXing.BarcodeFormat.CODE_128
         ]);
       }
     } catch (e) { }
@@ -573,8 +745,9 @@
     var base = {
       audio: false,
       video: {
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
+        /* 720p كافية لقراءة الباركود وأسرع كثيراً في فك الترميز من 1080p */
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
       }
     };
     if (deviceId) base.video.deviceId = { exact: deviceId };
@@ -588,17 +761,15 @@
 
     var hints = new Map();
     try {
-      hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
+      /* البطاقات تُستخدم بترميز Code 39 — حصر الصيغ يسرّع القراءة كثيراً */
       if (window.ZXing.BarcodeFormat && window.ZXing.BarcodeFormat.CODE_39) {
         hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [
           window.ZXing.BarcodeFormat.CODE_39,
-          window.ZXing.BarcodeFormat.CODE_128,
-          window.ZXing.BarcodeFormat.EAN_13,
-          window.ZXing.BarcodeFormat.CODE_93
+          window.ZXing.BarcodeFormat.CODE_128
         ]);
       }
     } catch (e) { }
-    reader = new window.ZXing.BrowserMultiFormatReader(hints, 160);
+    reader = new window.ZXing.BrowserMultiFormatReader(hints, 60);
     scanning = true;
     clearAttempts();
 
@@ -640,14 +811,14 @@
         }
       } catch (e) { }
 
-      /* محاولة قراءة إطار ثابت كل 1.2 ثانية كخطة احتياطية للماسح المستمر */
+      /* محاولة قراءة إطار ثابت كل 2.5 ثانية كخطة احتياطية للماسح المستمر */
       if (window._mcFallbackInterval) clearInterval(window._mcFallbackInterval);
       window._mcFallbackInterval = setInterval(function () {
         if (!scanning || submitting) return;
         snapshotDecode().then(function (res) {
           if (res && res.getText) { clearAttempts(); handleCode(res.getText(), false); }
         }).catch(function () { /* لا نزعج المستخدم بمحاولات فاشلة صامتة */ });
-      }, 1200);
+      }, 2500);
     }
 
     video.addEventListener('playing', markCamReady);

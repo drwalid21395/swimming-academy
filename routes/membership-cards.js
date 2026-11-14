@@ -11,7 +11,8 @@ const { db } = require('../lib/db');
 const { audit, canView, canAdd, canEdit, canExport, today } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
 const { nextMembership, isUniqueViolation } = require('../lib/membership');
-const { effectiveSport, activeSport, sportClause } = require('../lib/sport-context');
+const { effectiveSport, activeSport, sportClause, groupClause } = require('../lib/sport-context');
+const { ensureGroupSession, findGroupSession, groupRoster, sessionRoster, sessionGroupIds, attendanceStatuses, seedAbsentForSession, syncGroupMembers, groupStartTime } = require('../lib/attendance');
 const { cardSvg, cardPdfDoc, cardsPdfDoc, barcodePng, normalizeBarcode, isoDate } = require('../lib/membership-card');
 const { buildCardMessage, waLinkFor, logMessage, sendCardImageViaApi } = require('../lib/whatsapp');
 const pdfmake = require('../lib/pdf');
@@ -368,16 +369,67 @@ async function recentScans(date) {
 }
 
 router.get('/attendance/scan', async function (req, res) {
-  if (!canView(req.currentUser, 'attendance') && !canView(req.currentUser, 'membershipCards')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const d = today();
+  const canViewAttendance = canView(req.currentUser, 'attendance') || canView(req.currentUser, 'membershipCards');
+  if (!canViewAttendance) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const canSave = canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance') ||
+    canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards');
+  let d = String(req.query.date || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) d = today();
+  const sessionId = Number(req.query.session) || 0;
+  const groups = [];
+
+  if (sessionId) {
+    /* مسح داخل حصة محددة (حصة قديمة/مختارة من الجدول) */
+    const session = await db.prepare(`SELECT se.*, c.full_name AS coach_name, p.name AS pool_name
+      FROM sessions se LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id
+      WHERE se.id = ? AND se.deleted_at IS NULL`).get(sessionId);
+    if (!session) return res.redirect('/attendance');
+    d = String(session.date || d).slice(0, 10);
+    const groupIds = await sessionGroupIds(session.id);
+    const groupNames = groupIds.length
+      ? (await db.prepare(`SELECT name FROM groups WHERE id IN (${groupIds.map(() => '?').join(',')}) ORDER BY name`).all(...groupIds)).map(g => g.name)
+      : [];
+    const members = await sessionRoster(session.id);
+    const attMap = {};
+    members.forEach(m => { if (m.att_status) attMap[m.id] = m.att_status; });
+    groups.push({
+      id: session.group_id || (groupIds[0] || 0),
+      name: groupNames.join('، ') || session.title || 'حصة',
+      coach_name: session.coach_name,
+      pool_name: session.pool_name,
+      session: session,
+      session_id: session.id,
+      members: members,
+      attMap: attMap,
+      single: true
+    });
+  } else {
+    /* كل المجموعات: أسماء اللاعبين تظهر تلقائياً والحصة تُنشأ تلقائياً لحضور اليوم */
+    const groupRows = await db.prepare(`SELECT g.*, c.full_name AS coach_name, p.name AS pool_name FROM groups g
+      LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools p ON p.id = g.pool_id
+      WHERE g.deleted_at IS NULL` + groupClause(activeSport(req)) + ` ORDER BY g.name`).all();
+    for (const g of groupRows) {
+      await syncGroupMembers(g.id);
+      let session = await findGroupSession(g.id, d);
+      if (!session && d === today() && canSave) session = await ensureGroupSession(g, d, req.currentUser.id);
+      const members = await groupRoster(g.id, true);
+      const attMap = session ? await attendanceStatuses(session.id) : {};
+      groups.push({ ...g, session: session, session_id: session ? session.id : null, members: members, attMap: attMap });
+    }
+  }
+
   const stats = await db.prepare(`SELECT
       SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS present,
       SUM(CASE WHEN a.status = 'absent' THEN 1 ELSE 0 END) AS absent
     FROM attendance a JOIN sessions s ON s.id = a.session_id
     WHERE s.date = ? AND s.deleted_at IS NULL`).get(d);
+
   res.render('membership_card_scan', {
-    title: 'مسح الباركود — الحضور والغياب', active: 'attendance',
-    canScan: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance') || canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards'),
+    title: sessionId ? 'مسح وتعديل حضور الحصة' : 'مسح الباركود — الحضور والغياب', active: 'attendance',
+    canScan: canSave,
+    groups: groups,
+    sessionId: sessionId || 0,
+    attDate: d,
     stats: stats || { present: 0, absent: 0 },
     recent: await recentScans(d), todayDate: d,
     pageScripts: ['/vendor/zxing.min.js']
@@ -452,15 +504,26 @@ async function findOrCreateSession(swimmer, date, req) {
       ORDER BY s.start_time LIMIT 1`).get(date, swimmer.id);
   }
   if (!session) {
-    const start = nowTime();
+    const start = groupStartTime(groupId ? await db.prepare('SELECT * FROM groups WHERE id = ?').get(groupId) : null) || nowTime();
     const info = await db.prepare(`INSERT INTO sessions
       (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, note, created_by)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
       .run(groupId || null, 'حضور الباركود - ' + date, date, start, null, swimmer.coach_id || null, null,
         'scheduled', 0, 'أُنشئت تلقائياً من مسح بطاقة العضوية', req.currentUser.id);
     session = { id: info.lastInsertRowid };
+    if (groupId) await db.prepare('INSERT OR IGNORE INTO session_groups (session_id, group_id) VALUES (?,?)').run(session.id, groupId);
   }
   return { sessionId: Number(session.id), groupId: groupId };
+}
+
+/* المجموعة المناسبة للاعب داخل حصة معيّنة (لخصم الاشتراك) */
+async function groupForSwimmerInSession(sessionId, swimmerId) {
+  const row = await db.prepare(`SELECT sg.group_id FROM session_groups sg
+    JOIN swimmer_group wg ON wg.group_id = sg.group_id
+    WHERE sg.session_id = ? AND wg.swimmer_id = ? ORDER BY sg.group_id LIMIT 1`).get(sessionId, swimmerId);
+  if (row) return row.group_id;
+  const s = await db.prepare('SELECT group_id FROM sessions WHERE id = ?').get(sessionId);
+  return s && s.group_id;
 }
 
 router.post('/membership-cards/scan', async function (req, res) {
@@ -470,7 +533,7 @@ router.post('/membership-cards/scan', async function (req, res) {
   const mode = req.body && req.body.mode === 'absent' ? 'absent' : 'present';
   const rawCode = req.body && req.body.code;
   const code = normalizeBarcode(rawCode);
-  const d = today();
+  let d = today();
   const time = nowTime();
   if (!code) return res.status(400).json({ ok: false, status: 'invalid', message: 'باركود غير صالح' });
 
@@ -485,43 +548,58 @@ router.post('/membership-cards/scan', async function (req, res) {
       membership_no_display: swimmer.membership_no
     };
 
-    const presentRow = await db.prepare(`SELECT a.status, s.start_time FROM attendance a
-      JOIN sessions s ON s.id = a.session_id
-      WHERE a.swimmer_id = ? AND s.date = ? AND s.deleted_at IS NULL AND a.status IN ('present', 'late')
-      ORDER BY a.id DESC LIMIT 1`).get(swimmer.id, d);
-    const absentRow = await db.prepare(`SELECT a.status, s.start_time FROM attendance a
-      JOIN sessions s ON s.id = a.session_id
-      WHERE a.swimmer_id = ? AND s.date = ? AND s.deleted_at IS NULL AND a.status = 'absent'
-      ORDER BY a.id DESC LIMIT 1`).get(swimmer.id, d);
+    /* حصة محددة (تعديل حصة قديمة) أو حصة اليوم تلقائياً */
+    let sessionId = Number(req.body && req.body.session_id) || 0;
+    let targetSession = null;
+    if (sessionId) {
+      targetSession = await db.prepare('SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL').get(sessionId);
+      if (!targetSession) return res.status(400).json({ ok: false, status: 'invalid_session', message: 'الحصة غير موجودة' });
+      d = String(targetSession.date || d).slice(0, 10);
+    }
 
-    if (mode === 'present' && presentRow) {
+    let groupId;
+    if (targetSession) {
+      groupId = await groupForSwimmerInSession(sessionId, swimmer.id);
+    } else {
+      const found = await findOrCreateSession(swimmer, d, req);
+      sessionId = found.sessionId;
+      groupId = found.groupId;
+      targetSession = await db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+    }
+
+    const current = await db.prepare('SELECT status FROM attendance WHERE session_id = ? AND swimmer_id = ?').get(sessionId, swimmer.id);
+    const statuses = await attendanceStatuses(sessionId);
+    const stat = await db.prepare(`SELECT
+        SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS present,
+        SUM(CASE WHEN a.status = 'absent' THEN 1 ELSE 0 END) AS absent
+      FROM attendance a JOIN sessions s ON s.id = a.session_id
+      WHERE s.date = ? AND s.deleted_at IS NULL`).get(d);
+    const stats = { present: Number(stat && stat.present) || 0, absent: Number(stat && stat.absent) || 0 };
+
+    if (mode === 'present' && current && (current.status === 'present' || current.status === 'late')) {
       await db.prepare(`INSERT INTO membership_card_scans
         (swimmer_id, membership_no, mode, result, scan_date, scan_time, created_by)
         VALUES (?,?,?,?,?,?,?)`)
         .run(swimmer.id, swimmer.membership_no, 'present', 'duplicate', d, time, req.currentUser.id);
       return res.json({
-        ok: false, status: 'duplicate', message: 'تم تسجيل حضوره اليوم بالفعل — لا يمكن التحضير مرتين',
-        swimmer: base, time: time, first_time: presentRow.start_time || ''
+        ok: false, status: 'duplicate', message: 'مسجّل حاضر بالفعل في هذه الحصة',
+        swimmer: base, time: time, session_id: sessionId, statuses: statuses, stats: stats
       });
     }
-    if (mode === 'absent' && presentRow) {
-      return res.json({
-        ok: false, status: 'already_present', message: 'هذا السباح مسجّل حاضر اليوم بالفعل',
-        swimmer: base, time: time
-      });
-    }
-    if (mode === 'absent' && absentRow) {
+    if (mode === 'absent' && current && current.status === 'absent') {
       await db.prepare(`INSERT INTO membership_card_scans
         (swimmer_id, membership_no, mode, result, scan_date, scan_time, created_by)
         VALUES (?,?,?,?,?,?,?)`)
         .run(swimmer.id, swimmer.membership_no, 'absent', 'duplicate', d, time, req.currentUser.id);
       return res.json({
-        ok: false, status: 'duplicate', message: 'تم تسجيل غيابه اليوم بالفعل',
-        swimmer: base, time: time
+        ok: false, status: 'duplicate', message: 'مسجّل غائب بالفعل في هذه الحصة',
+        swimmer: base, time: time, session_id: sessionId, statuses: statuses, stats: stats
       });
     }
 
-    const { sessionId, groupId } = await findOrCreateSession(swimmer, d, req);
+    /* عند المسح: تسجيل باقي اللاعبين غياباً تلقائياً (لا يغيّر أي حالة محفوظة مسبقاً) */
+    await seedAbsentForSession(sessionId, swimmer.id);
+
     const previous = await db.prepare('SELECT status FROM attendance WHERE session_id = ? AND swimmer_id = ?').get(sessionId, swimmer.id);
     const nextStatus = mode === 'absent' ? 'absent' : 'present';
     await db.prepare(`INSERT INTO attendance (session_id, swimmer_id, status, reason, coach_note) VALUES (?,?,?,?,?)
@@ -534,9 +612,18 @@ router.post('/membership-cards/scan', async function (req, res) {
       .run(swimmer.id, swimmer.membership_no, mode, nextStatus, d, time, req.currentUser.id);
     audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'membershipCards', swimmer.id,
       (mode === 'absent' ? 'تسجيل غياب' : 'تسجيل حضور') + ' بمسح الباركود: ' + swimmer.full_name, req);
+
+    const finalStatuses = await attendanceStatuses(sessionId);
+    const stat2 = await db.prepare(`SELECT
+        SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS present,
+        SUM(CASE WHEN a.status = 'absent' THEN 1 ELSE 0 END) AS absent
+      FROM attendance a JOIN sessions s ON s.id = a.session_id
+      WHERE s.date = ? AND s.deleted_at IS NULL`).get(d);
+
     return res.json({
       ok: true, status: nextStatus, message: mode === 'absent' ? 'تم تسجيل الغياب' : 'تم تسجيل الحضور',
-      swimmer: base, time: time, session_id: sessionId
+      swimmer: base, time: time, session_id: sessionId, statuses: finalStatuses,
+      stats: { present: Number(stat2 && stat2.present) || 0, absent: Number(stat2 && stat2.absent) || 0 }
     });
   } catch (e) {
     console.error('خطأ في مسح بطاقة العضوية:', e.message);

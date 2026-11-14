@@ -22,6 +22,14 @@
 
 <%- include('partials/schedule_tabs', { activeTab: 'attendance' }) %>
 
+<div class="card" style="margin-bottom:14px">
+  <div class="card-body" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <span class="badge badge-success"><i class="fas fa-bolt"></i> حفظ تلقائي</span>
+    <span class="text-muted font-12">أي تغيير في الحضور يُحفظ فوراً، والحصة تُنشأ تلقائياً لحضور اليوم بدون خطوة إضافية.</span>
+    <% if (canScan) { %><a href="/attendance/scan?date=<%= date %>" class="btn btn-success btn-sm" style="margin-inline-start:auto"><i class="fas fa-qrcode"></i> مسح الباركود وتسجيل الحضور</a><% } %>
+  </div>
+</div>
+
 <div class="kpi-row">
   <div class="kpi"><div class="k-val text-success"><%= daily.present %></div><div class="k-lbl">حاضر</div></div>
   <div class="kpi"><div class="k-val text-danger"><%= daily.absent %></div><div class="k-lbl">غائب</div></div>
@@ -46,9 +54,9 @@
               <button class="btn btn-success btn-sm" data-mark-all="present" data-session="<%= g.session ? g.session.id : '' %>"><i class="fas fa-check"></i> الكل حاضر</button>
               <button class="btn btn-outline-danger btn-sm" data-mark-all="absent" data-session="<%= g.session ? g.session.id : '' %>"><i class="fas fa-xmark"></i> الكل غائب</button>
               <button class="btn btn-outline-warning btn-sm" data-mark-all="excused" data-session="<%= g.session ? g.session.id : '' %>"><i class="fas fa-book"></i> الكل معتذر</button>
-              <button class="btn btn-primary btn-sm att-save-btn" data-group="<%= g.id %>" data-date="<%= date %>"><i class="fas fa-floppy-disk"></i> حفظ الحضور</button>
+              <button class="btn btn-outline btn-sm att-save-btn" data-group="<%= g.id %>" data-date="<%= date %>"><i class="fas fa-floppy-disk"></i> حفظ احتياطي</button>
             <% } %>
-            <% if (g.session) { %><a href="/attendance/session/<%= g.session.id %>" class="btn btn-outline btn-sm"><i class="fas fa-clipboard-user"></i> صفحة تسجيل الحضور</a><% } %>
+            <% if (g.session) { %><a href="/attendance/session/<%= g.session.id %>" class="btn btn-outline btn-sm"><i class="fas fa-clipboard-user"></i> صفحة تسجيل الحضور</a><a href="/attendance/scan?session=<%= g.session.id %>" class="btn btn-success btn-sm"><i class="fas fa-qrcode"></i> مسح</a><% } %>
           </div>
           <div class="att-row" style="border-bottom-width:2px">
             <div class="att-name"><b>اللاعب</b></div>
@@ -76,10 +84,10 @@
                 </div>
               </div>
               <div class="att-btns">
-                <button class="att-btn <%= (g.attMap[m.id] || 'present') === 'present' ? 'active-present' : '' %>" data-status="present" data-swimmer="<%= m.id %>" <%= g.session ? 'data-session="' + g.session.id + '"' : '' %> title="حاضر"><i class="fas fa-check"></i> <span>حاضر</span></button>
-                <button class="att-btn <%= (g.attMap[m.id] || 'present') === 'absent' ? 'active-absent' : '' %>" data-status="absent" data-swimmer="<%= m.id %>" <%= g.session ? 'data-session="' + g.session.id + '"' : '' %> title="غائب"><i class="fas fa-xmark"></i> <span>غائب</span></button>
-                <button class="att-btn <%= (g.attMap[m.id] || 'present') === 'excused' ? 'active-excused' : '' %>" data-status="excused" data-swimmer="<%= m.id %>" <%= g.session ? 'data-session="' + g.session.id + '"' : '' %> title="معتذر"><i class="fas fa-book"></i> <span>معتذر</span></button>
-                <button class="att-btn <%= (g.attMap[m.id] || 'present') === 'late' ? 'active-late' : '' %>" data-status="late" data-swimmer="<%= m.id %>" <%= g.session ? 'data-session="' + g.session.id + '"' : '' %> title="متأخر"><i class="fas fa-clock"></i> <span>متأخر</span></button>
+                <button class="att-btn <%= (g.attMap[m.id] || 'absent') === 'present' ? 'active-present' : '' %>" data-status="present" data-swimmer="<%= m.id %>" <%= g.session ? 'data-session="' + g.session.id + '"' : '' %> title="حاضر"><i class="fas fa-check"></i> <span>حاضر</span></button>
+                <button class="att-btn <%= (g.attMap[m.id] || 'absent') === 'absent' ? 'active-absent' : '' %>" data-status="absent" data-swimmer="<%= m.id %>" <%= g.session ? 'data-session="' + g.session.id + '"' : '' %> title="غائب"><i class="fas fa-xmark"></i> <span>غائب</span></button>
+                <button class="att-btn <%= (g.attMap[m.id] || 'absent') === 'excused' ? 'active-excused' : '' %>" data-status="excused" data-swimmer="<%= m.id %>" <%= g.session ? 'data-session="' + g.session.id + '"' : '' %> title="معتذر"><i class="fas fa-book"></i> <span>معتذر</span></button>
+                <button class="att-btn <%= (g.attMap[m.id] || 'absent') === 'late' ? 'active-late' : '' %>" data-status="late" data-swimmer="<%= m.id %>" <%= g.session ? 'data-session="' + g.session.id + '"' : '' %> title="متأخر"><i class="fas fa-clock"></i> <span>متأخر</span></button>
               </div>
             </div>
           <% }); %>

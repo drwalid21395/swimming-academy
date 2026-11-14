@@ -4,6 +4,7 @@ const { db } = require('../lib/db');
 const { audit, money, fmtDate, fmtDateTime, dayAr, today, pct, parseJSON, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
 const { activeSport, sportClause, groupClause, sessionClause } = require('../lib/sport-context');
+const { ensureGroupSession } = require('../lib/attendance');
 
 function attendanceCounts(status) {
   return status === 'present' || status === 'late';
@@ -168,6 +169,7 @@ router.get('/sessions', async function (req, res) {
     addLabel: 'حصة جديدة',
     actions: () => row => [
       { label: 'الحضور', icon: 'fa-clipboard-user', href: '/attendance/session/' + row.id },
+      { label: 'مسح', icon: 'fa-qrcode', href: '/attendance/scan?session=' + row.id },
       { label: 'عرض', icon: 'fa-eye', href: '/sessions/' + row.id },
       { label: 'تعديل', icon: 'fa-pen', href: '/sessions/' + row.id + '/edit' },
       { label: 'حذف', icon: 'fa-trash', href: '/sessions/' + row.id + '/delete', confirm: 'هل أنت متأكد من حذف الحصة؟', cls: 'text-danger' }
@@ -340,6 +342,7 @@ router.get('/attendance', async function (req, res) {
     return d.toISOString().slice(0, 10);
   }
   const date = req.query.date || today();
+  const canSave = canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance');
   const groupRows = await db.prepare(`SELECT g.*, c.full_name AS coach_name, p.name AS pool_name FROM groups g
     LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools p ON p.id = g.pool_id WHERE g.deleted_at IS NULL` + groupClause(activeSport(req)) + ` ORDER BY g.name`).all();
   const groups = [];
@@ -349,7 +352,11 @@ router.get('/attendance', async function (req, res) {
         (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status = 'نشط') DESC, sub.id DESC LIMIT 1) AS sub_end
       FROM swimmer_group sg JOIN swimmers s ON s.id = sg.swimmer_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(g.id);
     members.forEach(m => { m.sub = subBadge(m.sub_end); });
-    const session = await db.prepare(`SELECT * FROM sessions WHERE date = ? AND deleted_at IS NULL AND (group_id = ? OR EXISTS (SELECT 1 FROM session_groups sg WHERE sg.session_id = sessions.id AND sg.group_id = ?)) ORDER BY start_time LIMIT 1`).get(date, g.id, g.id);
+    let session = await db.prepare(`SELECT * FROM sessions WHERE date = ? AND deleted_at IS NULL AND (group_id = ? OR EXISTS (SELECT 1 FROM session_groups sg WHERE sg.session_id = sessions.id AND sg.group_id = ?)) ORDER BY start_time LIMIT 1`).get(date, g.id, g.id);
+    /* إنشاء الحصة تلقائياً لحضور اليوم بدون الحاجة لاختيار "حصة جديدة" */
+    if (!session && date === today() && canSave) {
+      session = await ensureGroupSession(g, date, req.currentUser.id);
+    }
     const attMap = {};
     if (session) (await db.prepare('SELECT swimmer_id, status FROM attendance WHERE session_id = ?').all(session.id)).forEach(function (a) { attMap[a.swimmer_id] = a.status; });
     groups.push({ ...g, members, session, attMap });
@@ -438,12 +445,9 @@ router.post('/attendance/group-save', async function (req, res) {
   const d = req.body.date || today();
   const group = await db.prepare('SELECT * FROM groups WHERE id = ?').get(gid);
   if (!group) return res.status(400).json({ ok: false, error: 'المجموعة غير موجودة' });
-  let session = await db.prepare('SELECT * FROM sessions WHERE group_id = ? AND date = ? AND deleted_at IS NULL ORDER BY start_time LIMIT 1').get(gid, d);
-  if (!session) {
-    const info = await db.prepare(`INSERT INTO sessions (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, note) VALUES (?,?,?,?,?,?,?,?,?,?)`)
-      .run(gid, group.name + ' - ' + d, d, groupStartTime(group), null, group.coach_id, group.pool_id, 'scheduled', 0, 'أُنشئت تلقائياً من شاشة الحضور');
-    session = { id: info.lastInsertRowid };
-  }
+  /* إنشاء الحصة تلقائياً إن لم توجد (بدون اختيار حصة جديدة) */
+  const session = await ensureGroupSession(group, d, req.currentUser.id);
+  if (!session) return res.status(400).json({ ok: false, error: 'تعذر تجهيز الحصة' });
   await syncGroup(gid);
   const statuses = req.body.statuses || {};
   let n = 0;

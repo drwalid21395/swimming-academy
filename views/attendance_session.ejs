@@ -7,8 +7,16 @@
   <div class="spacer"></div>
   <div class="flex gap-1">
     <a href="/attendance" class="btn btn-outline"><i class="fas fa-arrow-right"></i> الحضور اليومي</a>
+    <% if (page.canEdit) { %><a href="/attendance/scan?session=<%= s.id %>" class="btn btn-success"><i class="fas fa-qrcode"></i> مسح الباركود</a><% } %>
     <% if (s.status !== 'cancelled' && typeof page !== 'undefined' && page.canEdit) { %><a href="/sessions/<%= s.id %>/cancel" class="btn btn-outline-danger"><i class="fas fa-ban"></i> إلغاء وتعويض</a><% } %>
     <button class="btn btn-outline" data-print><i class="fas fa-print"></i> طباعة</button>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+  <div class="card-body" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <span class="badge badge-success"><i class="fas fa-bolt"></i> حفظ تلقائي</span>
+    <span class="text-muted font-12">يمكنك تعديل حضور أي لاعب في الحصة القديمة — يُحفظ فوراً. أو امسح الباركود لتغيير حالته تلقائياً.</span>
   </div>
 </div>
 
@@ -48,10 +56,10 @@
           </div>
         </div>
         <div class="att-btns">
-          <button class="att-btn <%= m.att_status === 'present' ? 'active-present' : '' %>" data-status="present" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="حاضر"><i class="fas fa-check"></i> <span>حاضر</span></button>
-          <button class="att-btn <%= m.att_status === 'absent' ? 'active-absent' : '' %>" data-status="absent" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="غائب"><i class="fas fa-xmark"></i> <span>غائب</span></button>
-          <button class="att-btn <%= m.att_status === 'excused' ? 'active-excused' : '' %>" data-status="excused" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="معتذر"><i class="fas fa-book"></i> <span>معتذر</span></button>
-          <button class="att-btn <%= m.att_status === 'late' ? 'active-late' : '' %>" data-status="late" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="متأخر"><i class="fas fa-clock"></i> <span>متأخر</span></button>
+          <button class="att-btn <%= (m.att_status || 'absent') === 'present' ? 'active-present' : '' %>" data-status="present" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="حاضر"><i class="fas fa-check"></i> <span>حاضر</span></button>
+          <button class="att-btn <%= (m.att_status || 'absent') === 'absent' ? 'active-absent' : '' %>" data-status="absent" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="غائب"><i class="fas fa-xmark"></i> <span>غائب</span></button>
+          <button class="att-btn <%= (m.att_status || 'absent') === 'excused' ? 'active-excused' : '' %>" data-status="excused" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="معتذر"><i class="fas fa-book"></i> <span>معتذر</span></button>
+          <button class="att-btn <%= (m.att_status || 'absent') === 'late' ? 'active-late' : '' %>" data-status="late" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="متأخر"><i class="fas fa-clock"></i> <span>متأخر</span></button>
         </div>
       </div>
     <% }); %>
