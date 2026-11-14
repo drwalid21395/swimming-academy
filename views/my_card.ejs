@@ -17,8 +17,12 @@
     .pp-stage video { width: 100%; height: 100%; object-fit: cover; display: block; }
     .pp-idle { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #fff; text-align: center; padding: 20px; }
     .pp-idle small { opacity: 0.8; max-width: 280px; }
-    .pp-frame { position: absolute; inset: 10%; border: 2px dashed rgba(255,255,255,0.85); border-radius: 12px; box-shadow: 0 0 0 9999px rgba(15,23,42,0.45), inset 0 0 20px rgba(255,255,255,0.1); pointer-events: none; }
-    .pp-scan-status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(15,23,42,0.7); color: #fff; padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; backdrop-filter: blur(4px); }
+    .pp-frame-wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+    .pp-frame { position: relative; width: 86%; max-width: 460px; aspect-ratio: 2.6 / 1; border-radius: 14px; box-shadow: 0 0 0 100vmax rgba(15,23,42,0.55); border: 2px solid rgba(125,211,252,0.85); }
+    .pp-frame::before, .pp-frame::after { content: ''; position: absolute; width: 18px; height: 18px; border: 3px solid #38bdf8; }
+    .pp-frame::before { top: -3px; right: -3px; border-left: 0; border-bottom: 0; border-top-right-radius: 10px; }
+    .pp-frame::after { bottom: -3px; left: -3px; border-right: 0; border-top: 0; border-bottom-left-radius: 10px; }
+    .pp-scan-status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(15,23,42,0.75); color: #fff; padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; backdrop-filter: blur(4px); white-space: nowrap; z-index: 5; }
     .pp-scan-status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse-dot 1.2s infinite; }
     @keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.7)} }
     .pp-tools { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 14px; }
@@ -76,8 +80,10 @@
 
     <div class="pp-stage" id="stage">
       <video id="cam" playsinline autoplay muted></video>
-      <div class="pp-frame" id="frame" hidden></div>
-      <div class="pp-scan-status" id="scanStatus" hidden>جارٍ المسح... ضع الباركود داخل المربع</div>
+      <div class="pp-frame-wrap" id="frameWrap" hidden>
+        <div class="pp-frame" id="frame"></div>
+      </div>
+      <div class="pp-scan-status" id="scanStatus" hidden>جارٍ المسح... ضع الباركود داخل الإطار</div>
       <div class="pp-idle" id="idle">
         <i class="fas fa-camera-retro fa-2x"></i>
         <p>الكاميرا متوقفة</p>
@@ -114,6 +120,7 @@
   'use strict';
   var video = document.getElementById('cam');
   var frame = document.getElementById('frame');
+  var frameWrap = document.getElementById('frameWrap');
   var scanStatus = document.getElementById('scanStatus');
   var idle = document.getElementById('idle');
   var startBtn = document.getElementById('startCam');
@@ -131,6 +138,7 @@
   var reader = null;
   var stream = null;
   var snapReader = null;
+  var snapCanvas = null;
 
   function showMsg(html, type) {
     message.innerHTML = '<div class="alert alert-' + (type || 'info') + '">' + html + '</div>';
@@ -274,80 +282,217 @@
     clearMsg();
   });
 
-  function buildHints() {
-    var hints = new Map();
-    try {
-      var D = window.ZXing.DecodeHintType;
-      hints.set(D.TRY_HARDER, true);
-      var formats = [];
-      ['CODE_39', 'CODE_128', 'CODE_93', 'EAN_13', 'EAN_8', 'UPC_A'].forEach(function (n) {
-        if (window.ZXing.BarcodeFormat[n]) formats.push(window.ZXing.BarcodeFormat[n]);
-      });
-      if (formats.length) hints.set(D.POSSIBLE_FORMATS, formats);
-    } catch (e) {}
-    return hints;
-  }
-
   function setCameraUI(active) {
     scanning = active;
     idle.hidden = active;
-    frame.hidden = !active;
+    frameWrap.hidden = !active;
     scanStatus.hidden = !active;
   }
 
-  async function startCamera() {
-    if (scanning) return;
-    clearMsg();
+  function barcodeFormats(include2d) {
+    var B = window.ZXing && window.ZXing.BarcodeFormat;
+    if (!B) return null;
+    var names = ['CODE_39', 'CODE_93', 'CODE_128', 'CODABAR', 'EAN_8', 'EAN_13', 'ITF', 'UPC_A', 'UPC_E'];
+    if (include2d) names = names.concat(['QR_CODE', 'DATA_MATRIX', 'PDF_417']);
+    var list = [];
+    names.forEach(function (name) { if (B[name]) list.push(B[name]); });
+    return list.length ? list : null;
+  }
+
+  function buildHints(tryHarder, include2d) {
+    var hints = new Map();
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-      video.srcObject = stream;
-      await video.play();
-      setCameraUI(true);
-      reader = new window.ZXing.BrowserMultiFormatReader(buildHints(), 80);
-      reader.decodeFromVideoElement(video, function (res, err) {
-        if (res && res.getText) {
-          var code = res.getText();
-          if (code) { lookup(code); stopCamera(); }
-        }
-      }).then(function () {
-        // decode loop ended normally
-      }).catch(function (e) {
-        if (scanning) showMsg('توقف الماسح: ' + (e && e.message ? e.message : ''), 'warning');
-      });
-    } catch (e) {
-      console.error('camera error', e);
-      showMsg('تعذر تشغيل الكاميرا: ' + (e && e.message ? e.message : ''), 'error');
-      setCameraUI(false);
-    }
+      var D = window.ZXing.DecodeHintType;
+      if (tryHarder) hints.set(D.TRY_HARDER, true);
+      var formats = barcodeFormats(include2d);
+      if (formats) hints.set(D.POSSIBLE_FORMATS, formats);
+      if (D.ALSO_INVERTED) hints.set(D.ALSO_INVERTED, true);
+    } catch (e) { }
+    return hints;
   }
 
-  function stopCamera() {
-    setCameraUI(false);
-    if (reader) { try { reader.reset(); } catch (e) {} reader = null; }
-    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
-    try { video.srcObject = null; } catch (e) {}
+  function findTorchTrack() {
+    if (!stream) return null;
+    var tracks = stream.getVideoTracks();
+    for (var i = 0; i < tracks.length; i++) { if (tracks[i].readyState !== 'ended') return tracks[i]; }
+    return tracks[0] || null;
   }
 
-  function getSnapReader() {
-    if (snapReader) return snapReader;
-    snapReader = new window.ZXing.BrowserMultiFormatReader(buildHints());
-    return snapReader;
+  function pickCamera(devices) {
+    var cams = devices.filter(function (d) { return d.kind === 'videoinput'; });
+    if (!cams.length) return null;
+    var back = cams.filter(function (d) {
+      var label = String(d.label || '').toLowerCase();
+      return /back|rear|environment|خلف/i.test(label);
+    });
+    return (back.length ? back : cams)[0].deviceId;
+  }
+
+  function buildConstraints(deviceId) {
+    var base = { audio: false, video: { width: { ideal: 1280 }, height: { ideal: 720 } } };
+    if (deviceId) base.video.deviceId = { exact: deviceId };
+    else base.video.facingMode = { ideal: 'environment' };
+    return base;
   }
 
   function snapshotDecode() {
     return new Promise(function (resolve, reject) {
-      if (!video.videoWidth) return reject(new Error('no video'));
-      var canvas = document.createElement('canvas');
+      if (!video || !video.srcObject || !video.videoWidth) return reject(new Error('no frame'));
+      if (!snapCanvas) snapCanvas = document.createElement('canvas');
       var vw = video.videoWidth;
       var vh = video.videoHeight;
-      var cw = Math.round(vw * 0.9);
-      var ch = Math.round(vh * 0.75);
-      canvas.width = Math.min(cw, 1280);
-      canvas.height = Math.round(canvas.width * ch / cw);
-      var ctx = canvas.getContext('2d');
-      ctx.drawImage(video, Math.round((vw - cw) / 2), Math.round((vh - ch) / 2), cw, ch, 0, 0, canvas.width, canvas.height);
-      getSnapReader().decodeFromImageUrl(canvas.toDataURL('image/png')).then(resolve).catch(reject);
+      var cw = Math.round(vw * 0.96);
+      var chh = Math.round(vh * 0.86);
+      var sx = Math.round((vw - cw) / 2);
+      var sy = Math.round((vh - chh) / 2);
+      var outW = Math.min(cw, 1280);
+      var outH = Math.round(chh * (outW / cw));
+      snapCanvas.width = outW;
+      snapCanvas.height = outH;
+      var ctx = snapCanvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(video, sx, sy, cw, chh, 0, 0, outW, outH);
+      var dataUrl = snapCanvas.toDataURL('image/png');
+      var img = new Image();
+      img.onload = function () {
+        getSnapReader().decodeFromImage(img, dataUrl).then(function (res) {
+          resolve(res);
+        }).catch(function (e) {
+          reject(e);
+        });
+      };
+      img.onerror = function () { reject(new Error('image load failed')); };
+      img.src = dataUrl;
     });
+  }
+
+  function getSnapReader() {
+    if (snapReader) return snapReader;
+    snapReader = new window.ZXing.BrowserMultiFormatReader(buildHints(true, true));
+    return snapReader;
+  }
+
+  function tryStartCamera(deviceId) {
+    var constraints = buildConstraints(deviceId);
+    clearMsg();
+    showMsg('<i class="fas fa-spinner fa-spin"></i> جارٍ تشغيل الكاميرا...', 'info');
+
+    reader = new window.ZXing.BrowserMultiFormatReader(buildHints(false, false), 60);
+    scanning = true;
+
+    var decodePromise = reader.decodeFromConstraints(constraints, video, function (res, err) {
+      if (!res) {
+        if (err && err.message) {
+          var msg = String(err.message);
+          if (msg.indexOf('No MultiFormat Readers') > -1 || msg.indexOf('No QR code') > -1 || msg.indexOf('No barcode') > -1) return;
+        }
+        return;
+      }
+      if (res && res.getText) { lookup(res.getText()); stopCamera(); }
+    });
+
+    function markCamReady() {
+      if (!scanning) return;
+      if (!video.srcObject) return;
+      stream = video.srcObject;
+      setCameraUI(true);
+      clearMsg();
+      showMsg('<i class="fas fa-camera"></i> الكاميرا تعمل — وجّه الباركود داخل الإطار', 'success');
+      try {
+        var track = findTorchTrack();
+        if (track && track.applyConstraints) {
+          var caps = track.getCapabilities();
+          if (caps && caps.focusMode) {
+            track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {});
+          }
+        }
+      } catch (e) { }
+      if (window._ppFallbackInterval) clearInterval(window._ppFallbackInterval);
+      window._ppFallbackInterval = setInterval(function () {
+        if (!scanning) return;
+        snapshotDecode().then(function (res) {
+          if (res && res.getText) { lookup(res.getText()); stopCamera(); }
+        }).catch(function () { });
+      }, 2500);
+    }
+
+    video.addEventListener('playing', markCamReady);
+    var readyPoll = setInterval(function () {
+      if (!scanning) { clearInterval(readyPoll); return; }
+      if (video.srcObject && video.readyState >= 2) { markCamReady(); clearInterval(readyPoll); }
+    }, 350);
+
+    function onFail(e) {
+      clearInterval(readyPoll);
+      video.removeEventListener('playing', markCamReady);
+      if (window._ppFallbackInterval) { clearInterval(window._ppFallbackInterval); window._ppFallbackInterval = null; }
+      scanning = false;
+      if (reader) { try { reader.reset(); } catch (x) { } reader = null; }
+      if (snapReader) { try { snapReader.reset(); } catch (x) { } snapReader = null; }
+      stream = null;
+      return e;
+    }
+
+    function showCamError(e, fallbackPossible) {
+      onFail(e);
+      setCameraUI(false);
+      var errName = (e && e.name) || '';
+      var reason = 'تعذر تشغيل الكاميرا، تأكد من منح الإذن للمتصفح';
+      if (errName === 'NotAllowedError' || errName === 'SecurityError') reason = 'تم رفض إذن الكاميرا — اسمح بالوصول للكاميرا من إعدادات المتصفح';
+      else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') reason = 'لا توجد كاميرا متاحة على هذا الجهاز';
+      else if (errName === 'NotReadableError' || errName === 'TrackStartError') reason = 'الكاميرا مستخدمة من تطبيق آخر — أغلق التطبيقات الأخرى';
+      else if (errName === 'OverconstrainedError') reason = 'إعدادات الكاميرا غير مدعومة';
+      if (fallbackPossible) {
+        showMsg(reason + ' — جاري تجربة كاميرا أخرى...', 'warning');
+      } else {
+        showMsg(reason, 'error');
+      }
+    }
+
+    if (decodePromise && decodePromise.then) {
+      decodePromise.then(function () { markCamReady(); }).catch(function (e) {
+        var errName = (e && e.name) || '';
+        if (!deviceId && errName !== 'NotAllowedError' && errName !== 'SecurityError' && navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+          showCamError(e, true);
+          navigator.mediaDevices.enumerateDevices().then(function (devices) {
+            var id = pickCamera(devices);
+            if (id) tryStartCamera(id);
+            else { setCameraUI(false); showMsg('لا توجد كاميرا أخرى متاحة', 'error'); }
+          }).catch(function () {
+            showCamError(e, false);
+          });
+        } else {
+          showCamError(e, false);
+        }
+      });
+    }
+  }
+
+  function startCamera() {
+    if (scanning) return;
+    if (!window.ZXing || !window.ZXing.BrowserMultiFormatReader) {
+      showMsg('مكتبة المسح غير متاحة — أعد تحميل الصفحة', 'error');
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showMsg('المتصفح لا يدعم الكاميرا — استخدم الإدخال اليدوي', 'error');
+      return;
+    }
+    tryStartCamera(null);
+  }
+
+  function stopCamera() {
+    scanning = false;
+    if (window._ppFallbackInterval) { clearInterval(window._ppFallbackInterval); window._ppFallbackInterval = null; }
+    if (reader) { try { reader.reset(); } catch (e) { } reader = null; }
+    if (snapReader) { try { snapReader.reset(); } catch (e) { } snapReader = null; }
+    try {
+      if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); }
+    } catch (e) { }
+    stream = null;
+    try { video.srcObject = null; } catch (e) { }
+    setCameraUI(false);
+    clearMsg();
   }
 
   captureBtn.addEventListener('click', function () {
