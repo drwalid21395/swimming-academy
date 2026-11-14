@@ -231,6 +231,34 @@
       }
     }
 
+    if (r.technical && r.technical.levels && r.technical.levels.length) {
+      var tech = r.technical;
+      html += '<div class="pp-section"><h3><i class="fas fa-clipboard-check"></i> التقرير الفني الشامل</h3>';
+      html += '<div class="pp-grid">';
+      html += item('المستويات المقيّمة', tech.totalLevels || 0);
+      html += item('إجمالي المهارات', tech.allSkills || 0);
+      html += item('المتوسط العام', (tech.grandAvg || 0) + '%');
+      html += '</div>';
+      tech.levels.forEach(function (lvl) {
+        html += '<div style="margin-top:12px"><b style="color:var(--primary);font-size:14px"><i class="fas fa-layer-group"></i> ' + esc(lvl.level.name || 'مستوى') + '</b>';
+        html += '<div class="pp-grid" style="margin-top:6px">';
+        html += item('التاريخ', (lvl.assessment && lvl.assessment.date) || '—');
+        html += item('الكابتن', (lvl.assessment && lvl.assessment.coach_name) || '—');
+        html += item('نسبة المستوى', (lvl.percent || 0) + '%');
+        html += item('المتوسط', (lvl.avg || 0) + '%');
+        html += '</div>';
+        if (lvl.skills && lvl.skills.length) {
+          html += '<div class="pp-score-list" style="margin-top:8px">';
+          lvl.skills.forEach(function (sk) {
+            html += '<div class="pp-score-row"><span class="pp-score-name">' + esc(sk.name) + ' <small style="color:var(--text-muted)">(' + (sk.isGeneral ? 'عام' : 'مهارة') + ')</small></span><span class="pp-score-val">' + (sk.score || 0) + '</span></div>';
+          });
+          html += '</div>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
     if (r.test) {
       var t = r.test;
       html += '<div class="pp-section"><h3><i class="fas fa-stopwatch"></i> آخر اختبار</h3><div class="pp-grid">';
