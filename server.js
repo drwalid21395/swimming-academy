@@ -264,7 +264,7 @@ app.use(async function (req, res, next) {
 
 /* منع الوصول للوحة بدون تسجيل دخول */
 app.use(function (req, res, next) {
-  const publicPaths = ['/login', '/site', '/api/site', '/webhooks'];
+  const publicPaths = ['/login', '/site', '/api/site', '/webhooks', '/my-card'];
   if (publicPaths.some(p => req.path.startsWith(p))) return next();
   if (!req.currentUser) {
     if (req.path.startsWith('/api/')) return res.status(401).json({ ok: false, error: 'غير مصرح' });
@@ -302,6 +302,7 @@ app.use('/', require('./routes/schools'));
 app.use('/', require('./routes/reports'));
 app.use('/', require('./routes/attendance'));
 app.use('/', require('./routes/membership-cards'));
+app.use('/', require('./routes/my-card'));
 app.use('/', require('./routes/private'));
 app.use('/', require('./routes/water-rentals'));
 app.use('/site', require('./routes/site'));

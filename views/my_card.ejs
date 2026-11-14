@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %> | <%= siteName %></title>
+  <link rel="stylesheet" href="/vendor/fa-all.min.css">
+  <link rel="stylesheet" href="/css/style.css?v=23">
+  <link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png?v=2">
+  <style>
+    body { background: var(--bg); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .pp-wrap { width: 100%; max-width: 720px; }
+    .pp-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 18px; padding: 22px; box-shadow: var(--shadow); }
+    .pp-title { text-align: center; font-size: 22px; font-weight: 800; margin-bottom: 6px; color: var(--text); }
+    .pp-sub { text-align: center; font-size: 13px; color: var(--text-muted); margin-bottom: 18px; }
+    .pp-stage { position: relative; background: #0f172a; border-radius: 14px; overflow: hidden; aspect-ratio: 4/3; margin-bottom: 14px; }
+    .pp-stage video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .pp-idle { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #fff; text-align: center; padding: 20px; }
+    .pp-idle small { opacity: 0.8; max-width: 280px; }
+    .pp-frame { position: absolute; inset: 10%; border: 2px dashed rgba(255,255,255,0.6); border-radius: 12px; }
+    .pp-tools { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 14px; }
+    .pp-form { display: flex; gap: 8px; margin-bottom: 14px; }
+    .pp-form input { flex: 1; }
+    .pp-result { display: none; }
+    .pp-section { background: var(--bg-soft); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+    .pp-section h3 { font-size: 14px; color: var(--primary); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .pp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+    .pp-item { background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 12px; }
+    .pp-item .k { font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
+    .pp-item .v { font-size: 15px; font-weight: 700; color: var(--text); }
+    .pp-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .pp-stat { text-align: center; background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px; }
+    .pp-stat b { display: block; font-size: 18px; }
+    .pp-stat span { font-size: 11px; color: var(--text-muted); }
+    .pp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .pp-table th, .pp-table td { padding: 8px; border-bottom: 1px solid var(--card-border); text-align: right; }
+    .pp-table th { color: var(--text-muted); font-weight: 600; }
+    .pp-empty { text-align: center; color: var(--text-muted); padding: 20px; font-size: 13px; }
+    .pp-actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+    @media (max-width: 480px) { .pp-grid { grid-template-columns: 1fr; } .pp-stats { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+<div class="pp-wrap">
+  <div class="pp-card">
+    <div class="pp-title"><i class="fas fa-id-card"></i> بطاقتي</div>
+    <div class="pp-sub">امسح باركود بطاقة العضوية لعرض بياناتك والاشتراك والحضور والتقييم</div>
+
+    <div class="pp-stage" id="stage">
+      <video id="cam" playsinline autoplay muted></video>
+      <div class="pp-frame" id="frame" hidden></div>
+      <div class="pp-idle" id="idle">
+        <i class="fas fa-camera-retro fa-2x"></i>
+        <p>الكاميرا متوقفة</p>
+        <small>اضغط الزر لتشغيل الكاميرا ومسح الباركود، أو أدخل رقم العضوية يدوياً.</small>
+        <button type="button" class="btn btn-primary" id="startCam"><i class="fas fa-play"></i> تشغيل الكاميرا</button>
+      </div>
+    </div>
+
+    <div class="pp-tools">
+      <button type="button" class="btn btn-outline" id="stopCam"><i class="fas fa-stop"></i> إيقاف</button>
+      <button type="button" class="btn btn-outline" id="capture"><i class="fas fa-camera"></i> لقطة</button>
+    </div>
+
+    <form class="pp-form" id="manualForm">
+      <input type="text" id="manualCode" class="form-control" placeholder="رقم العضوية (مثال: SW-0001)" autocomplete="off">
+      <button type="submit" class="btn btn-primary"><i class="fas fa-magnifying-glass"></i> بحث</button>
+    </form>
+
+    <div id="message"></div>
+
+    <div class="pp-result" id="result">
+      <div class="pp-actions">
+        <a href="#" class="btn btn-primary" id="pdfLink" download><i class="fas fa-file-pdf"></i> تحميل التقرير PDF</a>
+        <button type="button" class="btn btn-outline" id="reset"><i class="fas fa-rotate-right"></i> بحث جديد</button>
+      </div>
+      <div id="resultBody"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/vendor/zxing.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  var video = document.getElementById('cam');
+  var frame = document.getElementById('frame');
+  var idle = document.getElementById('idle');
+  var startBtn = document.getElementById('startCam');
+  var stopBtn = document.getElementById('stopCam');
+  var captureBtn = document.getElementById('capture');
+  var manualForm = document.getElementById('manualForm');
+  var manualCode = document.getElementById('manualCode');
+  var message = document.getElementById('message');
+  var result = document.getElementById('result');
+  var resultBody = document.getElementById('resultBody');
+  var pdfLink = document.getElementById('pdfLink');
+  var resetBtn = document.getElementById('reset');
+
+  var scanning = false;
+  var reader = null;
+  var stream = null;
+  var snapReader = null;
+
+  function showMsg(html, type) {
+    message.innerHTML = '<div class="alert alert-' + (type || 'info') + '">' + html + '</div>';
+  }
+  function clearMsg() { message.innerHTML = ''; }
+
+  function statusLabel(st) {
+    return { present: 'حاضر', absent: 'غائب', excused: 'معتذر', late: 'متأخر' }[st] || st;
+  }
+
+  function renderReport(data) {
+    var s = data.swimmer;
+    var r = data.report;
+    var html = '';
+
+    html += '<div class="pp-section"><h3><i class="fas fa-user"></i> البيانات الشخصية</h3><div class="pp-grid">';
+    html += item('الاسم', s.full_name);
+    html += item('رقم العضوية', s.membership_no);
+    html += item('تاريخ الميلاد', s.birth_date || '—');
+    html += item('النوع', s.gender || '—');
+    html += item('البرنامج', s.program_name || '—');
+    html += item('المجموعة', s.group_name || '—');
+    html += item('الكابتن', s.coach_name || '—');
+    html += item('المستوى', s.level_name || '—');
+    html += item('حالة اللاعب', s.status || '—');
+    if (s.guardian_name) html += item('ولي الأمر', s.guardian_name + (s.guardian_relation ? ' (' + s.guardian_relation + ')' : ''));
+    html += '</div></div>';
+
+    html += '<div class="pp-section"><h3><i class="fas fa-user-check"></i> الحضور والغياب</h3>';
+    html += '<div class="pp-stats">';
+    html += stat(r.stats.present, 'حاضر', 'green');
+    html += stat(r.stats.absent, 'غائب', 'red');
+    html += stat(r.stats.excused, 'معتذر', 'orange');
+    html += stat(r.stats.late, 'متأخر', 'blue');
+    html += '</div>';
+    if (r.recentAttendance && r.recentAttendance.length) {
+      html += '<table class="pp-table" style="margin-top:10px"><thead><tr><th>التاريخ</th><th>الحصة</th><th>الحالة</th></tr></thead><tbody>';
+      r.recentAttendance.forEach(function (a) {
+        html += '<tr><td>' + (a.date || '—') + '</td><td>' + (a.title || '—') + '</td><td>' + statusLabel(a.status) + '</td></tr>';
+      });
+      html += '</tbody></table>';
+    }
+    html += '</div>';
+
+    if (r.subscription) {
+      var sub = r.subscription;
+      var remainingSessions = (sub.sessions_total || 0) - (sub.sessions_used || 0);
+      html += '<div class="pp-section"><h3><i class="fas fa-calendar-check"></i> الاشتراك</h3><div class="pp-grid">';
+      html += item('حالة الاشتراك', sub.status || '—');
+      html += item('تاريخ البداية', sub.start_date || '—');
+      html += item('تاريخ النهاية', sub.end_date || '—');
+      html += item('الحصص الكلية', sub.sessions_total || 0);
+      html += item('الحصص المستخدمة', sub.sessions_used || 0);
+      html += item('الحصص المتبقية', remainingSessions);
+      html += item('المبلغ الكلي', formatMoney(sub.total || 0));
+      html += item('المسدد', formatMoney(sub.paid_amount || 0));
+      html += item('المتبقي', formatMoney(sub.remaining || 0));
+      html += '</div></div>';
+    }
+
+    if (r.payments && r.payments.length) {
+      html += '<div class="pp-section"><h3><i class="fas fa-money-bill-wave"></i> المدفوعات</h3><table class="pp-table"><thead><tr><th>التاريخ</th><th>المبلغ</th><th>الطريقة</th><th>الإيصال</th></tr></thead><tbody>';
+      r.payments.forEach(function (p) {
+        html += '<tr><td>' + (p.paid_date || '—') + '</td><td>' + formatMoney(p.amount || 0) + '</td><td>' + (p.method || '—') + '</td><td>' + (p.receipt_no || '—') + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+
+    if (r.assessment) {
+      var a = r.assessment;
+      html += '<div class="pp-section"><h3><i class="fas fa-chart-line"></i> آخر تقييم</h3><div class="pp-grid">';
+      html += item('التاريخ', a.date || '—');
+      html += item('المستوى', a.level_name || '—');
+      html += item('النسبة', (a.overall_percent || 0) + '%');
+      html += item('نقاط القوة', a.strengths || '—');
+      html += item('نقاط الضعف', a.weaknesses || '—');
+      html += item('التوصيات', a.recommendations || '—');
+      html += '</div></div>';
+    }
+
+    if (r.test) {
+      var t = r.test;
+      html += '<div class="pp-section"><h3><i class="fas fa-stopwatch"></i> آخر اختبار</h3><div class="pp-grid">';
+      html += item('التاريخ', t.date || '—');
+      html += item('النوع', t.type || '—');
+      html += item('المسافة', (t.distance_m || 0) + ' م');
+      html += item('الزمن', t.time_seconds ? (t.time_seconds + ' ث') : '—');
+      html += item('النتيجة', t.result_note || '—');
+      html += '</div></div>';
+    }
+
+    resultBody.innerHTML = html;
+    pdfLink.href = '/my-card/' + s.id + '/pdf';
+    result.style.display = 'block';
+    window.scrollTo({ top: result.offsetTop - 20, behavior: 'smooth' });
+  }
+
+  function item(k, v) { return '<div class="pp-item"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>'; }
+  function stat(n, l, c) { return '<div class="pp-stat"><b class="text-' + c + '">' + n + '</b><span>' + l + '</span></div>'; }
+  function esc(t) { return String(t == null ? '—' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]; }); }
+  function formatMoney(n) { return Number(n || 0).toFixed(2) + ' ج.م'; }
+
+  function lookup(code) {
+    if (!code) return;
+    clearMsg();
+    showMsg('<i class="fas fa-spinner fa-spin"></i> جارٍ البحث...', 'info');
+    fetch('/my-card/lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: code })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      clearMsg();
+      if (res.ok) renderReport(res);
+      else showMsg(res.message || 'لم يتم العثور على البطاقة', 'error');
+    }).catch(function () {
+      showMsg('تعذر الاتصال بالخادم', 'error');
+    });
+  }
+
+  manualForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    lookup(manualCode.value.trim());
+  });
+
+  resetBtn.addEventListener('click', function () {
+    result.style.display = 'none';
+    resultBody.innerHTML = '';
+    manualCode.value = '';
+    clearMsg();
+  });
+
+  function buildHints() {
+    var hints = new Map();
+    try {
+      var D = window.ZXing.DecodeHintType;
+      hints.set(D.TRY_HARDER, true);
+      var formats = [];
+      ['CODE_39', 'CODE_128', 'CODE_93', 'EAN_13', 'EAN_8', 'UPC_A'].forEach(function (n) {
+        if (window.ZXing.BarcodeFormat[n]) formats.push(window.ZXing.BarcodeFormat[n]);
+      });
+      if (formats.length) hints.set(D.POSSIBLE_FORMATS, formats);
+    } catch (e) {}
+    return hints;
+  }
+
+  async function startCamera() {
+    if (scanning) return;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      video.srcObject = stream;
+      await video.play();
+      scanning = true;
+      idle.hidden = true;
+      frame.hidden = false;
+      reader = new window.ZXing.BrowserMultiFormatReader(buildHints(), 60);
+      reader.decodeFromVideoElement(video, function (res, err) {
+        if (res && res.getText) { lookup(res.getText()); stopCamera(); }
+      });
+    } catch (e) {
+      showMsg('تعذر تشغيل الكاميرا: ' + (e.message || ''), 'error');
+    }
+  }
+
+  function stopCamera() {
+    scanning = false;
+    frame.hidden = true;
+    idle.hidden = false;
+    if (reader) { try { reader.reset(); } catch (e) {} reader = null; }
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    video.srcObject = null;
+  }
+
+  function getSnapReader() {
+    if (snapReader) return snapReader;
+    snapReader = new window.ZXing.BrowserMultiFormatReader(buildHints());
+    return snapReader;
+  }
+
+  function snapshotDecode() {
+    return new Promise(function (resolve, reject) {
+      if (!video.videoWidth) return reject(new Error('no video'));
+      var canvas = document.createElement('canvas');
+      var vw = video.videoWidth;
+      var vh = video.videoHeight;
+      var cw = Math.round(vw * 0.9);
+      var ch = Math.round(vh * 0.75);
+      canvas.width = Math.min(cw, 1280);
+      canvas.height = Math.round(canvas.width * ch / cw);
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(video, Math.round((vw - cw) / 2), Math.round((vh - ch) / 2), cw, ch, 0, 0, canvas.width, canvas.height);
+      getSnapReader().decodeFromImageUrl(canvas.toDataURL('image/png')).then(resolve).catch(reject);
+    });
+  }
+
+  captureBtn.addEventListener('click', function () {
+    if (!scanning || !video.srcObject) return;
+    snapshotDecode().then(function (res) {
+      if (res && res.getText) { lookup(res.getText()); stopCamera(); }
+      else showMsg('لم يقرأ اللقطة، حاول تقريب الباركود', 'warning');
+    }).catch(function () {
+      showMsg('لم يقرأ اللقطة', 'warning');
+    });
+  });
+
+  startBtn.addEventListener('click', startCamera);
+  stopBtn.addEventListener('click', stopCamera);
+  window.addEventListener('pagehide', stopCamera);
+})();
+</script>
+</body>
+</html>
