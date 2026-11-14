@@ -3,7 +3,10 @@
   <div class="hero-bg"><i class="fas fa-water"></i></div>
   <h1><i class="fas fa-person-swimming"></i> <%= data.siteName %></h1>
   <p><%= data.slogan %><br>نعلّم السباحة لجميع الأعمار من المبتدئين حتى المحترفين، مع نخبة من أمهر الكباتن.</p>
-  <a href="<%= (data.base || '/site') %>/reserve" class="btn btn-lg site-cta" style="background:var(--primary);color:#fff;border:2px solid rgba(255,255,255,.65)"><i class="fas fa-calendar-check"></i> احجز مكانك الآن</a>
+  <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">
+    <a href="<%= (data.base || '/site') %>/reserve" class="btn btn-lg site-cta" style="background:var(--primary);color:#fff;border:2px solid rgba(255,255,255,.65)"><i class="fas fa-calendar-check"></i> احجز مكانك الآن</a>
+    <a href="/my-card" class="btn btn-lg site-cta" style="background:rgba(255,255,255,.12);color:#fff;border:2px solid rgba(255,255,255,.65)"><i class="fas fa-id-card"></i> استعلم عن بطاقتك</a>
+  </div>
 </div>
 
 <div class="site-container">
