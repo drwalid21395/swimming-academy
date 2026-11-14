@@ -332,6 +332,31 @@
   volumeInput.value = String(Math.round(volume * 100));
   volLabel.textContent = Math.round(volume * 100) + '%';
 
+  /* ---------------- صيغ الباركود ---------------- */
+  /* الماسح المستمر يقرأ كل صيغ الباركود الخطية الشائعة بسرعة،
+     واللقطة الاحتياطية تضيف الصيغ ثنائية الأبعاد ووضع المحاولة الجادّة */
+  function barcodeFormats(include2d) {
+    var B = window.ZXing && window.ZXing.BarcodeFormat;
+    if (!B) return null;
+    var names = ['CODE_39', 'CODE_93', 'CODE_128', 'CODABAR', 'EAN_8', 'EAN_13', 'ITF', 'UPC_A', 'UPC_E', 'RSS_14'];
+    if (include2d) names = names.concat(['QR_CODE', 'DATA_MATRIX', 'PDF_417', 'AZTEC']);
+    var list = [];
+    names.forEach(function (name) { if (B[name]) list.push(B[name]); });
+    return list.length ? list : null;
+  }
+
+  function buildHints(tryHarder, include2d) {
+    var hints = new Map();
+    try {
+      var D = window.ZXing.DecodeHintType;
+      if (tryHarder) hints.set(D.TRY_HARDER, true);
+      var formats = barcodeFormats(include2d);
+      if (formats) hints.set(D.POSSIBLE_FORMATS, formats);
+      if (D.ALSO_INVERTED) hints.set(D.ALSO_INVERTED, true);
+    } catch (e) { }
+    return hints;
+  }
+
   /* ---------------- الصوت ---------------- */
   function ensureAudio() {
     if (!audioCtx) {
@@ -488,8 +513,8 @@
     if (!sessionId || !swimmerId) return;
     var row = document.querySelector('[data-session-card="' + sessionId + '"] [data-swimmer-row="' + swimmerId + '"]');
     if (!row) return;
+    /* إضاءة خفيفة فقط دون تمرير الصفحة حتى تبقى الكاميرا أمام المستخدم */
     row.classList.add('mc-row-hit');
-    try { row.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { }
     setTimeout(function () { row.classList.remove('mc-row-hit'); }, 1800);
   }
 
@@ -512,6 +537,11 @@
   document.addEventListener('click', function (ev) {
     var btn = ev.target && ev.target.closest ? ev.target.closest('.att-btn[data-status]') : null;
     if (!btn) return;
+    /* التسجيل اليدوي: نغمة تأكيد فقط دون تمرير أو إزعاج */
+    if (ev.isTrusted && btn.hasAttribute('data-session')) {
+      var st = btn.getAttribute('data-status');
+      playSound(st === 'present' || st === 'late' ? 'success' : 'duplicate');
+    }
     setTimeout(refreshRosterCounts, 80);
   });
 
@@ -627,17 +657,7 @@
 
   function getSnapReader() {
     if (snapReader) return snapReader;
-    var hints = new Map();
-    try {
-      hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
-      if (window.ZXing.BarcodeFormat && window.ZXing.BarcodeFormat.CODE_39) {
-        hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-          window.ZXing.BarcodeFormat.CODE_39,
-          window.ZXing.BarcodeFormat.CODE_128
-        ]);
-      }
-    } catch (e) { }
-    snapReader = new window.ZXing.BrowserMultiFormatReader(hints);
+    snapReader = new window.ZXing.BrowserMultiFormatReader(buildHints(true, true));
     return snapReader;
   }
 
@@ -652,9 +672,9 @@
         if (!snapCanvas) snapCanvas = document.createElement('canvas');
         var vw = video.videoWidth;
         var vh = video.videoHeight;
-        /* قص المنطقة الوسطى (منطقة الإطار) لتحسين فرصة القراءة */
-        var cw = Math.round(vw * 0.92);
-        var chh = Math.round(vh * 0.62);
+        /* توسيع منطقة اللقطة لتشمل معظم الإطار حتى لا يضيع الباركود الطرفي */
+        var cw = Math.round(vw * 0.96);
+        var chh = Math.round(vh * 0.86);
         var sx = Math.round((vw - cw) / 2);
         var sy = Math.round((vh - chh) / 2);
         var outW = Math.min(cw, 1280);
@@ -759,17 +779,7 @@
     var constraints = buildConstraints(deviceId);
     showResult('scanning', 'جارٍ تشغيل الكاميرا...', deviceId ? 'جاري تجربة كاميرا بديلة' : 'اسمح بالوصول للكاميرا عند سؤال المتصفح', '');
 
-    var hints = new Map();
-    try {
-      /* البطاقات تُستخدم بترميز Code 39 — حصر الصيغ يسرّع القراءة كثيراً */
-      if (window.ZXing.BarcodeFormat && window.ZXing.BarcodeFormat.CODE_39) {
-        hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-          window.ZXing.BarcodeFormat.CODE_39,
-          window.ZXing.BarcodeFormat.CODE_128
-        ]);
-      }
-    } catch (e) { }
-    reader = new window.ZXing.BrowserMultiFormatReader(hints, 60);
+    reader = new window.ZXing.BrowserMultiFormatReader(buildHints(false, false), 60);
     scanning = true;
     clearAttempts();
 
@@ -911,7 +921,6 @@
     if (window.App && window.App.showToast) {
       window.App.showToast(mode === 'absent' ? 'الوضع: تسجيل الغياب' : 'الوضع: تسجيل الحضور', 'info');
     }
-    manualCode.focus();
   });
 
   volumeInput.addEventListener('input', function () {
@@ -934,8 +943,14 @@
   });
   window.addEventListener('pagehide', function () { if (scanning) stopCamera(); });
 
+  /* فتح الكاميرا تلقائياً عند دخول الصفحة بدلاً من التركيز على الإدخال اليدوي */
+  ['pointerdown', 'keydown', 'touchstart'].forEach(function (name) {
+    document.addEventListener(name, function () { ensureAudio(); }, { once: true, passive: true });
+  });
+
   if (canScan) {
-    manualCode.focus();
+    ensureAudio();
+    setTimeout(startCamera, 200);
   } else {
     startBtn.disabled = true;
     stopBtn.disabled = true;

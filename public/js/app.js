@@ -297,7 +297,9 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: sessionId, swimmer_id: swimmerId, status: status })
           }).then(function (r) { return r.json(); }).then(function (res) {
-            if (res.ok) showToast('تم حفظ الحضور', 'success');
+            /* في صفحة المسح نكتفي بنغمة التأكيد دون إشعارات تغطي الكاميرا */
+            const quietSave = !!btn.closest('.mc-roster-card');
+            if (res.ok) { if (!quietSave) showToast('تم حفظ الحضور', 'success'); }
             else showToast('حدث خطأ في الحفظ', 'error');
           }).catch(function () { showToast('تعذر حفظ الحضور', 'error'); });
         }

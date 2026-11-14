@@ -477,6 +477,17 @@ async function findSwimmerByCode(code) {
   const clean = normalizeBarcode(code);
   if (!clean) return null;
   let swimmer = await db.prepare(CARD_SELECT + ' WHERE UPPER(s.membership_no) = ? AND s.deleted_at IS NULL').get(clean);
+  /* مطابقة احتياطية: الباركود يحذف الرموز غير المدعومة في Code 39،
+     فنقارن الأرقام والحروف فقط حتى لو كان رقم العضوية المخزّن يحتوي شرطة/مسافة/رمزاً */
+  if (!swimmer) {
+    const compact = clean.replace(/[^0-9A-Z]/g, '');
+    if (compact) {
+      const rows = await db.prepare(CARD_SELECT + ' WHERE s.deleted_at IS NULL').all();
+      swimmer = rows.find(function (r) {
+        return String(r.membership_no || '').toUpperCase().replace(/[^0-9A-Z]/g, '') === compact;
+      }) || null;
+    }
+  }
   if (!swimmer && /^\d+$/.test(clean)) {
     swimmer = await db.prepare(CARD_SELECT + ' WHERE s.id = ? AND s.deleted_at IS NULL').get(Number(clean));
   }
