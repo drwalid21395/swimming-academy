@@ -76,12 +76,21 @@
   <% if (data.homeImages.length) { %>
     <h2 style="text-align:center;margin:44px 0 8px">من صورنا</h2>
     <p style="text-align:center;color:var(--text-muted);margin-bottom:28px">لقطات من فعاليات ومواعيد الأكاديمية</p>
-    <div class="dash-grid">
-      <% data.homeImages.slice(0,6).forEach(function (img) { %>
-        <div style="border-radius:16px;overflow:hidden;border:1px solid var(--card-border);box-shadow:var(--shadow);cursor:pointer" onclick="window.open('/uploads/<%= img %>','_blank')">
-          <img src="/uploads/<%= img %>" alt="صورة" style="width:100%;height:170px;object-fit:cover;display:block">
-        </div>
-      <% }); %>
+    <div class="home-carousel" data-carousel>
+      <div class="hc-slides">
+        <% data.homeImages.forEach(function (img, i) { %>
+          <div class="hc-slide <%= i === 0 ? 'active' : 'right' %>" data-index="<%= i %>">
+            <img src="/uploads/<%= img %>" alt="صورة <%= i + 1 %>">
+          </div>
+        <% }); %>
+      </div>
+      <button type="button" class="hc-arrow hc-prev" data-prev aria-label="السابق"><i class="fas fa-chevron-right"></i></button>
+      <button type="button" class="hc-arrow hc-next" data-next aria-label="التالي"><i class="fas fa-chevron-left"></i></button>
+      <div class="hc-dots">
+        <% data.homeImages.forEach(function (img, i) { %>
+          <button type="button" class="hc-dot <%= i === 0 ? 'active' : '' %>" data-index="<%= i %>" aria-label="الصورة <%= i + 1 %>"></button>
+        <% }); %>
+      </div>
     </div>
   <% } %>
 

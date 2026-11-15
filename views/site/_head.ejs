@@ -118,6 +118,25 @@
       .ai-chat-widget { left: 12px; bottom: 12px; }
       .ai-chat-panel { width: calc(100vw - 24px); left: 0; }
     }
+    /* شريط صور متحرك في الموقع الخارجي */
+    .home-carousel { position: relative; border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); aspect-ratio: 16 / 9; max-height: 460px; background: #0f172a; }
+    .hc-slides { position: relative; width: 100%; height: 100%; }
+    .hc-slide { position: absolute; inset: 0; transform: translateX(100%); transition: transform .5s ease; z-index: 1; }
+    .hc-slide.left { transform: translateX(-100%); }
+    .hc-slide.right { transform: translateX(100%); }
+    .hc-slide.active { transform: translateX(0); z-index: 2; }
+    .hc-slide img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .hc-arrow { position: absolute; top: 50%; transform: translateY(-50%); z-index: 5; background: rgba(15,23,42,.55); color: #fff; border: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; transition: background .15s; }
+    .hc-arrow:hover { background: rgba(15,23,42,.85); }
+    .hc-prev { right: 12px; }
+    .hc-next { left: 12px; }
+    .hc-dots { position: absolute; bottom: 14px; left: 0; right: 0; display: flex; justify-content: center; gap: 8px; z-index: 5; }
+    .hc-dot { width: 10px; height: 10px; border-radius: 50%; border: none; background: rgba(255,255,255,.5); cursor: pointer; transition: all .2s; }
+    .hc-dot.active { background: #fff; width: 24px; border-radius: 6px; }
+    @media (max-width: 600px) {
+      .home-carousel { border-radius: 12px; }
+      .hc-arrow { width: 36px; height: 36px; font-size: 14px; }
+    }
   </style>
   <% } %>
 </head>

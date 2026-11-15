@@ -107,6 +107,61 @@
     send.addEventListener('click', ask);
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') ask(); });
   })();
+  /* شريط صور متحرك */
+  (function () {
+    document.querySelectorAll('[data-carousel]').forEach(function (carousel) {
+      var slides = carousel.querySelectorAll('.hc-slide');
+      var dots = carousel.querySelectorAll('.hc-dot');
+      var prev = carousel.querySelector('[data-prev]');
+      var next = carousel.querySelector('[data-next]');
+      if (!slides.length) return;
+      var current = 0, timer;
+      function updateDots() {
+        dots.forEach(function (d, i) { d.classList.toggle('active', i === current); });
+      }
+      function resetClasses() {
+        slides.forEach(function (s, i) {
+          s.classList.remove('active', 'left', 'right', 'enter-left', 'enter-right', 'exit-left', 'exit-right');
+          if (i === current) s.classList.add('active');
+          else s.classList.add('right');
+        });
+        updateDots();
+      }
+      function go(step) {
+        var dir = step > 0 ? 'next' : 'prev';
+        var nextIdx = (current + step + slides.length) % slides.length;
+        var old = current;
+        current = nextIdx;
+        slides[old].classList.remove('active');
+        slides[old].classList.add(dir === 'next' ? 'exit-left' : 'exit-right');
+        slides[nextIdx].classList.remove('right', 'left');
+        slides[nextIdx].classList.add(dir === 'next' ? 'enter-right' : 'enter-left');
+        void slides[nextIdx].offsetWidth;
+        slides[nextIdx].classList.add('active');
+        slides[nextIdx].classList.remove('enter-right', 'enter-left');
+        slides[old].classList.remove('exit-left', 'exit-right');
+        slides[old].classList.add(dir === 'next' ? 'left' : 'right');
+        updateDots();
+        resetTimer();
+      }
+      function goTo(idx) {
+        if (idx === current) return;
+        go(idx > current ? 1 : -1);
+      }
+      function startTimer() { timer = setInterval(function () { go(1); }, 3000); }
+      function resetTimer() { clearInterval(timer); startTimer(); }
+      function stopTimer() { clearInterval(timer); }
+      if (prev) prev.addEventListener('click', function () { go(-1); });
+      if (next) next.addEventListener('click', function () { go(1); });
+      dots.forEach(function (d) { d.addEventListener('click', function () { goTo(Number(d.getAttribute('data-index'))); }); });
+      carousel.addEventListener('mouseenter', stopTimer);
+      carousel.addEventListener('mouseleave', startTimer);
+      carousel.addEventListener('touchstart', stopTimer, { passive: true });
+      carousel.addEventListener('touchend', function () { setTimeout(startTimer, 3000); }, { passive: true });
+      resetClasses();
+      startTimer();
+    });
+  })();
 </script>
 </body>
 </html>
