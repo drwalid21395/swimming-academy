@@ -52,7 +52,10 @@
       </div>
     </div>
     <a href="tel:<%= String(personPhone).replace(/[^\d+]/g, '') %>" class="btn btn-success btn-lg phone-dial-btn"><i class="fas fa-phone-volume"></i> اتصال</a>
-    <span class="font-11 text-muted">يفتح لوحة الاتصال بالرقم مباشرة دون اتصال تلقائي.</span>
+    <% if (Number(row.remaining) > 0) { var transferCode = buildTransferCode(tplVal, personPhone, row.remaining); %>
+      <a href="<%= transferTelHref(transferCode) %>" class="btn btn-primary btn-lg phone-dial-btn" title="كود التحويل: <%= transferCode %>"><i class="fas fa-money-bill-transfer"></i> تحويل الراتب (<%= money(row.remaining) %>)</a>
+    <% } %>
+    <span class="font-11 text-muted">يفتح لوحة الاتصال بالرقم مباشرة دون اتصال تلقائي.<% if (Number(row.remaining) > 0) { %> — زر التحويل يفتح الهاتف على كود القالب الجاهز بمبلغ المتبقي.<% } %></span>
   </div>
 </div>
 <% } %>

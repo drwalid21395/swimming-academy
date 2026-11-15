@@ -2,7 +2,7 @@
 const path = require('node:path');
 const express = require('express');
 const { db, client, ready } = require('./lib/db');
-const { canView, canAdd, canEdit, canDel, canExport, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON, today } = require('./lib/helpers');
+const { canView, canAdd, canEdit, canDel, canExport, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON, today, buildTransferCode, transferTelHref } = require('./lib/helpers');
 const { getAuth, takeFlash, getCookie } = require('./lib/auth-cookie');
 const { getAcademy, getActiveSubscription, subscriptionStatus, academyRestricted, academyPlanPerms, ACTIONS } = require('./lib/tenant');
 const { withAcademy } = require('./lib/tenant-context');
@@ -181,6 +181,8 @@ app.use(async function (req, res, next) {
     res.locals.money = money;
     res.locals.fmtDate = fmtDate;
     res.locals.fmtDateTime = fmtDateTime;
+    res.locals.buildTransferCode = buildTransferCode;
+    res.locals.transferTelHref = transferTelHref;
     res.locals.dayAr = dayAr;
     res.locals.calcAge = calcAge;
     res.locals.pct = pct;

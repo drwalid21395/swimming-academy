@@ -142,10 +142,14 @@
                 <div class="table-actions">
                   <a href="/payroll/<%= r.id %>" class="btn btn-ghost btn-sm" title="التفاصيل"><i class="fas fa-eye"></i></a>
                   <% var phone = r.person_type === 'trainer' ? (r.coach_phone || '') : (r.staff_phone || ''); var telHref = 'tel:' + String(phone).replace(/[^\d+]/g, ''); %>
+                  <% var transferCode = (phone && Number(r.remaining) > 0) ? buildTransferCode(settings && settings.pay_ussd_tpl, phone, r.remaining) : ''; %>
                   <% if (phone) { %>
                     <a href="<%= telHref %>" class="btn btn-ghost btn-sm text-success" title="اتصال هاتفي: <%= phone %>"><i class="fas fa-phone"></i></a>
                   <% } else { %>
                     <button type="button" class="btn btn-ghost btn-sm" disabled title="لا يوجد رقم هاتف مسجل"><i class="fas fa-phone-slash"></i></button>
+                  <% } %>
+                  <% if (transferCode) { %>
+                    <a href="<%= transferTelHref(transferCode) %>" class="btn btn-ghost btn-sm text-primary" title="تحويل الراتب (المتبقي): <%= money(r.remaining) %> — الكود: <%= transferCode %>"><i class="fas fa-money-bill-transfer"></i></a>
                   <% } %>
                   <% if (canDel && Number(r.paid_amount) <= 0 && Number(r.approved) !== 1) { %>
                     <form method="POST" action="/payroll/<%= r.id %>/delete" style="display:inline;margin:0"><button type="submit" class="btn btn-ghost btn-sm text-danger" data-confirm="حذف هذا الكشف؟" title="حذف"><i class="fas fa-trash"></i></button></form>

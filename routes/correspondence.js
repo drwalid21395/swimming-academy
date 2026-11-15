@@ -37,7 +37,7 @@ const incFields = async function (values) {
     { key: 'owner_id', label: 'المسؤول عن المتابعة', type: 'select', options: (await db.prepare("SELECT id, full_name FROM users WHERE status='active'").all()).map(u => ({ value: u.id, label: u.full_name })) },
     { key: 'due_date', label: 'تاريخ الاستحقاق', type: 'date' },
     { key: 'status', label: 'الحالة', type: 'select', options: IN_STATUS.map(v => ({ value: v, label: v })) },
-    { key: 'attachment', label: 'المرفق', type: 'file', hint: values.attachment ? 'المرفق الحالي: ' + values.attachment + ' — اختر ملفاً لاستبداله' : 'اختر ملفاً للإرفاق (حتى 10MB)' },
+    { key: 'attachment', label: 'المرفق', type: 'file', camera: true, hint: values.attachment ? 'المرفق الحالي: ' + values.attachment + ' — اختر ملفاً لاستبداله' : 'اختر ملفاً للإرفاق (حتى 10MB)' },
     { key: 'notes', label: 'ملاحظات', type: 'textarea', full: true }
   ];
 };
@@ -137,7 +137,7 @@ const outFields = async function (values) {
     { key: 'sender', label: 'الجهة المرسِلة', type: 'text' },
     { key: 'send_method', label: 'طريقة الإرسال', type: 'select', options: ['بريد', 'بريد إلكتروني', 'يد بيد', 'فاكس', 'أخرى'].map(v => ({ value: v, label: v })) },
     { key: 'delivery_status', label: 'حالة التسليم', type: 'select', options: [{ value: 'مرسل', label: 'مرسل' }, { value: 'تم الاستلام', label: 'تم الاستلام' }] },
-    { key: 'attachment', label: 'المرفق', type: 'file', hint: values.attachment ? 'المرفق الحالي: ' + values.attachment + ' — اختر ملفاً لاستبداله' : 'اختر ملفاً للإرفاق (حتى 10MB)' },
+    { key: 'attachment', label: 'المرفق', type: 'file', camera: true, hint: values.attachment ? 'المرفق الحالي: ' + values.attachment + ' — اختر ملفاً لاستبداله' : 'اختر ملفاً للإرفاق (حتى 10MB)' },
     { key: 'notes', label: 'ملاحظات', type: 'textarea', full: true }
   ];
 };
@@ -169,6 +169,19 @@ router.get('/outgoing', async function (req, res) {
   };
   res.render('list', { page });
 });
+router.get('/outgoing/new', async function (req, res) {
+  if (!canAdd(req.currentUser, 'outgoing')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  res.render('form', { form: { title: 'صادر جديد', subtitle: 'تسجيل مستند صادر', icon: 'fa-plus', active: 'outgoing', action: '/outgoing/new', encType: 'multipart/form-data', fields: await outFields({}), values: {}, submitLabel: 'حفظ', cancelUrl: '/outgoing', csrf: '' } });
+});
+router.post('/outgoing/new', uploadAndStore('attachment'), async function (req, res) {
+  if (!canAdd(req.currentUser, 'outgoing')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const b = req.body;
+  const info = await db.prepare(`INSERT INTO outgoing_docs (doc_no, sent_date, recipient, subject, doc_type, sender, send_method, delivery_status, attachment, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(b.doc_no || '', b.sent_date || today(), b.recipient, b.subject, b.doc_type || '', b.sender || '', b.send_method || 'بريد', b.delivery_status || 'مرسل', req.file ? req.file.filename : null, b.notes || '', req.currentUser.id);
+  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'outgoing_docs', info.lastInsertRowid, 'صادر: ' + b.subject, req);
+  setFlash(res, { type: 'success', message: 'تم تسجيل المستند الصادر' });
+  res.redirect('/outgoing');
+});
 router.get('/outgoing/:id', async function (req, res) {
   if (!canView(req.currentUser, 'outgoing')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const id = Number(req.params.id);
@@ -183,19 +196,6 @@ router.get('/outgoing/:id', async function (req, res) {
     { label: 'ملاحظات', value: r.notes || '—' }
   ];
   res.render('detail', { page: { title: 'صادر — تفاصيل', subtitle: r.doc_no || '', icon: 'fa-paper-plane', fields, canEdit: canEdit(req.currentUser, 'outgoing'), editUrl: '/outgoing/' + r.id + '/edit', canDelete: canDel(req.currentUser, 'outgoing'), deleteUrl: '/outgoing/' + r.id + '/delete', backUrl: '/outgoing' } });
-});
-router.get('/outgoing/new', async function (req, res) {
-  if (!canAdd(req.currentUser, 'outgoing')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  res.render('form', { form: { title: 'صادر جديد', subtitle: 'تسجيل مستند صادر', icon: 'fa-plus', active: 'outgoing', action: '/outgoing/new', encType: 'multipart/form-data', fields: await outFields({}), values: {}, submitLabel: 'حفظ', cancelUrl: '/outgoing', csrf: '' } });
-});
-router.post('/outgoing/new', uploadAndStore('attachment'), async function (req, res) {
-  if (!canAdd(req.currentUser, 'outgoing')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const b = req.body;
-  const info = await db.prepare(`INSERT INTO outgoing_docs (doc_no, sent_date, recipient, subject, doc_type, sender, send_method, delivery_status, attachment, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(b.doc_no || '', b.sent_date || today(), b.recipient, b.subject, b.doc_type || '', b.sender || '', b.send_method || 'بريد', b.delivery_status || 'مرسل', req.file ? req.file.filename : null, b.notes || '', req.currentUser.id);
-  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'outgoing_docs', info.lastInsertRowid, 'صادر: ' + b.subject, req);
-  setFlash(res, { type: 'success', message: 'تم تسجيل المستند الصادر' });
-  res.redirect('/outgoing');
 });
 router.get('/outgoing/:id/edit', async function (req, res) {
   if (!canEdit(req.currentUser, 'outgoing')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -269,7 +269,7 @@ router.get('/documents/new', async function (req, res) {
       { key: 'doc_type', label: 'نوع المستند', type: 'text', hint: 'مثال: شهادة ميلاد، تقرير طبي، عقد' },
       { key: 'title', label: 'العنوان', type: 'text' },
       { key: 'visibility', label: 'الظهور', type: 'select', options: [{ value: 'staff', label: 'الإدارة فقط' }, { value: 'coach', label: 'المدربون' }, { value: 'guardian', label: 'ولي الأمر' }] },
-      { key: 'file_name', label: 'اختر الملف', type: 'file', full: true },
+      { key: 'file_name', label: 'اختر الملف', type: 'file', camera: true, full: true },
       { key: 'notes', label: 'ملاحظات', type: 'textarea', full: true }
     ], values: {}, submitLabel: 'رفع المستند', cancelUrl: '/documents', csrf: '' } });
 });

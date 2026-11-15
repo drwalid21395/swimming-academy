@@ -65,21 +65,30 @@
               <% } else if (f.type === 'color') { %>
                 <input type="color" class="form-control" name="<%= f.key %>" value="<%= v || '#0284c7' %>" style="height:42px;padding:4px">
               <% } else if (f.type === 'file') { %>
-                <% if (f.preview) { %>
-                  <div class="file-preview">
-                    <div class="avatar-preview <%= v ? 'has-img' : '' %>" data-avatar-preview>
-                      <% if (v) { %><img src="<%= v %>" alt=""><% } else { %><span><%= f.initial || 'س' %></span><% } %>
+                <div class="camera-field" data-camera-field>
+                  <% if (f.preview) { %>
+                    <div class="file-preview">
+                      <div class="avatar-preview <%= v ? 'has-img' : '' %>" data-avatar-preview>
+                        <% if (v) { %><img src="<%= v %>" alt=""><% } else { %><span><%= f.initial || 'س' %></span><% } %>
+                      </div>
+                      <div class="file-preview-body">
+                        <input type="file" class="form-control" name="<%= f.key %>" accept="<%= f.accept || '' %>" data-avatar-input data-camera-input>
+                        <div class="form-hint"><%= f.hint || '' %></div>
+                      </div>
                     </div>
-                    <div class="file-preview-body">
-                      <input type="file" class="form-control" name="<%= f.key %>" accept="<%= f.accept || '' %>" data-avatar-input>
-                      <div class="form-hint"><%= f.hint || '' %></div>
+                  <% } else { %>
+                    <input type="file" class="form-control" name="<%= f.key %>" accept="<%= f.accept || '' %>" data-camera-input>
+                    <% if (v) { %><div class="form-hint"><a href="<%= v %>" target="_blank" class="btn btn-ghost btn-sm" style="margin-top:6px"><i class="fas fa-paperclip"></i> الملف الحالي</a></div><% } %>
+                    <% if (f.hint) { %><div class="form-hint"><%= f.hint %></div><% } %>
+                  <% } %>
+                  <% if (f.camera) { %>
+                    <div class="camera-scan-row">
+                      <button type="button" class="btn btn-outline btn-sm" data-camera-open><i class="fas fa-camera"></i> فتح الكاميرا والتقاط صورة</button>
+                      <span class="form-hint camera-scan-status" data-camera-status>يمكنك التقاط صورة المستند بالكاميرا مباشرة، أو اختيار ملف من الجهاز.</span>
                     </div>
-                  </div>
-                <% } else { %>
-                  <input type="file" class="form-control" name="<%= f.key %>" accept="<%= f.accept || '' %>">
-                  <% if (v) { %><div class="form-hint"><a href="<%= v %>" target="_blank" class="btn btn-ghost btn-sm" style="margin-top:6px"><i class="fas fa-paperclip"></i> الملف الحالي</a></div><% } %>
-                  <% if (f.hint) { %><div class="form-hint"><%= f.hint %></div><% } %>
-                <% } %>
+                    <div class="camera-photo" data-camera-photo hidden></div>
+                  <% } %>
+                </div>
               <% } else if (f.type === 'schedule-days') { %>
                 <div class="form-grid" style="margin-top:2px">
                   <% const sdays = f.days || [['sunday','الأحد'],['monday','الإثنين'],['tuesday','الثلاثاء'],['wednesday','الأربعاء'],['thursday','الخميس'],['friday','الجمعة'],['saturday','السبت']]; %>
@@ -120,6 +129,25 @@
         <a href="<%= form.cancelUrl || '/' %>" class="btn btn-outline btn-lg"><i class="fas fa-xmark"></i> إلغاء</a>
       </div>
     </form>
+  </div>
+</div>
+<div class="camera-modal" id="cameraModal" aria-hidden="true">
+  <div class="camera-dialog" role="dialog" aria-modal="true" aria-label="التقاط صورة بالكاميرا">
+    <div class="camera-head">
+      <b><i class="fas fa-camera"></i> التقاط صورة المستند</b>
+      <button type="button" class="camera-close" data-camera-close aria-label="إغلاق">&times;</button>
+    </div>
+    <div class="camera-stage">
+      <video id="cameraVideo" playsinline autoplay muted></video>
+      <div class="camera-error" id="cameraError" hidden></div>
+      <canvas id="cameraCanvas" hidden></canvas>
+    </div>
+    <div class="camera-controls">
+      <button type="button" class="btn btn-primary" id="cameraShoot" disabled><i class="fas fa-camera"></i> التقاط الصورة</button>
+      <button type="button" class="btn btn-outline" id="cameraSwitch"><i class="fas fa-camera-rotate"></i> تحويل الكاميرا</button>
+      <button type="button" class="btn btn-ghost" data-camera-close><i class="fas fa-xmark"></i> إلغاء</button>
+    </div>
+    <div class="form-hint camera-tip"><i class="fas fa-circle-info"></i> ضع المستند أمام الكاميرا في إضاءة جيدة، ثم اضغط «التقاط الصورة». ستُرفق الصورة تلقائياً بالحقل.</div>
   </div>
 </div>
 <% if (form.transfer) { %>
@@ -278,6 +306,144 @@ document.addEventListener('DOMContentLoaded', function () {
   [type, unit, sessions, discount, tax].forEach(function (el) { if (el) el.addEventListener('input', sync); if (el) el.addEventListener('change', sync); });
   if (end) { end.addEventListener('change', syncStatus); end.addEventListener('blur', syncStatus); }
   sync();
+})();
+
+/* ---------------- التقاط صورة المستند بالكاميرا ---------------- */
+(function () {
+  var modal = document.getElementById('cameraModal');
+  if (!modal) return;
+  var video = document.getElementById('cameraVideo');
+  var canvas = document.getElementById('cameraCanvas');
+  var errEl = document.getElementById('cameraError');
+  var shoot = document.getElementById('cameraShoot');
+  var switchBtn = document.getElementById('cameraSwitch');
+  var currentInput = null;
+  var stream = null;
+  var facing = 'environment';
+
+  function setError(msg) {
+    errEl.textContent = msg || '';
+    errEl.hidden = !msg;
+    shoot.disabled = !!msg;
+  }
+  function stopStream() {
+    if (stream) {
+      stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} });
+      stream = null;
+    }
+    try { video.srcObject = null; } catch (e) {}
+  }
+  function closeModal() {
+    stopStream();
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden', 'true');
+    currentInput = null;
+  }
+  function startCamera() {
+    stopStream();
+    setError('');
+    shoot.disabled = true;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setError('المتصفح لا يدعم تشغيل الكاميرا — يمكنك اختيار صورة من ملفات الجهاز بدلاً منها.');
+      return;
+    }
+    var constraints = { video: { facingMode: { ideal: facing } }, audio: false };
+    navigator.mediaDevices.getUserMedia(constraints).then(function (s) {
+      stream = s;
+      video.srcObject = s;
+      var p = video.play();
+      if (p && p.catch) p.catch(function () {});
+      shoot.disabled = false;
+    }).catch(function (err) {
+      var msg = 'تعذر تشغيل الكاميرا. تأكد من منح الإذن ومن أن الكاميرا غير مستخدمة في تطبيق آخر.';
+      if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) msg = 'تم رفض إذن الكاميرا. اسمح بالوصول للكاميرا من إعدادات المتصفح ثم حاول مرة أخرى.';
+      else if (err && (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError')) msg = 'لا توجد كاميرا متاحة على هذا الجهاز — استخدم اختيار ملف من الجهاز.';
+      else if (err && (err.name === 'NotReadableError' || err.name === 'TrackStartError')) msg = 'الكاميرا مستخدمة من تطبيق آخر. أغلق التطبيقات الأخرى ثم حاول مرة أخرى.';
+      setError(msg);
+    });
+  }
+  function openCamera(input) {
+    currentInput = input;
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+    startCamera();
+  }
+  function attachFile(input, file) {
+    if (!input) return;
+    try {
+      var dt = new DataTransfer();
+      dt.items.add(file);
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (e) {
+      var field = input.closest('[data-camera-field]');
+      var status = field ? field.querySelector('[data-camera-status]') : null;
+      if (status) status.textContent = 'تعذر إرفاق الصورة تلقائياً في هذا المتصفح — استخدم زر اختيار ملف من الجهاز.';
+    }
+  }
+  function capture() {
+    if (!stream || !video.videoWidth || !video.videoHeight) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    var done = false;
+    canvas.toBlob(function (blob) {
+      if (done) return;
+      done = true;
+      if (!blob) { setError('تعذر حفظ الصورة، حاول مرة أخرى.'); return; }
+      var file = new File([blob], 'scan-' + Date.now() + '.jpg', { type: 'image/jpeg' });
+      attachFile(currentInput, file);
+      closeModal();
+    }, 'image/jpeg', 0.92);
+  }
+
+  document.querySelectorAll('[data-camera-open]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var field = btn.closest('[data-camera-field]');
+      var input = field ? field.querySelector('[data-camera-input]') : null;
+      if (input) openCamera(input);
+    });
+  });
+  shoot.addEventListener('click', capture);
+  switchBtn.addEventListener('click', function () {
+    facing = facing === 'environment' ? 'user' : 'environment';
+    startCamera();
+  });
+  modal.querySelectorAll('[data-camera-close]').forEach(function (btn) {
+    btn.addEventListener('click', closeModal);
+  });
+  modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.classList.contains('show')) closeModal();
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden && modal.classList.contains('show')) closeModal();
+  });
+
+  document.querySelectorAll('[data-camera-field] [data-camera-input]').forEach(function (input) {
+    input.addEventListener('change', function () {
+      if (!input.files || !input.files[0]) return;
+      var field = input.closest('[data-camera-field]');
+      if (!field) return;
+      var file = input.files[0];
+      var status = field.querySelector('[data-camera-status]');
+      var box = field.querySelector('[data-camera-photo]');
+      if (status) status.textContent = 'تم إرفاق: ' + file.name + ' (' + Math.max(1, Math.round(file.size / 1024)) + ' كيلوبايت).';
+      if (box) {
+        box.innerHTML = '';
+        if (file.type && file.type.indexOf('image/') === 0 && window.URL && URL.createObjectURL) {
+          var img = document.createElement('img');
+          img.src = URL.createObjectURL(file);
+          img.alt = file.name;
+          box.appendChild(img);
+          box.hidden = false;
+        } else {
+          box.hidden = true;
+        }
+      }
+    });
+  });
 })();
 </script>
 <%- include('partials/layout_bottom') %>
