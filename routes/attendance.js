@@ -596,64 +596,172 @@ function cs(gross, extras, deductions) {
   return { gross: Math.round(gross * 100) / 100, extras: Math.round(extras * 100) / 100, deductions: Math.round(deductions * 100) / 100, net };
 }
 
+/* ---------- فترات الاستحقاق (من تاريخ إلى تاريخ) ---------- */
+function normYmd(v) {
+  const s = String(v || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+}
+function lastDayOfMonth(month) {
+  const p = String(month || '').split('-');
+  const y = Number(p[0]), m = Number(p[1]);
+  if (!y || !m) return '';
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+}
+function rangeFromQuery(q) {
+  q = q || {};
+  let from = normYmd(q.from);
+  let to = normYmd(q.to);
+  const month = (q.month && /^\d{4}-\d{2}$/.test(String(q.month))) ? String(q.month) : '';
+  if (!from && month) from = month + '-01';
+  if (!to && month) to = lastDayOfMonth(month);
+  if (!from) from = today().slice(0, 7) + '-01';
+  if (!to) to = lastDayOfMonth(from.slice(0, 7)) || from;
+  if (from > to) { const x = from; from = to; to = x; }
+  return { from, to };
+}
+function periodKey(from, to) { return from + '_' + to; }
+function parsePeriod(period, fromDate, toDate) {
+  let from = normYmd(fromDate);
+  let to = normYmd(toDate);
+  if (!from || !to) {
+    const p = String(period || '').trim();
+    if (/^\d{4}-\d{2}$/.test(p)) { from = p + '-01'; to = lastDayOfMonth(p); }
+    else if (/^\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}$/.test(p)) { const parts = p.split('_'); from = parts[0]; to = parts[1]; }
+    else if (/^\d{4}-\d{2}-\d{2}$/.test(p)) { from = p; to = p; }
+  }
+  if (!from) from = today();
+  if (!to) to = from;
+  if (from > to) { const x = from; from = to; to = x; }
+  return { from, to };
+}
+function periodLabel(row) {
+  if (row && /^\d{4}-\d{2}$/.test(String(row.period || '')) && !normYmd(row.from_date)) return String(row.period);
+  const r = parsePeriod(row && row.period, row && row.from_date, row && row.to_date);
+  return fmtDate(r.from) + ' ← ' + fmtDate(r.to);
+}
+function overlapsRange(row, range) {
+  const r = parsePeriod(row.period, row.from_date, row.to_date);
+  return r.to >= range.from && r.from <= range.to;
+}
+async function payrollAdjustments(personType, personId, range) {
+  const col = personType === 'trainer' ? 'coach_id' : 'staff_id';
+  return await db.prepare(`SELECT * FROM salary_adjustments WHERE ${col} = ? AND date >= ? AND date <= ? ORDER BY date`).all(personId, range.from, range.to);
+}
+async function findPayroll(personType, personId, range) {
+  const key = periodKey(range.from, range.to);
+  return personType === 'trainer'
+    ? await db.prepare("SELECT * FROM payroll WHERE person_type='trainer' AND coach_id=? AND period=?").get(personId, key)
+    : await db.prepare("SELECT * FROM payroll WHERE person_type='staff' AND staff_id=? AND period=?").get(personId, key);
+}
+
 router.get('/payroll', async function (req, res) {
   if (!canView(req.currentUser, 'payroll')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const month = (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) ? req.query.month : today().slice(0, 7);
+  const range = rangeFromQuery(req.query);
   const ptype = req.query.type || 'all';
-  const rows = await db.prepare(`SELECT p.*, c.full_name AS coach_name, s.full_name AS staff_name, b.name AS branch_name
+  const allRows = await db.prepare(`SELECT p.*, c.full_name AS coach_name, c.phone AS coach_phone, s.full_name AS staff_name, s.phone AS staff_phone, b.name AS branch_name
     FROM payroll p
     LEFT JOIN coaches c ON c.id = p.coach_id
     LEFT JOIN staff s ON s.id = p.staff_id
     LEFT JOIN branches b ON b.id = p.branch_id
-    WHERE p.period = ?` + (ptype === 'trainer' ? ' AND p.person_type=\'trainer\'' : ptype === 'staff' ? ' AND p.person_type=\'staff\'' : '') + tpersonScope(activeSport(req), 'p') + `
-    ORDER BY p.person_type, c.full_name, s.full_name`).all(month);
+    WHERE 1=1` + (ptype === 'trainer' ? ' AND p.person_type=\'trainer\'' : ptype === 'staff' ? ' AND p.person_type=\'staff\'' : '') + tpersonScope(activeSport(req), 'p') + `
+    ORDER BY p.person_type, c.full_name, s.full_name`).all();
+  const rows = allRows.filter(function (r) { return overlapsRange(r, range); });
 
   const coaches = await db.prepare('SELECT * FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), '') + ' ORDER BY full_name').all();
   const staff = await db.prepare('SELECT * FROM staff ORDER BY full_name').all();
-  res.render('attendance_payroll/payroll_list', { title: 'مستحقات ورواتب', active: 'payroll', rows, month, ptype, coaches, staff, canAdd: canAdd(req.currentUser, 'payroll'), canEdit: canEdit(req.currentUser, 'payroll'), canExport: canExport(req.currentUser, 'payroll') });
+  res.render('attendance_payroll/payroll_list', {
+    title: 'مستحقات ورواتب', active: 'payroll', rows, range, from: range.from, to: range.to,
+    periodLabel: periodLabel, ptype, coaches, staff,
+    canAdd: canAdd(req.currentUser, 'payroll'), canEdit: canEdit(req.currentUser, 'payroll'), canExport: canExport(req.currentUser, 'payroll')
+  });
 });
 
 /* حساب كشف لكل مدرب في الفترة (قبل الحفظ) */
-async function computeTrainerPayroll(coachId, month) {
-  const t = await db.prepare('SELECT * FROM coaches WHERE id = ?').get(coachId);
-  if (!t) return null;
-  const atts = await db.prepare('SELECT * FROM trainer_session_attendance WHERE coach_id = ? AND substr(date,1,7) = ?').all(coachId, month);
-  const pol = (await getPolicy()).pol;
-  let gross = 0, extras = 0, deductions = 0;
-  atts.forEach(a => {
-    const amt = amountForAttendance(a, pol);
-    if (a.status === 'ملغاة' || a.status === 'غائب' || a.status === 'متأخر') {
-      const full = Number(a.base_rate || a.session_rate || 0);
-      if (a.status === 'غائب') {
-        gross += 0;
-        if (Number(pol.absence_deduction || 0) > 0) deductions += Number(pol.absence_deduction);
-      } else if (a.status === 'متأخر') {
-        gross += amt; // النسبة المستحقة بعد الخصم
-      } else {
-        gross += amt; // الملغاة بنسبة السياسة
-      }
-    } else {
-      gross += amt;
-    }
-  });
-  // حصص بديلة يقوم بها هذا المدرب نيابة عن آخرين
-  const subs = await db.prepare('SELECT * FROM trainer_session_attendance WHERE substitute_coach_id = ? AND substr(date,1,7) = ?').all(coachId, month);
-  subs.forEach(a => { gross += amountForAttendance(a, pol); });
-
-  // حصص التدريب الخاص (تُحتسب عند تسجيل الحضور أو التأخير)
-  const priv = await db.prepare("SELECT * FROM private_sessions WHERE coach_id = ? AND substr(date,1,7) = ? AND status IN ('present','late')").all(coachId, month);
-  priv.forEach(s => { gross += Number(s.rate || 0); });
-
-  const adjustments = await db.prepare(`SELECT * FROM salary_adjustments WHERE coach_id = ? AND period = ?`).all(coachId, month);
-  adjustments.forEach(x => { if (x.adj_type === 'bonus') extras += Number(x.amount || 0); else deductions += Number(x.amount || 0); });
-  return { coachId, personType: 'trainer', name: t.full_name, atts: atts.length + subs.length + priv.length, gross, extras, deductions, net: Math.round((gross + extras - deductions) * 100) / 100 };
+async function accruedKeysForRange(range) {
+  const rows = await db.prepare('SELECT source_type, source_id FROM payroll_items WHERE work_date >= ? AND work_date <= ?').all(range.from, range.to);
+  const set = new Set();
+  rows.forEach(function (r) { set.add(r.source_type + ':' + r.source_id); });
+  return set;
+}
+function keyOf(type, id) { return type + ':' + id; }
+function parseKey(k) {
+  const p = String(k || '').split(':');
+  return { type: p[0], id: Number(p[1]) || 0 };
 }
 
-async function computeStaffPayroll(staffId, month) {
+async function computeTrainerPayroll(coachId, range, opts) {
+  opts = opts || {};
+  const t = await db.prepare('SELECT * FROM coaches WHERE id = ?').get(coachId);
+  if (!t) return null;
+  const pol = (await getPolicy()).pol;
+  const linked = opts.payrollId ? await db.prepare('SELECT * FROM payroll_items WHERE payroll_id = ?').all(opts.payrollId) : [];
+  const linkedSet = new Set(linked.map(function (it) { return it.source_type + ':' + it.source_id; }));
+  const linkedMode = linked.length > 0;
+  const wanted = new Set((opts.keys || []).map(String));
+  const acc = await accruedKeysForRange(range);
+
+  const atts = await db.prepare(`SELECT a.*, g.name AS group_name FROM trainer_session_attendance a
+    LEFT JOIN groups g ON g.id = a.group_id
+    WHERE a.coach_id = ? AND a.date >= ? AND a.date <= ? ORDER BY a.date`).all(coachId, range.from, range.to);
+  const subs = await db.prepare(`SELECT a.*, g.name AS group_name FROM trainer_session_attendance a
+    LEFT JOIN groups g ON g.id = a.group_id
+    WHERE a.substitute_coach_id = ? AND a.date >= ? AND a.date <= ? ORDER BY a.date`).all(coachId, range.from, range.to);
+  const priv = await db.prepare(`SELECT ps.*, sw.full_name AS swimmer_name FROM private_sessions ps
+    LEFT JOIN swimmers sw ON sw.id = ps.swimmer_id
+    WHERE ps.coach_id = ? AND ps.date >= ? AND ps.date <= ? AND ps.status IN ('present','late') ORDER BY ps.date`)
+    .all(coachId, range.from, range.to);
+
+  let gross = 0, extras = 0, deductions = 0;
+  const items = [];
+  function include(key, amount, sourceType, sourceId, workDate, title) {
+    if (linkedMode) {
+      const allowed = linkedSet.has(key) || (wanted.size ? wanted.has(key) : (opts.includeNew === true && !acc.has(key)));
+      if (!allowed) return false;
+    } else if (wanted.size) {
+      if (!wanted.has(key)) return false;
+    } else if (opts.includeNew === false) {
+      return false;
+    } else if (acc.has(key)) {
+      return false;
+    }
+    gross += Number(amount || 0);
+    items.push({
+      source_type: sourceType, source_id: sourceId, work_date: workDate,
+      title: title || '', amount: Math.round(Number(amount || 0) * 100) / 100
+    });
+    return true;
+  }
+
+  atts.forEach(function (a) {
+    const amt = a.status === 'غائب' ? 0 : amountForAttendance(a, pol);
+    const inc = include(keyOf('trainer', a.id), amt, 'trainer', a.id, a.date,
+      (a.group_name || ('حصة #' + a.session_id)) + (a.start_time ? ' — ' + a.start_time : ''));
+    if (inc && a.status === 'غائب' && Number(pol.absence_deduction || 0) > 0) deductions += Number(pol.absence_deduction);
+  });
+  subs.forEach(function (a) {
+    include(keyOf('substitute', a.id), amountForAttendance(a, pol), 'substitute', a.id, a.date,
+      'بديل: ' + (a.group_name || ('حصة #' + a.session_id)));
+  });
+  priv.forEach(function (s) {
+    include(keyOf('private', s.id), Number(s.rate || 0), 'private', s.id, s.date,
+      'تدريب خاص — ' + (s.swimmer_name || ''));
+  });
+
+  const adjustments = await payrollAdjustments('trainer', coachId, range);
+  adjustments.forEach(function (x) { if (x.adj_type === 'bonus') extras += Number(x.amount || 0); else deductions += Number(x.amount || 0); });
+
+  gross = Math.round(gross * 100) / 100;
+  extras = Math.round(extras * 100) / 100;
+  deductions = Math.round(deductions * 100) / 100;
+  return { coachId, personType: 'trainer', name: t.full_name, atts: items.length, items, gross, extras, deductions, net: Math.round((gross + extras - deductions) * 100) / 100 };
+}
+
+async function computeStaffPayroll(staffId, range, opts) {
+  opts = opts || {};
   const s = await db.prepare('SELECT * FROM staff WHERE id = ?').get(staffId);
   if (!s) return null;
   const rate = await db.prepare('SELECT * FROM staff_rates WHERE staff_id = ?').get(staffId);
-  const attendance = await db.prepare('SELECT * FROM staff_attendance WHERE staff_id = ? AND substr(date,1,7) = ?').all(staffId, month);
+  const attendance = await db.prepare('SELECT * FROM staff_attendance WHERE staff_id = ? AND date >= ? AND date <= ?').all(staffId, range.from, range.to);
   let gross = 0;
   if (rate && rate.pay_system === 'shift') {
     const shiftVal = Number(rate.shift_value || 0);
@@ -666,61 +774,213 @@ async function computeStaffPayroll(staffId, month) {
       gross += v;
     });
   } else {
-    // شهري: راتب ثابت (يُحتسب كامل بغض النظر عن أيام الحضور، مع خصم الغياب حسب الأيام)
+    // شهري: راتب ثابت للفترة (يُحتسب كامل بغض النظر عن أيام الحضور، مع خصم الغياب حسب الأيام)
     gross = Number((rate && rate.monthly_salary) || s.salary || 0);
     const dayValue = Number((rate && rate.day_value) || 0);
     const absDays = attendance.filter(a => a.status === 'غائب').length;
     if (absDays > 0 && dayValue > 0) gross = gross - (absDays * dayValue);
   }
   let extras = 0, deductions = 0;
-  const adjustments = await db.prepare(`SELECT * FROM salary_adjustments WHERE staff_id = ? AND period = ?`).all(staffId, month);
+  const adjustments = await payrollAdjustments('staff', staffId, range);
   adjustments.forEach(x => { if (x.adj_type === 'bonus') extras += Number(x.amount || 0); else deductions += Number(x.amount || 0); });
-  return { staffId, personType: 'staff', name: s.full_name, atts: attendance.length, gross, extras, deductions, net: Math.round((gross + extras - deductions) * 100) / 100 };
+  gross = Math.round(gross * 100) / 100;
+  extras = Math.round(extras * 100) / 100;
+  deductions = Math.round(deductions * 100) / 100;
+  return { staffId, personType: 'staff', name: s.full_name, atts: attendance.length, items: [], gross, extras, deductions, net: Math.round((gross + extras - deductions) * 100) / 100 };
 }
+
+/* ترحيل كسول: الكشوف الشهرية القديمة (YYYY-MM) ليس لها بنود مرتبطة.
+   نربط حصصها مرة واحدة حتى لا تظهر كحصص غير مستحقة مرة أخرى. */
+async function backfillLegacyPayrollItems(range, personId) {
+  const legacy = await db.prepare(`SELECT p.* FROM payroll p
+    WHERE p.person_type='trainer' AND p.coach_id IS NOT NULL
+      AND p.period GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'
+      AND NOT EXISTS (SELECT 1 FROM payroll_items i WHERE i.payroll_id = p.id)`
+    + (personId ? ' AND p.coach_id = ?' : '')).all(...(personId ? [personId] : []));
+  if (!legacy.length) return;
+  const pol = (await getPolicy()).pol;
+  for (const p of legacy) {
+    const pr = parsePeriod(p.period, p.from_date, p.to_date);
+    if (pr.to < range.from || pr.from > range.to) continue;
+    const atts = await db.prepare(`SELECT a.*, g.name AS group_name FROM trainer_session_attendance a
+      LEFT JOIN groups g ON g.id = a.group_id
+      WHERE a.date >= ? AND a.date <= ? AND (a.coach_id = ? OR a.substitute_coach_id = ?)`).all(pr.from, pr.to, p.coach_id, p.coach_id);
+    for (const a of atts) {
+      const isSub = Number(a.substitute_coach_id || 0) === Number(p.coach_id);
+      const type = isSub ? 'substitute' : 'trainer';
+      const amount = a.status === 'غائب' ? 0 : amountForAttendance(a, pol);
+      const title = (isSub ? 'بديل: ' : '') + (a.group_name || ('حصة #' + a.session_id)) + (a.start_time ? ' — ' + a.start_time : '');
+      await db.prepare('INSERT OR IGNORE INTO payroll_items (payroll_id, source_type, source_id, work_date, title, amount) VALUES (?,?,?,?,?,?)')
+        .run(p.id, type, a.id, a.date, title, Math.round(Number(amount || 0) * 100) / 100);
+    }
+    const priv = await db.prepare(`SELECT ps.*, sw.full_name AS swimmer_name FROM private_sessions ps
+      LEFT JOIN swimmers sw ON sw.id = ps.swimmer_id
+      WHERE ps.coach_id = ? AND ps.date >= ? AND ps.date <= ? AND ps.status IN ('present','late')`).all(p.coach_id, pr.from, pr.to);
+    for (const s of priv) {
+      await db.prepare('INSERT OR IGNORE INTO payroll_items (payroll_id, source_type, source_id, work_date, title, amount) VALUES (?,?,?,?,?,?)')
+        .run(p.id, 'private', s.id, s.date, 'تدريب خاص — ' + (s.swimmer_name || ''), Math.round(Number(s.rate || 0) * 100) / 100);
+    }
+  }
+}
+
+/* قائمة الحصص غير المستحقة (لعرضها للمستخدم قبل الاستحقاق) */
+async function listPendingTrainerItems(range, personId) {
+  const pol = (await getPolicy()).pol;
+  await backfillLegacyPayrollItems(range, personId);
+  const acc = await accruedKeysForRange(range);
+  const items = [];
+  const coachWhere = personId ? ' AND a.coach_id = ?' : '';
+  const subWhere = personId ? ' AND a.substitute_coach_id = ?' : ' AND a.substitute_coach_id IS NOT NULL';
+  const privWhere = personId ? ' AND ps.coach_id = ?' : '';
+  const aArgs = personId ? [range.from, range.to, personId] : [range.from, range.to];
+  const pArgs = personId ? [range.from, range.to, personId] : [range.from, range.to];
+
+  const atts = await db.prepare(`SELECT a.*, g.name AS group_name, c.full_name AS coach_name FROM trainer_session_attendance a
+    LEFT JOIN groups g ON g.id = a.group_id LEFT JOIN coaches c ON c.id = a.coach_id
+    WHERE a.date >= ? AND a.date <= ?` + coachWhere + ` ORDER BY a.date, a.start_time`).all(...aArgs);
+  atts.forEach(function (a) {
+    const key = keyOf('trainer', a.id);
+    if (acc.has(key)) return;
+    const amount = a.status === 'غائب' ? 0 : amountForAttendance(a, pol);
+    items.push({
+      key, source_type: 'trainer', source_id: a.id, person_id: a.coach_id, person_name: a.coach_name || '',
+      date: a.date, title: (a.group_name || ('حصة #' + a.session_id)) + (a.start_time ? ' — ' + a.start_time : ''),
+      status: a.status, amount: Math.round(Number(amount || 0) * 100) / 100
+    });
+  });
+
+  const subs = await db.prepare(`SELECT a.*, g.name AS group_name, c.full_name AS coach_name FROM trainer_session_attendance a
+    LEFT JOIN groups g ON g.id = a.group_id LEFT JOIN coaches c ON c.id = a.substitute_coach_id
+    WHERE a.date >= ? AND a.date <= ?` + subWhere + ` ORDER BY a.date, a.start_time`).all(...aArgs);
+  subs.forEach(function (a) {
+    const key = keyOf('substitute', a.id);
+    if (acc.has(key)) return;
+    items.push({
+      key, source_type: 'substitute', source_id: a.id, person_id: a.substitute_coach_id, person_name: a.coach_name || '',
+      date: a.date, title: 'بديل: ' + (a.group_name || ('حصة #' + a.session_id)),
+      status: a.status, amount: Math.round(Number(amountForAttendance(a, pol) || 0) * 100) / 100
+    });
+  });
+
+  const priv = await db.prepare(`SELECT ps.*, sw.full_name AS swimmer_name, c.full_name AS coach_name FROM private_sessions ps
+    LEFT JOIN swimmers sw ON sw.id = ps.swimmer_id LEFT JOIN coaches c ON c.id = ps.coach_id
+    WHERE ps.date >= ? AND ps.date <= ? AND ps.status IN ('present','late')` + privWhere + ` ORDER BY ps.date, ps.start_time`).all(...pArgs);
+  priv.forEach(function (s) {
+    const key = keyOf('private', s.id);
+    if (acc.has(key)) return;
+    items.push({
+      key, source_type: 'private', source_id: s.id, person_id: s.coach_id, person_name: s.coach_name || '',
+      date: s.date, title: 'تدريب خاص — ' + (s.swimmer_name || ''),
+      status: PRIVATE_STATUS_AR[s.status] || s.status, amount: Math.round(Number(s.rate || 0) * 100) / 100
+    });
+  });
+
+  items.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+  return items;
+}
+
+router.get('/payroll/pending', async function (req, res) {
+  if (!canView(req.currentUser, 'payroll')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
+  const range = rangeFromQuery(req.query);
+  const personId = Number(req.query.person_id) || 0;
+  const items = await listPendingTrainerItems(range, personId);
+  const total = items.reduce(function (s, it) { return s + Number(it.amount || 0); }, 0);
+  res.json({ ok: true, items, count: items.length, total: Math.round(total * 100) / 100, range });
+});
 
 /* إنشاء/تحديث كشف لفترة لمجموعة أشخاص (مدربين أو موظفين) */
 router.post('/payroll/generate', async function (req, res) {
   if (!canAdd(req.currentUser, 'payroll')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
-  const month = String(req.body.month || today().slice(0, 7));
+  const range = rangeFromQuery(req.body);
   const ptype = req.body.type === 'staff' ? 'staff' : 'trainer';
   const ids = (Array.isArray(req.body.ids) ? req.body.ids : []).map(Number).filter(n => Number.isFinite(n) && n > 0);
   const results = [];
   if (ptype === 'trainer') {
     const list = ids.length ? ids : (await db.prepare('SELECT id FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), '') + '').all()).map(r => r.id);
     for (const id of list) {
-      const p = await computeTrainerPayroll(id, month);
+      const existing = await findPayroll('trainer', id, range);
+      const p = await computeTrainerPayroll(id, range, { payrollId: existing && existing.id, includeNew: true });
       if (!p) continue;
-      await upsertPayroll(p, month, req);
+      if (!p.items.length && !existing && !p.extras && !p.deductions) continue;
+      await upsertPayroll(p, range, req, { payrollId: existing && existing.id });
       results.push(p);
     }
   } else {
     const list = ids.length ? ids : (await db.prepare('SELECT id FROM staff').all()).map(r => r.id);
     for (const id of list) {
-      const p = await computeStaffPayroll(id, month);
+      const p = await computeStaffPayroll(id, range);
       if (!p) continue;
-      await upsertPayroll(p, month, req);
+      await upsertPayroll(p, range, req);
       results.push(p);
     }
   }
-  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'payroll', 0, 'توليد كشوف مستحقات ' + (ptype === 'trainer' ? 'مدربين' : 'موظفين') + ' لشهر ' + month + ' (' + results.length + ' كشف)', req);
+  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'payroll', 0, 'توليد كشوف مستحقات ' + (ptype === 'trainer' ? 'مدربين' : 'موظفين') + ' للفترة ' + range.from + ' ← ' + range.to + ' (' + results.length + ' كشف)', req);
   res.json({ ok: true, count: results.length });
 });
 
-async function upsertPayroll(p, month, req) {
-  const existing = p.personType === 'trainer'
-    ? await db.prepare("SELECT * FROM payroll WHERE person_type='trainer' AND coach_id = ? AND period = ?").get(p.coachId, month)
-    : await db.prepare("SELECT * FROM payroll WHERE person_type='staff' AND staff_id = ? AND period = ?").get(p.staffId, month);
-  const values = [p.personType, p.coachId || null, p.staffId || null, month, p.gross, p.extras, p.deductions, p.net];
+/* استحقاق حصص محددة (جزء أو كل الحصص) — تظهر مرة واحدة فقط حتى تُسجَّل حصص جديدة */
+router.post('/payroll/accrue', async function (req, res) {
+  if (!canAdd(req.currentUser, 'payroll')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
+  const range = rangeFromQuery(req.body);
+  const keys = (Array.isArray(req.body.keys) ? req.body.keys : []).map(String).filter(Boolean);
+  if (!keys.length) return res.json({ ok: false, error: 'اختر حصة واحدة على الأقل' });
+  const groups = {};
+  for (const k of keys) {
+    const parsed = parseKey(k);
+    if (!parsed.id || ['trainer', 'substitute', 'private'].indexOf(parsed.type) < 0) continue;
+    let owner = 0;
+    if (parsed.type === 'private') {
+      const s = await db.prepare('SELECT coach_id FROM private_sessions WHERE id = ?').get(parsed.id);
+      owner = s ? Number(s.coach_id || 0) : 0;
+    } else {
+      const a = await db.prepare('SELECT coach_id, substitute_coach_id FROM trainer_session_attendance WHERE id = ?').get(parsed.id);
+      if (a) owner = Number(parsed.type === 'substitute' ? (a.substitute_coach_id || 0) : (a.coach_id || 0));
+    }
+    if (!owner) continue;
+    if (!groups[owner]) groups[owner] = [];
+    groups[owner].push(keyOf(parsed.type, parsed.id));
+  }
+  let count = 0;
+  for (const coachId of Object.keys(groups)) {
+    const id = Number(coachId);
+    const existing = await findPayroll('trainer', id, range);
+    const p = await computeTrainerPayroll(id, range, { payrollId: existing && existing.id, includeNew: true, keys: groups[coachId] });
+    if (!p || (!p.items.length && !existing)) continue;
+    await upsertPayroll(p, range, req, { payrollId: existing && existing.id });
+    count++;
+  }
+  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'payroll', 0, 'استحقاق ' + keys.length + ' حصة للفترة ' + range.from + ' ← ' + range.to + ' (' + count + ' كشف)', req);
+  res.json({ ok: true, count, selected: keys.length });
+});
+
+async function upsertPayroll(p, range, req, opts) {
+  opts = opts || {};
+  const existing = opts.payrollId
+    ? await db.prepare('SELECT * FROM payroll WHERE id = ?').get(opts.payrollId)
+    : await findPayroll(p.personType, p.coachId || p.staffId, range);
+  const key = periodKey(range.from, range.to);
+  const paid = existing ? Number(existing.paid_amount || 0) : 0;
+  const remaining = Math.round((Number(p.net || 0) - paid) * 100) / 100;
+  const status = remaining <= 0 ? 'مسدد' : (paid > 0 ? 'مدفوع جزئياً' : 'مستحق');
+  let payrollId = existing ? existing.id : 0;
   if (existing) {
     // لا نلمس المدفوع إذا كان قد صُرف بالفعل؛ فقط نحدّث الجانب الاستحقاقي
-    const paid = Number(existing.paid_amount || 0);
-    const remaining = Math.round((p.net - paid) * 100) / 100;
-    await db.prepare(`UPDATE payroll SET gross=?, extras=?, deductions=?, net=?, remaining=?, status=?, updated_at=? WHERE id=?`)
-      .run(p.gross, p.extras, p.deductions, p.net, remaining, remaining <= 0 ? 'مسدد' : (paid > 0 ? 'مدفوع جزئياً' : 'مستحق'), new Date().toLocaleString('sv-SE').replace('T', ' '), existing.id);
-    return existing.id;
+    await db.prepare(`UPDATE payroll SET period=?, from_date=?, to_date=?, gross=?, extras=?, deductions=?, net=?, remaining=?, status=?, updated_at=? WHERE id=?`)
+      .run(key, range.from, range.to, p.gross, p.extras, p.deductions, p.net, remaining, status, new Date().toLocaleString('sv-SE').replace('T', ' '), existing.id);
+  } else {
+    const info = await db.prepare(`INSERT INTO payroll (person_type, coach_id, staff_id, period, from_date, to_date, gross, extras, deductions, net, paid_amount, remaining, status, note) VALUES (?,?,?,?,?,?,?,?,?,?,0,?,'مستحق','مولّد تلقائياً')`)
+      .run(p.personType, p.coachId || null, p.staffId || null, key, range.from, range.to, p.gross, p.extras, p.deductions, p.net, p.net);
+    payrollId = Number(info.lastInsertRowid || 0);
   }
-  const info = await db.prepare(`INSERT INTO payroll (person_type, coach_id, staff_id, period, gross, extras, deductions, net, paid_amount, remaining, status, note) VALUES (?,?,?,?,?,?,?,?,0,?,'مستحق','مولّد تلقائياً')`).run(...values, p.net);
-  return info.lastInsertRowid;
+  /* مزامنة بنود الكشف حتى لا تُحتسب الحصة مرتين */
+  if (payrollId && Array.isArray(p.items)) {
+    await db.prepare('DELETE FROM payroll_items WHERE payroll_id = ?').run(payrollId);
+    for (const it of p.items) {
+      await db.prepare('INSERT OR IGNORE INTO payroll_items (payroll_id, source_type, source_id, work_date, title, amount) VALUES (?,?,?,?,?,?)')
+        .run(payrollId, it.source_type, it.source_id, it.work_date, it.title || '', it.amount || 0);
+    }
+  }
+  return payrollId;
 }
 
 /* حفظ قالب الكود الجاهز للتحويل (يُستخدم لكل الكباتن — قابل للتعديل في أي وقت) */
@@ -742,29 +1002,72 @@ router.get('/payroll/:id', async function (req, res) {
     LEFT JOIN branches b ON b.id = p.branch_id
     WHERE p.id = ?`).get(id);
   if (!row) return res.redirect('/payroll');
-  const month = row.period;
+  const range = parsePeriod(row.period, row.from_date, row.to_date);
+  const label = periodLabel(row);
   let statementRows = [];
   if (row.person_type === 'trainer' && row.coach_id) {
-    statementRows = await db.prepare(`SELECT a.*, g.name AS group_name, COALESCE(sc.full_name, a.substitute_name) AS substitute_name FROM trainer_session_attendance a LEFT JOIN groups g ON g.id=a.group_id LEFT JOIN coaches sc ON sc.id=a.substitute_coach_id WHERE a.coach_id = ? AND substr(a.date,1,7) = ? ORDER BY a.date`).all(row.coach_id, month);
-    const priv = await db.prepare(`SELECT ps.*, sw.full_name AS swimmer_name FROM private_sessions ps LEFT JOIN swimmers sw ON sw.id = ps.swimmer_id WHERE ps.coach_id = ? AND substr(ps.date,1,7) = ? ORDER BY ps.date`).all(row.coach_id, month);
-    priv.forEach(p => {
-      statementRows.push({
-        date: p.date, start_time: p.start_time, session_id: null,
-        group_name: 'تدريب خاص — ' + (p.swimmer_name || ''),
-        status: PRIVATE_STATUS_AR[p.status] || p.status,
-        session_rate: Number(p.rate || 0), _private: true
+    const items = await db.prepare('SELECT * FROM payroll_items WHERE payroll_id = ? ORDER BY work_date, id').all(id);
+    if (items.length) {
+      const attIds = items.filter(function (it) { return it.source_type === 'trainer' || it.source_type === 'substitute'; }).map(function (it) { return it.source_id; });
+      const privIds = items.filter(function (it) { return it.source_type === 'private'; }).map(function (it) { return it.source_id; });
+      const attMap = {};
+      if (attIds.length) {
+        const ph = attIds.map(function () { return '?'; }).join(',');
+        const atts = await db.prepare(`SELECT a.*, g.name AS group_name, COALESCE(sc.full_name, a.substitute_name) AS substitute_name
+          FROM trainer_session_attendance a LEFT JOIN groups g ON g.id=a.group_id LEFT JOIN coaches sc ON sc.id=a.substitute_coach_id
+          WHERE a.id IN (` + ph + `)`).all(...attIds);
+        atts.forEach(function (a) { attMap[a.id] = a; });
+      }
+      const privMap = {};
+      if (privIds.length) {
+        const ph = privIds.map(function () { return '?'; }).join(',');
+        const privs = await db.prepare(`SELECT ps.*, sw.full_name AS swimmer_name FROM private_sessions ps
+          LEFT JOIN swimmers sw ON sw.id = ps.swimmer_id WHERE ps.id IN (` + ph + `)`).all(...privIds);
+        privs.forEach(function (p) { privMap[p.id] = p; });
+      }
+      items.forEach(function (it) {
+        if (it.source_type === 'private') {
+          const p = privMap[it.source_id];
+          if (!p) return;
+          statementRows.push({
+            date: p.date, start_time: p.start_time, session_id: null,
+            group_name: 'تدريب خاص — ' + (p.swimmer_name || ''),
+            status: PRIVATE_STATUS_AR[p.status] || p.status,
+            session_rate: Number(it.amount || p.rate || 0), _private: true
+          });
+        } else {
+          const a = attMap[it.source_id];
+          if (!a) return;
+          statementRows.push(Object.assign({}, a, {
+            session_rate: Number(it.amount || 0),
+            _substitute: it.source_type === 'substitute'
+          }));
+        }
       });
-    });
-    statementRows.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+      statementRows.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+    } else {
+      /* كشوف قديمة بدون بنود مرتبطة: نعرض كل حضور الفترة */
+      statementRows = await db.prepare(`SELECT a.*, g.name AS group_name, COALESCE(sc.full_name, a.substitute_name) AS substitute_name FROM trainer_session_attendance a LEFT JOIN groups g ON g.id=a.group_id LEFT JOIN coaches sc ON sc.id=a.substitute_coach_id WHERE a.coach_id = ? AND a.date >= ? AND a.date <= ? ORDER BY a.date`).all(row.coach_id, range.from, range.to);
+      const priv = await db.prepare(`SELECT ps.*, sw.full_name AS swimmer_name FROM private_sessions ps LEFT JOIN swimmers sw ON sw.id = ps.swimmer_id WHERE ps.coach_id = ? AND ps.date >= ? AND ps.date <= ? ORDER BY ps.date`).all(row.coach_id, range.from, range.to);
+      priv.forEach(p => {
+        statementRows.push({
+          date: p.date, start_time: p.start_time, session_id: null,
+          group_name: 'تدريب خاص — ' + (p.swimmer_name || ''),
+          status: PRIVATE_STATUS_AR[p.status] || p.status,
+          session_rate: Number(p.rate || 0), _private: true
+        });
+      });
+      statementRows.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+    }
   } else if (row.person_type === 'staff' && row.staff_id) {
-    statementRows = await db.prepare('SELECT * FROM staff_attendance WHERE staff_id = ? AND substr(date,1,7) = ? ORDER BY date').all(row.staff_id, month);
+    statementRows = await db.prepare('SELECT * FROM staff_attendance WHERE staff_id = ? AND date >= ? AND date <= ? ORDER BY date').all(row.staff_id, range.from, range.to);
   }
-  const adjustments = await db.prepare(`SELECT * FROM salary_adjustments WHERE ` + (row.person_type === 'trainer' ? 'coach_id = ?' : 'staff_id = ?') + ` AND period = ?`).all(row.person_type === 'trainer' ? row.coach_id : row.staff_id, month);
+  const adjustments = await payrollAdjustments(row.person_type, row.person_type === 'trainer' ? row.coach_id : row.staff_id, range);
   const pays = await db.prepare(`SELECT pt.*, u.full_name AS payer_name FROM payroll_transactions pt LEFT JOIN users u ON u.id = pt.created_by WHERE pt.payroll_id = ? ORDER BY pt.paid_date`).all(id);
   const pol = (await getPolicy()).pol;
   res.render('attendance_payroll/payroll_detail', {
     title: 'كشف حساب ' + (row.coach_name || row.staff_name || ''), active: 'payroll',
-    row, statementRows, adjustments, pays, month, pol,
+    row, statementRows, adjustments, pays, month: label, periodLabel: label, range, pol,
     STATUS: row.person_type === 'trainer' ? TRAINER_STATUS : STAFF_STATUS,
     canEdit: canEdit(req.currentUser, 'payroll'), canDel: canDel(req.currentUser, 'payroll'),
     canExport: canExport(req.currentUser, 'payroll'), PAY_METHODS, money, fmtMoney, fmtDate
@@ -798,7 +1101,7 @@ router.post('/payroll/:id/pay', async function (req, res) {
   const name = (meta && meta.pname) || ('#' + id);
   try {
     const expInfo = await db.prepare(`INSERT INTO expenses (category, date, description, amount, payment_method, beneficiary, status, created_by) VALUES ('رواتب وأجور', ?, ?, ?, ?, ?, 'معتمد', ?)`)
-      .run(paidDate, 'صرف مستحقات: ' + name + ' (شهر ' + row.period + ')' + (transferCode ? ' — كود: ' + transferCode : ''), amount, method, name, req.currentUser.id);
+      .run(paidDate, 'صرف مستحقات: ' + name + ' (فترة ' + periodLabel(row) + ')' + (transferCode ? ' — كود: ' + transferCode : ''), amount, method, name, req.currentUser.id);
     const expId = Number(expInfo.lastInsertRowid || 0) || 0;
     if (expId) await db.prepare('UPDATE payroll_transactions SET expense_id = ? WHERE id = ?').run(expId, Number(info.lastInsertRowid || 0));
   } catch (e) { /* لا نكسر العملية */ }
@@ -843,7 +1146,7 @@ router.post('/payroll/txn/:txnId/update', async function (req, res) {
   if (txn.expense_id) {
     try {
       await db.prepare('UPDATE expenses SET date=?, description=?, amount=?, payment_method=?, beneficiary=? WHERE id=?')
-        .run(paidDate, 'صرف مستحقات: ' + pname + ' (شهر ' + p.period + ')' + (transferCode ? ' — كود: ' + transferCode : ''), amount, method, pname, txn.expense_id);
+        .run(paidDate, 'صرف مستحقات: ' + pname + ' (فترة ' + periodLabel(p) + ')' + (transferCode ? ' — كود: ' + transferCode : ''), amount, method, pname, txn.expense_id);
     } catch (e) { /* لا نكسر العملية */ }
   }
   const totals = await recomputePayrollTotals(txn.payroll_id);
@@ -884,6 +1187,7 @@ router.post('/payroll/:id/delete', async function (req, res) {
   if (row && (Number(row.paid_amount) > 0 || Number(row.approved) === 1)) {
     return res.status(403).json({ ok: false, error: 'لا يمكن حذف كشف معتمد أو تم صرفه' });
   }
+  await db.prepare('DELETE FROM payroll_items WHERE payroll_id = ?').run(id);
   await db.prepare('DELETE FROM payroll_transactions WHERE payroll_id = ?').run(id);
   await db.prepare('DELETE FROM payroll WHERE id = ?').run(id);
   audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'payroll', id, 'حذف كشف مستحقات', req);
@@ -931,10 +1235,13 @@ router.post('/rates/trainer', async function (req, res) {
   }
   /* إعادة احتساب كشوف المستحقات القائمة لهذا المدرب (تحفظ المدفوع وتعدّل المتبقي والحالة) */
   let recomputed = 0;
-  const periods = await db.prepare("SELECT DISTINCT period FROM payroll WHERE person_type='trainer' AND coach_id=?").all(coachId);
+  const periods = await db.prepare("SELECT id, period, from_date, to_date FROM payroll WHERE person_type='trainer' AND coach_id=?").all(coachId);
   for (const p of periods) {
-    const cp = await computeTrainerPayroll(coachId, p.period);
-    if (cp) { await upsertPayroll(cp, p.period, req); recomputed++; }
+    const range = parsePeriod(p.period, p.from_date, p.to_date);
+    const itemCount = await db.prepare('SELECT COUNT(*) AS c FROM payroll_items WHERE payroll_id = ?').get(p.id);
+    const legacy = !Number(itemCount && itemCount.c);
+    const cp = await computeTrainerPayroll(coachId, range, { payrollId: p.id, includeNew: legacy });
+    if (cp) { await upsertPayroll(cp, range, req, { payrollId: p.id }); recomputed++; }
   }
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'payroll', coachId, 'تحديث أسعار المدرب #' + coachId + (updAtt ? ' — تحديث ' + updAtt + ' سجل حضور' : '') + (recomputed ? ' وإعادة احتساب ' + recomputed + ' كشف مستحقات' : ''), req);
   res.json({ ok: true, updated_attendance: updAtt, recomputed: recomputed });
@@ -954,10 +1261,11 @@ router.post('/rates/staff', async function (req, res) {
   }
   /* إعادة احتساب كشوف المستحقات القائمة لهذا الموظف (تحفظ المدفوع وتعدّل المتبقي والحالة) */
   let recomputed = 0;
-  const periods = await db.prepare("SELECT DISTINCT period FROM payroll WHERE person_type='staff' AND staff_id=?").all(staffId);
+  const periods = await db.prepare("SELECT id, period, from_date, to_date FROM payroll WHERE person_type='staff' AND staff_id=?").all(staffId);
   for (const p of periods) {
-    const cp = await computeStaffPayroll(staffId, p.period);
-    if (cp) { await upsertPayroll(cp, p.period, req); recomputed++; }
+    const range = parsePeriod(p.period, p.from_date, p.to_date);
+    const cp = await computeStaffPayroll(staffId, range);
+    if (cp) { await upsertPayroll(cp, range, req, { payrollId: p.id }); recomputed++; }
   }
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'payroll', staffId, 'تحديث أجور الموظف #' + staffId + (recomputed ? ' وإعادة احتساب ' + recomputed + ' كشف مستحقات' : ''), req);
   res.json({ ok: true, recomputed: recomputed });

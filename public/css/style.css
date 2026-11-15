@@ -899,9 +899,22 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
 
 /* صفحة الخصومات والإضافات: الفلترة وحقول النموذج على الهاتف */
 @media (max-width: 768px) {
-  .deductions-page .ded-filter { flex-direction: column; align-items: stretch; flex-wrap: wrap; }
+  .deductions-page .page-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .deductions-page .page-head .spacer { display: none; }
+  .deductions-page .page-head .flex { width: 100%; }
+  .deductions-page .ded-filter { flex-direction: column; align-items: stretch; flex-wrap: wrap; width: 100%; }
   .deductions-page .ded-filter > * { flex: 1 1 100%; width: 100%; min-width: 0; }
   .deductions-page .ded-filter .btn { justify-content: center; }
+  .deductions-page .grid-2 { grid-template-columns: 1fr; gap: 12px; }
+  .deductions-page .card-body { padding: 12px; }
+  .deductions-page .form-grid { grid-template-columns: 1fr; gap: 12px; }
+  .deductions-page .form-grid .full { grid-column: auto; }
+  .deductions-page .form-group label { font-size: 12.5px; }
+  .deductions-page .form-control { width: 100%; min-width: 0; }
+  .deductions-page .form-actions { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
+  .deductions-page .form-actions .btn { width: 100%; justify-content: center; }
+  .deductions-page .table-wrap { overflow: visible; }
+  .deductions-page .rtable td[data-label]::before { flex-basis: 62px; }
 }
 
 /* ============================= المهارات في قائمة المستويات ============================= */
@@ -1242,6 +1255,18 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
 }
 
 /* ============================= كشف حساب الرواتب: ملاءمة الهاتف ============================= */
+.phone-dial-card { border-inline-start: 4px solid var(--success, #10b981); }
+.phone-dial-body { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.phone-dial-info { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; min-width: 0; }
+.phone-dial-icon { width: 44px; height: 44px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; background: rgba(16,185,129,.12); color: #10b981; font-size: 19px; flex-shrink: 0; }
+.phone-dial-title { font-size: 12px; color: var(--text-muted); font-weight: 700; }
+.phone-dial-number { font-size: 18px; font-weight: 800; letter-spacing: .5px; color: var(--text); }
+.phone-dial-btn { flex-shrink: 0; }
+@media (max-width: 768px) {
+  .phone-dial-body { align-items: stretch; }
+  .phone-dial-body .phone-dial-btn { width: 100%; justify-content: center; }
+  .phone-dial-body > .font-11 { text-align: center; }
+}
 @media (max-width: 768px) {
   #payForm { flex-direction: column; align-items: stretch; }
   #payForm .form-group { width: 100%; }
@@ -1251,6 +1276,20 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
   .page-title b { overflow-wrap: anywhere; }
   .page-head > div:first-child { min-width: 0; }
   .page-sub { overflow-wrap: anywhere; }
+}
+
+/* ============================= قائمة المستحقات: الفلترة والاستحقاق على الهاتف ============================= */
+@media (max-width: 768px) {
+  .payroll-range-form { width: 100%; flex-wrap: wrap; }
+  .payroll-range-form .form-group { flex: 1 1 46%; min-width: 0; }
+  .payroll-range-form .form-control { width: 100%; }
+  .payroll-range-form > .btn { flex: 1 1 100%; justify-content: center; }
+  #generateCard .card-body > form > .flex > .form-group { flex: 1 1 100%; min-width: 0 !important; }
+  #generateCard .card-body > form > .flex > .btn { flex: 1 1 100%; justify-content: center; }
+  #genPerson { min-width: 0 !important; width: 100%; }
+  #sessionsTools { align-items: stretch; }
+  #sessionsTools .btn { width: 100%; justify-content: center; }
+  #sessionsTable th, #sessionsTable td { white-space: normal; }
 }
 
 

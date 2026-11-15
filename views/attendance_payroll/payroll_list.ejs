@@ -2,32 +2,46 @@
 <div class="page-head">
   <div>
     <div class="page-title"><i class="fas fa-sack-dollar"></i> مستحقات ورواتب</div>
-    <div class="page-sub">كشوف مستحقات المدربين والموظفين حسب الفترة</div>
+    <div class="page-sub">كشوف مستحقات المدربين والموظفين · الفترة: <b><%= from %></b> ← <b><%= to %></b></div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
-    <form method="get" action="/payroll" class="flex gap-1">
-      <input type="month" name="month" class="form-control" value="<%= month %>">
-      <select name="type" class="form-control">
-        <option value="all">الكل</option>
-        <option value="trainer" <%= ptype === 'trainer' ? 'selected' : '' %>>المدربون</option>
-        <option value="staff" <%= ptype === 'staff' ? 'selected' : '' %>>الموظفون</option>
-      </select>
+    <form method="get" action="/payroll" class="flex gap-1 payroll-range-form">
+      <div class="form-group" style="margin:0">
+        <label class="font-11 text-muted">من تاريخ</label>
+        <input type="date" name="from" class="form-control" value="<%= from %>">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="font-11 text-muted">إلى تاريخ</label>
+        <input type="date" name="to" class="form-control" value="<%= to %>">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="font-11 text-muted">الفئة</label>
+        <select name="type" class="form-control">
+          <option value="all">الكل</option>
+          <option value="trainer" <%= ptype === 'trainer' ? 'selected' : '' %>>المدربون</option>
+          <option value="staff" <%= ptype === 'staff' ? 'selected' : '' %>>الموظفون</option>
+        </select>
+      </div>
       <button class="btn btn-outline" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
     </form>
-    <a href="/deductions?month=<%= month %>" class="btn btn-ghost"><i class="fas fa-scale-balanced"></i> الخصومات والإضافات</a>
+    <a href="/deductions?month=<%= from.slice(0,7) %>" class="btn btn-ghost"><i class="fas fa-scale-balanced"></i> الخصومات والإضافات</a>
     <a href="/rates" class="btn btn-ghost"><i class="fas fa-tags"></i> الأسعار</a>
   </div>
 </div>
 
 <div class="card" id="generateCard">
-  <div class="card-header"><i class="fas fa-wand-magic-sparkles"></i> توليد كشوف المستحقات</div>
+  <div class="card-header"><i class="fas fa-wand-magic-sparkles"></i> توليد كشوف المستحقات واستحقاق الحصص</div>
   <div class="card-body">
     <form id="genForm" method="post" novalidate>
       <div class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
         <div class="form-group" style="margin:0">
-          <label class="font-11 text-muted">الفترة</label>
-          <input type="month" name="month" class="form-control" value="<%= month %>">
+          <label class="font-11 text-muted">من تاريخ</label>
+          <input type="date" name="from" id="genFrom" class="form-control" value="<%= from %>">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="font-11 text-muted">إلى تاريخ</label>
+          <input type="date" name="to" id="genTo" class="form-control" value="<%= to %>">
         </div>
         <div class="form-group" style="margin:0">
           <label class="font-11 text-muted">الفئة</label>
@@ -37,17 +51,44 @@
           </select>
         </div>
         <div class="form-group" style="margin:0;min-width:230px" id="genPersonWrap">
-          <label class="font-11 text-muted">الشخص (اختياري — لمستحقات شخص بعينه)</label>
-          <select name="ids[]" class="form-control" id="genPerson" style="min-width:230px">
-            <option value="">— جميع أفراد الفئة —</option>
+          <label class="font-11 text-muted">الشخص (اختياري — لعرض واستحقاق حصصه)</label>
+          <select name="person_id" id="genPerson" class="form-control" style="min-width:230px">
+            <option value="">— جميع المدربين —</option>
             <% coaches.forEach(function (c) { %><option value="<%= c.id %>" data-gtype="trainer"><%= c.full_name %></option><% }); %>
             <% staff.forEach(function (s) { %><option value="<%= s.id %>" data-gtype="staff"><%= s.full_name %></option><% }); %>
           </select>
         </div>
-        <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-calculator"></i> توليد / تحديث الكشوف</button>
+        <button type="button" class="btn btn-primary btn-lg" id="previewBtn"><i class="fas fa-list-check"></i> عرض عدد الحصص</button>
+        <button type="submit" class="btn btn-outline btn-lg"><i class="fas fa-calculator"></i> توليد الكشوف للفترة</button>
       </div>
-      <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> يتم احتساب المستحقات من سجلات الحضور والخصومات تلقائياً. عند ترك "الشخص" فارغاً تُولَّد الكشوف لكل أفراد الفئة.</div>
+      <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> اختر الفترة ثم «عرض عدد الحصص» لتظهر الحصص غير المستحقة؛ حدد جزءاً أو كل الحصص ثم اضغط «تم الاستحقاق». الحصة المستحقة لا تظهر مرة أخرى حتى يتم تسجيل حضور جديد لها.</div>
     </form>
+  </div>
+</div>
+
+<div class="card" id="sessionsCard" hidden>
+  <div class="card-header">
+    <i class="fas fa-list-check"></i> الحصص المتاحة للاستحقاق
+    <span class="badge badge-info" id="sessionsCount">0</span>
+    <span class="spacer"></span>
+    <span class="font-12 text-muted">الإجمالي: <b id="sessionsTotal">0</b></span>
+  </div>
+  <div class="card-body" style="padding-bottom:0">
+    <div class="flex gap-1" style="flex-wrap:wrap;align-items:center;margin-bottom:10px" id="sessionsTools">
+      <label class="check-chip"><input type="checkbox" id="selectAllSessions" checked><span class="chip-label"><i class="fas fa-check-double"></i> تحديد الكل</span></label>
+      <span class="font-12 text-muted" id="selectedHint"></span>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-success" id="accrueBtn"><i class="fas fa-check-circle"></i> تم الاستحقاق</button>
+    </div>
+    <div class="form-hint" id="staffNote" hidden><i class="fas fa-circle-info"></i> للموظفين يُولَّد الكشف للفترة كاملة من زر «توليد كشوف الجميع».</div>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table rtable" id="sessionsTable">
+      <thead>
+        <tr><th style="width:44px">تحديد</th><th>التاريخ</th><th>الشخص</th><th>البيان</th><th>الحالة</th><th>القيمة</th></tr>
+      </thead>
+      <tbody id="sessionsBody"></tbody>
+    </table>
   </div>
 </div>
 
@@ -84,7 +125,7 @@
         <% if (rows.length) { %>
           <% rows.forEach(function (r) { %>
             <tr>
-              <td data-label="الشخص"><b><%= r.coach_name || r.staff_name || '—' %></b><% if (r.branch_name) { %><br><span class="font-11 text-muted"><%= r.branch_name %></span><% } %></td>
+              <td data-label="الشخص"><b><%= r.coach_name || r.staff_name || '—' %></b><br><span class="font-11 text-muted"><%= periodLabel(r) %></span><% if (r.branch_name) { %><br><span class="font-11 text-muted"><%= r.branch_name %></span><% } %></td>
               <td data-label="الفئة"><% if (r.person_type === 'trainer') { %><span class="badge badge-info"><i class="fas fa-user-tie"></i> مدرب</span><% } else { %><span class="badge badge-purple"><i class="fas fa-user-gear"></i> موظف</span><% } %></td>
               <td data-label="الاستحقاق"><%= money(r.gross) %></td>
               <td data-label="الإضافات" class="text-success"><%= money(r.extras) %></td>
@@ -100,6 +141,12 @@
               <td class="rt-actions" data-label="إجراءات">
                 <div class="table-actions">
                   <a href="/payroll/<%= r.id %>" class="btn btn-ghost btn-sm" title="التفاصيل"><i class="fas fa-eye"></i></a>
+                  <% var phone = r.person_type === 'trainer' ? (r.coach_phone || '') : (r.staff_phone || ''); var telHref = 'tel:' + String(phone).replace(/[^\d+]/g, ''); %>
+                  <% if (phone) { %>
+                    <a href="<%= telHref %>" class="btn btn-ghost btn-sm text-success" title="اتصال هاتفي: <%= phone %>"><i class="fas fa-phone"></i></a>
+                  <% } else { %>
+                    <button type="button" class="btn btn-ghost btn-sm" disabled title="لا يوجد رقم هاتف مسجل"><i class="fas fa-phone-slash"></i></button>
+                  <% } %>
                   <% if (canDel && Number(r.paid_amount) <= 0 && Number(r.approved) !== 1) { %>
                     <form method="POST" action="/payroll/<%= r.id %>/delete" style="display:inline;margin:0"><button type="submit" class="btn btn-ghost btn-sm text-danger" data-confirm="حذف هذا الكشف؟" title="حذف"><i class="fas fa-trash"></i></button></form>
                   <% } %>
@@ -119,6 +166,31 @@
 (function () {
   var genType = document.getElementById('genType');
   var genPerson = document.getElementById('genPerson');
+  var genFrom = document.getElementById('genFrom');
+  var genTo = document.getElementById('genTo');
+  var previewBtn = document.getElementById('previewBtn');
+  var accrueBtn = document.getElementById('accrueBtn');
+  var sessionsCard = document.getElementById('sessionsCard');
+  var sessionsBody = document.getElementById('sessionsBody');
+  var sessionsCount = document.getElementById('sessionsCount');
+  var sessionsTotal = document.getElementById('sessionsTotal');
+  var selectedHint = document.getElementById('selectedHint');
+  var selectAll = document.getElementById('selectAllSessions');
+  var staffNote = document.getElementById('staffNote');
+  var previewRows = [];
+
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function cash(n) {
+    return Number(n || 0).toLocaleString('ar-EG', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' ج.م';
+  }
+  function statusBadge(s) {
+    var cls = s === 'حاضر' ? 'badge-success' : s === 'متأخر' ? 'badge-warning' : s === 'غائب' ? 'badge-danger' : 'badge-info';
+    return '<span class="badge ' + cls + '">' + esc(s || '—') + '</span>';
+  }
   function filterPerson() {
     var t = genType.value;
     Array.prototype.slice.call(genPerson.options).forEach(function (o) {
@@ -126,27 +198,108 @@
       if (!g) { o.style.display = ''; return; }
       o.style.display = g === t ? '' : 'none';
     });
+    var placeholder = genPerson.options[0];
+    if (placeholder) placeholder.textContent = t === 'staff' ? '— جميع الموظفين —' : '— جميع المدربين —';
     var sel = Array.prototype.slice.call(genPerson.selectedOptions).filter(function (o) { var g = o.getAttribute('data-gtype'); return g && g !== t; });
     sel.forEach(function (o) { o.selected = false; });
+    previewBtn.style.display = t === 'trainer' ? '' : 'none';
+    if (t !== 'trainer') { sessionsCard.hidden = true; }
   }
+
+  function updateTotals() {
+    var checks = Array.prototype.slice.call(sessionsBody.querySelectorAll('.sess-check'));
+    var selected = checks.filter(function (c) { return c.checked; });
+    var total = selected.reduce(function (sum, c) { return sum + Number(c.getAttribute('data-amount') || 0); }, 0);
+    sessionsCount.textContent = checks.length;
+    sessionsTotal.textContent = cash(total);
+    selectedHint.textContent = checks.length ? ('تم تحديد ' + selected.length + ' من ' + checks.length + ' حصة') : '';
+    selectAll.checked = checks.length > 0 && selected.length === checks.length;
+    selectAll.indeterminate = selected.length > 0 && selected.length < checks.length;
+    accrueBtn.disabled = selected.length === 0;
+  }
+
+  function renderSessions(items) {
+    previewRows = items || [];
+    sessionsBody.innerHTML = previewRows.map(function (it) {
+      return '<tr>' +
+        '<td data-label="تحديد"><input type="checkbox" class="sess-check" value="' + esc(it.key) + '" data-amount="' + Number(it.amount || 0) + '" checked></td>' +
+        '<td data-label="التاريخ">' + esc(it.date || '—') + '</td>' +
+        '<td data-label="الشخص">' + esc(it.person_name || '—') + '</td>' +
+        '<td data-label="البيان">' + esc(it.title || '—') + '</td>' +
+        '<td data-label="الحالة">' + statusBadge(it.status) + '</td>' +
+        '<td data-label="القيمة">' + cash(it.amount) + '</td>' +
+        '</tr>';
+    }).join('');
+    sessionsCard.hidden = previewRows.length === 0;
+    updateTotals();
+  }
+
+  function rangePayload() {
+    return { from: genFrom.value, to: genTo.value };
+  }
+
   genType.addEventListener('change', filterPerson);
   filterPerson();
+
+  selectAll.addEventListener('change', function () {
+    Array.prototype.slice.call(sessionsBody.querySelectorAll('.sess-check')).forEach(function (c) { c.checked = selectAll.checked; });
+    updateTotals();
+  });
+  sessionsBody.addEventListener('change', function (e) {
+    if (e.target && e.target.classList.contains('sess-check')) updateTotals();
+  });
+
+  previewBtn.addEventListener('click', function () {
+    if (genType.value !== 'trainer') {
+      App.showToast('الموظفون يُولَّد كشفهم للفترة كاملة من زر «توليد كشوف الجميع»', 'info');
+      return;
+    }
+    var params = rangePayload();
+    params.person_id = genPerson.value || '';
+    if (!params.from || !params.to) { App.showToast('حدد بداية ونهاية الفترة', 'warning'); return; }
+    if (params.from > params.to) { App.showToast('تاريخ البداية يجب أن يسبق تاريخ النهاية', 'warning'); return; }
+    previewBtn.disabled = true;
+    staffNote.hidden = true;
+    fetch('/payroll/pending?' + new URLSearchParams(params).toString())
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        previewBtn.disabled = false;
+        if (!res.ok) { App.showToast(res.error || 'تعذر تحميل الحصص', 'error'); return; }
+        renderSessions(res.items);
+        if (!res.items.length) App.showToast('لا توجد حصص غير مستحقة في هذه الفترة', 'info');
+      })
+      .catch(function () { previewBtn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+  });
+
+  accrueBtn.addEventListener('click', function () {
+    var keys = Array.prototype.slice.call(sessionsBody.querySelectorAll('.sess-check:checked')).map(function (c) { return c.value; });
+    if (!keys.length) { App.showToast('اختر حصة واحدة على الأقل', 'warning'); return; }
+    var data = rangePayload();
+    data.keys = keys;
+    accrueBtn.disabled = true;
+    fetch('/payroll/accrue', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      accrueBtn.disabled = false;
+      if (res.ok) { App.showToast('تم استحقاق ' + (res.selected || keys.length) + ' حصة في ' + (res.count || 0) + ' كشف', 'success'); setTimeout(function () { location.reload(); }, 800); }
+      else { App.showToast(res.error || 'تعذر الاستحقاق', 'error'); }
+    }).catch(function () { accrueBtn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+  });
+
   document.getElementById('genForm').addEventListener('submit', function (e) {
     e.preventDefault();
-    var form = e.target;
-    var fd = new FormData(form);
-    var data = {};
-    fd.forEach(function (v, k) {
-      if (k === 'ids[]') { if (!data.ids) data.ids = []; data.ids.push(v); }
-      else data[k] = v;
-    });
-    var btn = form.querySelector('button[type="submit"]');
+    var data = rangePayload();
+    data.type = genType.value;
+    if (genPerson.value) data.ids = [genPerson.value];
+    if (!data.from || !data.to) { App.showToast('حدد بداية ونهاية الفترة', 'warning'); return; }
+    if (data.from > data.to) { App.showToast('تاريخ البداية يجب أن يسبق تاريخ النهاية', 'warning'); return; }
+    var btn = e.target.querySelector('button[type="submit"]');
     btn.disabled = true;
     fetch('/payroll/generate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
     }).then(function (r) { return r.json(); }).then(function (res) {
       btn.disabled = false;
-      if (res.ok) { App.showToast('تم توليد ' + (res.count || 0) + ' كشف', 'success'); setTimeout(function () { location.reload(); }, 700); }
+      if (res.ok) { App.showToast('تم توليد ' + (res.count || 0) + ' كشف', 'success'); setTimeout(function () { location.reload(); }, 800); }
       else { App.showToast(res.error || 'فشل التوليد', 'error'); }
     }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
   });

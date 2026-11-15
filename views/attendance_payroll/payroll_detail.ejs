@@ -2,11 +2,11 @@
 <div class="page-head no-print">
   <div>
     <div class="page-title"><i class="fas fa-file-invoice-dollar"></i> كشف حساب: <b><%= row.coach_name || row.staff_name %></b></div>
-    <div class="page-sub">الفترة: <b><%= month %></b> · <%= row.person_type === 'trainer' ? 'مدرب' : 'موظف' %><% if (row.branch_name) { %> · <%= row.branch_name %><% } %></div>
+    <div class="page-sub">الفترة: <b><%= periodLabel %></b> · <%= row.person_type === 'trainer' ? 'مدرب' : 'موظف' %><% if (row.branch_name) { %> · <%= row.branch_name %><% } %></div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
-    <a href="/payroll?month=<%= month %>" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل الكشوف</a>
+    <a href="/payroll?from=<%= range.from %>&to=<%= range.to %>" class="btn btn-outline"><i class="fas fa-arrow-right"></i> كل الكشوف</a>
     <button class="btn btn-primary" data-print onclick="window.print()"><i class="fas fa-file-pdf"></i> طباعة / PDF</button>
   </div>
 </div>
@@ -37,6 +37,22 @@
       <button type="button" class="btn btn-primary" id="tplSave"><i class="fas fa-floppy-disk"></i> حفظ القالب</button>
     </div>
     <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> عند اختيار <b>Vodafone Cash</b> يُولَّد الكود تلقائياً برقم الكابتن والمبلغ (مع زر اتصال بالكود مباشرة)، وعند اختيار <b>InstaPay</b> يظهر زر فتح التطبيق — ويمكنك تعديل القالب في أي وقت.</div>
+  </div>
+</div>
+<% } %>
+
+<% if (personPhone) { %>
+<div class="card no-print phone-dial-card">
+  <div class="card-body phone-dial-body">
+    <div class="phone-dial-info">
+      <span class="phone-dial-icon"><i class="fas fa-mobile-screen-button"></i></span>
+      <div>
+        <div class="phone-dial-title">هاتف <%= row.person_type === 'trainer' ? 'المدرب' : 'الموظف' %></div>
+        <div class="phone-dial-number" dir="ltr"><%= personPhone %></div>
+      </div>
+    </div>
+    <a href="tel:<%= String(personPhone).replace(/[^\d+]/g, '') %>" class="btn btn-success btn-lg phone-dial-btn"><i class="fas fa-phone-volume"></i> اتصال</a>
+    <span class="font-11 text-muted">يفتح لوحة الاتصال بالرقم مباشرة دون اتصال تلقائي.</span>
   </div>
 </div>
 <% } %>
@@ -95,7 +111,7 @@
 <% if (canEdit || pays.length > 0) { %>
 <div class="card no-print" id="waCard"
   data-name="<%= personName %>"
-  data-month="<%= month %>"
+  data-month="<%= periodLabel %>"
   data-remaining="<%= row.remaining %>"
   data-status="<%= row.status %>"
   data-site="<%= siteName %>"
