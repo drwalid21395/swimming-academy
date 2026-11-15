@@ -141,19 +141,25 @@
       <video id="cameraVideo" playsinline autoplay muted></video>
       <div class="camera-error" id="cameraError" hidden></div>
       <canvas id="cameraCanvas" hidden></canvas>
+      <canvas id="cameraAdjust" hidden></canvas>
       <canvas id="cameraResult" hidden></canvas>
-      <div id="cameraResultActions" hidden>
-        <button type="button" class="btn btn-primary" id="cameraUse"><i class="fas fa-check"></i> استخدام الصورة المُقَصَّرة</button>
-        <button type="button" class="btn btn-outline" id="cameraRetake"><i class="fas fa-rotate-left"></i> إعادة التقاط</button>
+      <div class="camera-overlay-actions" id="cameraAdjustActions" hidden>
+        <button type="button" class="btn btn-primary" id="cameraCrop"><i class="fas fa-crop-simple"></i> قص الصفحة</button>
+        <button type="button" class="btn btn-outline" id="cameraUseOriginal"><i class="fas fa-image"></i> استخدام الصورة الأصلية</button>
+        <button type="button" class="btn btn-ghost" data-camera-retake><i class="fas fa-rotate-left"></i> إعادة التقاط</button>
+      </div>
+      <div class="camera-overlay-actions" id="cameraResultActions" hidden>
+        <button type="button" class="btn btn-primary" id="cameraUse"><i class="fas fa-check"></i> استخدام الصورة</button>
+        <button type="button" class="btn btn-outline" data-camera-retake><i class="fas fa-rotate-left"></i> إعادة التقاط</button>
       </div>
     </div>
     <div class="camera-controls" id="cameraControls">
       <button type="button" class="btn btn-primary" id="cameraShoot" disabled><i class="fas fa-camera"></i> التقاط الصورة</button>
       <button type="button" class="btn btn-outline" id="cameraSwitch"><i class="fas fa-camera-rotate"></i> تحويل الكاميرا</button>
       <button type="button" class="btn btn-ghost" data-camera-close><i class="fas fa-xmark"></i> إلغاء</button>
-      <label class="camera-mode" title="يقصّ الصفحة تلقائياً ويعدّل المنظور كالاسكانر"><input type="checkbox" id="cameraScanner" checked> <span>وضع الماسح (Scanner)</span></label>
+      <label class="camera-mode" title="يحدّد حواف الصفحة تلقائياً ويسمح بتعديلها يدوياً"><input type="checkbox" id="cameraScanner" checked> <span>وضع الماسح (Scanner)</span></label>
     </div>
-    <div class="form-hint camera-tip" id="cameraTip"><i class="fas fa-circle-info"></i> ضع المستند أمام الكاميرا في إضاءة جيدة، ثم اضغط «التقاط الصورة». في وضع الماسح سيتم تحديد حواف الصفحة واقتصاصها تلقائياً.</div>
+    <div class="form-hint camera-tip" id="cameraTip"><i class="fas fa-circle-info"></i> ضع المستند أمام الكاميرا في إضاءة جيدة، ثم اضغط «التقاط الصورة». بعدها اسحب النقاط الأربع لضبط الحواف، ثم اضغط «قص الصفحة».</div>
   </div>
 </div>
 <% if (form.transfer) { %>
@@ -390,11 +396,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
   var resultCanvas = document.getElementById('cameraResult');
   var resultActions = document.getElementById('cameraResultActions');
+  var adjustCanvas = document.getElementById('cameraAdjust');
+  var adjustActions = document.getElementById('cameraAdjustActions');
   var scannerCheck = document.getElementById('cameraScanner');
   var controls = document.getElementById('cameraControls');
-  var stage = document.getElementById('cameraStage');
   var cvReady = false;
   var loadingOpenCV = false;
+  var cornerPoints = [];
+  var draggingPoint = null;
+  var adjustCtx = adjustCanvas ? adjustCanvas.getContext('2d') : null;
 
   function loadOpenCV() {
     return new Promise(function (resolve, reject) {
@@ -415,7 +425,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function showScanningState(loading) {
     var tip = document.getElementById('cameraTip');
-    if (tip) tip.innerHTML = loading ? '<i class="fas fa-spinner fa-spin"></i> جارٍ تحميل مكتبة الماسح...' : '<i class="fas fa-circle-info"></i> ضع المستند أمام الكاميرا في إضاءة جيدة، ثم اضغط «التقاط الصورة».';
+    if (tip) tip.innerHTML = loading ? '<i class="fas fa-spinner fa-spin"></i> جارٍ تحميل مكتبة الماسح...' : '<i class="fas fa-circle-info"></i> ضع المستند أمام الكاميرا في إضاءة جيدة، ثم اضغط «التقاط الصورة». بعدها اسحب النقاط الأربع لضبط الحواف، ثم اضغط «قص الصفحة».';
   }
 
   function distance(p1, p2) { return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2)); }
@@ -445,7 +455,7 @@ document.addEventListener('DOMContentLoaded', function () {
       for (var i = 0; i < contours.size(); i++) {
         var cnt = contours.get(i);
         var area = cv.contourArea(cnt);
-        if (area < imgArea * 0.08) continue;
+        if (area < imgArea * 0.06) continue;
         var peri = cv.arcLength(cnt, true);
         var approx = new cv.Mat();
         cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
@@ -481,63 +491,152 @@ document.addEventListener('DOMContentLoaded', function () {
     return { mat: dst, width: dstW, height: dstH };
   }
 
-  function setResultMode(show) {
-    video.hidden = show;
-    resultCanvas.hidden = !show;
-    resultActions.hidden = !show;
-    controls.style.display = show ? 'none' : 'flex';
-    if (show) resultActions.hidden = false;
+  function setCameraMode() {
+    video.hidden = false;
+    canvas.hidden = true;
+    resultCanvas.hidden = true;
+    resultActions.hidden = true;
+    adjustCanvas.hidden = true;
+    adjustActions.hidden = true;
+    controls.style.display = 'flex';
+  }
+  function setAdjustMode() {
+    video.hidden = true;
+    canvas.hidden = true;
+    resultCanvas.hidden = true;
+    resultActions.hidden = true;
+    adjustCanvas.hidden = false;
+    adjustActions.hidden = false;
+    controls.style.display = 'none';
+  }
+  function setResultMode() {
+    video.hidden = true;
+    canvas.hidden = true;
+    resultCanvas.hidden = false;
+    resultActions.hidden = false;
+    adjustCanvas.hidden = true;
+    adjustActions.hidden = true;
+    controls.style.display = 'none';
   }
 
-  function matToFile(mat, cb) {
-    var out = document.createElement('canvas');
-    out.width = mat.cols; out.height = mat.rows;
-    var ctx = out.getContext('2d');
-    var imgData = ctx.createImageData(mat.cols, mat.rows);
-    var data = mat.data;
-    if (data.length === imgData.data.length) imgData.data.set(data);
-    else {
-      for (var i = 0; i < imgData.data.length; i++) imgData.data[i] = data[i] || 0;
+  function getAdjustPos(e) {
+    var r = adjustCanvas.getBoundingClientRect();
+    var cx, cy;
+    if (e.touches && e.touches.length) { cx = e.touches[0].clientX; cy = e.touches[0].clientY; }
+    else { cx = e.clientX; cy = e.clientY; }
+    return {
+      x: (cx - r.left) * (adjustCanvas.width / r.width),
+      y: (cy - r.top) * (adjustCanvas.height / r.height)
+    };
+  }
+  function clampPoint(p) {
+    return {
+      x: Math.max(0, Math.min(adjustCanvas.width, p.x)),
+      y: Math.max(0, Math.min(adjustCanvas.height, p.y))
+    };
+  }
+  function findNearest(p) {
+    var r = adjustCanvas.getBoundingClientRect();
+    var scale = adjustCanvas.width / r.width;
+    var threshold = 34 * scale;
+    var best = -1, bestD = threshold;
+    for (var i = 0; i < cornerPoints.length; i++) {
+      var d = distance(p, cornerPoints[i]);
+      if (d < bestD) { bestD = d; best = i; }
     }
-    ctx.putImageData(imgData, 0, 0);
-    out.toBlob(function (blob) {
-      if (!blob) { cb(null); return; }
-      cb(new File([blob], 'scan-' + Date.now() + '.jpg', { type: 'image/jpeg' }));
-    }, 'image/jpeg', 0.92);
+    return best;
+  }
+  function drawAdjust() {
+    if (!adjustCtx) return;
+    var w = adjustCanvas.width, h = adjustCanvas.height;
+    adjustCtx.clearRect(0, 0, w, h);
+    adjustCtx.drawImage(cameraCanvas, 0, 0, w, h);
+    if (cornerPoints.length === 4) {
+      adjustCtx.save();
+      adjustCtx.strokeStyle = '#f59e0b';
+      adjustCtx.lineWidth = Math.max(3, w / 350);
+      adjustCtx.setLineDash([12, 8]);
+      adjustCtx.beginPath();
+      cornerPoints.forEach(function (p, i) { if (i === 0) adjustCtx.moveTo(p.x, p.y); else adjustCtx.lineTo(p.x, p.y); });
+      adjustCtx.closePath();
+      adjustCtx.stroke();
+      adjustCtx.restore();
+      cornerPoints.forEach(function (p, i) {
+        adjustCtx.beginPath();
+        adjustCtx.arc(p.x, p.y, Math.max(10, w / 90), 0, Math.PI * 2);
+        adjustCtx.fillStyle = draggingPoint === i ? '#f59e0b' : '#0ea5e9';
+        adjustCtx.fill();
+        adjustCtx.lineWidth = 3;
+        adjustCtx.strokeStyle = '#fff';
+        adjustCtx.stroke();
+      });
+    }
+  }
+
+  function startAdjust() {
+    if (!adjustCanvas) return;
+    adjustCanvas.width = cameraCanvas.width;
+    adjustCanvas.height = cameraCanvas.height;
+    cornerPoints = [];
+    var margin = Math.min(cameraCanvas.width, cameraCanvas.height) * 0.05;
+    var defaults = [
+      { x: margin, y: margin },
+      { x: cameraCanvas.width - margin, y: margin },
+      { x: cameraCanvas.width - margin, y: cameraCanvas.height - margin },
+      { x: margin, y: cameraCanvas.height - margin }
+    ];
+    if (scannerCheck && scannerCheck.checked && cvReady) {
+      try {
+        var src = cv.imread(cameraCanvas);
+        var corners = detectCorners(src);
+        src.delete();
+        if (corners) cornerPoints = orderPoints(corners);
+      } catch (e) { console.error('auto detect failed', e); }
+    }
+    if (!cornerPoints.length) cornerPoints = defaults;
+    setAdjustMode();
+    drawAdjust();
+  }
+
+  function doCrop() {
+    if (!cornerPoints.length || cornerPoints.length !== 4) return;
+    if (!cvReady) {
+      loadOpenCV().then(doCrop).catch(function () { useOriginal(); });
+      return;
+    }
+    try {
+      var src = cv.imread(cameraCanvas);
+      var warped = warpDocument(src, cornerPoints);
+      src.delete();
+      if (warped && warped.mat) {
+        cv.imshow(resultCanvas, warped.mat);
+        warped.mat.delete();
+        setResultMode();
+        return;
+      }
+    } catch (e) { console.error('crop failed', e); }
+    useOriginal();
+  }
+
+  function useOriginal() {
+    resultCanvas.width = cameraCanvas.width;
+    resultCanvas.height = cameraCanvas.height;
+    resultCanvas.getContext('2d').drawImage(cameraCanvas, 0, 0);
+    setResultMode();
   }
 
   function capture() {
     if (!stream || !video.videoWidth || !video.videoHeight) return;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    var ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    var useScanner = scannerCheck && scannerCheck.checked && cvReady;
-    if (useScanner) {
-      try {
-        var src = cv.imread(canvas);
-        var corners = detectCorners(src);
-        if (corners) {
-          var warped = warpDocument(src, corners);
-          if (warped && warped.mat) {
-            cv.imshow(resultCanvas, warped.mat);
-            warped.mat.delete();
-            src.delete();
-            stopStream();
-            setResultMode(true);
-            return;
-          }
-        }
-        src.delete();
-      } catch (e) { console.error('scanner error', e); }
-    }
-    // fallback: use original captured image
-    var fallbackCtx = canvas.getContext('2d');
-    resultCanvas.width = canvas.width;
-    resultCanvas.height = canvas.height;
-    resultCanvas.getContext('2d').drawImage(canvas, 0, 0);
+    cameraCanvas.width = video.videoWidth;
+    cameraCanvas.height = video.videoHeight;
+    var ctx = cameraCanvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, cameraCanvas.width, cameraCanvas.height);
     stopStream();
-    setResultMode(true);
+    if (scannerCheck && scannerCheck.checked) {
+      startAdjust();
+    } else {
+      useOriginal();
+    }
   }
 
   function finishCapture() {
@@ -549,12 +648,12 @@ document.addEventListener('DOMContentLoaded', function () {
       var file = new File([blob], 'scan-' + Date.now() + '.jpg', { type: 'image/jpeg' });
       attachFile(currentInput, file);
       closeModal();
-      setTimeout(function () { setResultMode(false); }, 200);
+      setTimeout(setCameraMode, 200);
     }, 'image/jpeg', 0.92);
   }
 
   function retake() {
-    setResultMode(false);
+    setCameraMode();
     startCamera();
   }
 
@@ -562,7 +661,7 @@ document.addEventListener('DOMContentLoaded', function () {
     currentInput = input;
     modal.classList.add('show');
     modal.setAttribute('aria-hidden', 'false');
-    setResultMode(false);
+    setCameraMode();
     if (scannerCheck && scannerCheck.checked) {
       shoot.disabled = true;
       showScanningState(true);
@@ -577,6 +676,28 @@ document.addEventListener('DOMContentLoaded', function () {
     startCamera();
   }
 
+  if (adjustCanvas) {
+    function onDown(e) {
+      var p = getAdjustPos(e);
+      var idx = findNearest(p);
+      if (idx >= 0) { draggingPoint = idx; drawAdjust(); }
+    }
+    function onMove(e) {
+      if (draggingPoint === null) return;
+      if (e.touches) e.preventDefault();
+      var p = clampPoint(getAdjustPos(e));
+      cornerPoints[draggingPoint] = p;
+      drawAdjust();
+    }
+    function onUp() { draggingPoint = null; drawAdjust(); }
+    adjustCanvas.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    adjustCanvas.addEventListener('touchstart', onDown, { passive: false });
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+  }
+
   document.querySelectorAll('[data-camera-open]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var field = btn.closest('[data-camera-field]');
@@ -586,7 +707,9 @@ document.addEventListener('DOMContentLoaded', function () {
   });
   shoot.addEventListener('click', capture);
   document.getElementById('cameraUse').addEventListener('click', finishCapture);
-  document.getElementById('cameraRetake').addEventListener('click', retake);
+  document.getElementById('cameraCrop').addEventListener('click', doCrop);
+  document.getElementById('cameraUseOriginal').addEventListener('click', useOriginal);
+  document.querySelectorAll('[data-camera-retake]').forEach(function (btn) { btn.addEventListener('click', retake); });
   switchBtn.addEventListener('click', function () {
     facing = facing === 'environment' ? 'user' : 'environment';
     startCamera();
