@@ -903,6 +903,11 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
 .camera-stage { position: relative; background: #020617; min-height: 240px; display: flex; align-items: center; justify-content: center; }
 .camera-stage video { width: 100%; max-height: 62vh; display: block; object-fit: contain; background: #020617; }
 .camera-error { padding: 28px 20px; color: #fecaca; text-align: center; font-size: 13px; line-height: 1.8; }
+.camera-mode { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-soft); cursor: pointer; margin-inline-start: auto; }
+.camera-mode input { width: 16px; height: 16px; accent-color: var(--primary); }
+#cameraResultActions { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 12px; background: rgba(2,6,23,.55); flex-wrap: wrap; padding: 14px; }
+#cameraResultActions .btn { min-width: 160px; }
+#cameraResult { width: 100%; max-height: 62vh; display: block; object-fit: contain; background: #020617; }
 .camera-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 18px; }
 .camera-tip { padding: 0 18px 14px; margin: 0; }
 @media (max-width: 600px) {

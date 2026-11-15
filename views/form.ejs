@@ -137,17 +137,23 @@
       <b><i class="fas fa-camera"></i> التقاط صورة المستند</b>
       <button type="button" class="camera-close" data-camera-close aria-label="إغلاق">&times;</button>
     </div>
-    <div class="camera-stage">
+    <div class="camera-stage" id="cameraStage">
       <video id="cameraVideo" playsinline autoplay muted></video>
       <div class="camera-error" id="cameraError" hidden></div>
       <canvas id="cameraCanvas" hidden></canvas>
+      <canvas id="cameraResult" hidden></canvas>
+      <div id="cameraResultActions" hidden>
+        <button type="button" class="btn btn-primary" id="cameraUse"><i class="fas fa-check"></i> استخدام الصورة المُقَصَّرة</button>
+        <button type="button" class="btn btn-outline" id="cameraRetake"><i class="fas fa-rotate-left"></i> إعادة التقاط</button>
+      </div>
     </div>
-    <div class="camera-controls">
+    <div class="camera-controls" id="cameraControls">
       <button type="button" class="btn btn-primary" id="cameraShoot" disabled><i class="fas fa-camera"></i> التقاط الصورة</button>
       <button type="button" class="btn btn-outline" id="cameraSwitch"><i class="fas fa-camera-rotate"></i> تحويل الكاميرا</button>
       <button type="button" class="btn btn-ghost" data-camera-close><i class="fas fa-xmark"></i> إلغاء</button>
+      <label class="camera-mode" title="يقصّ الصفحة تلقائياً ويعدّل المنظور كالاسكانر"><input type="checkbox" id="cameraScanner" checked> <span>وضع الماسح (Scanner)</span></label>
     </div>
-    <div class="form-hint camera-tip"><i class="fas fa-circle-info"></i> ضع المستند أمام الكاميرا في إضاءة جيدة، ثم اضغط «التقاط الصورة». ستُرفق الصورة تلقائياً بالحقل.</div>
+    <div class="form-hint camera-tip" id="cameraTip"><i class="fas fa-circle-info"></i> ضع المستند أمام الكاميرا في إضاءة جيدة، ثم اضغط «التقاط الصورة». في وضع الماسح سيتم تحديد حواف الصفحة واقتصاصها تلقائياً.</div>
   </div>
 </div>
 <% if (form.transfer) { %>
@@ -381,21 +387,194 @@ document.addEventListener('DOMContentLoaded', function () {
       if (status) status.textContent = 'تعذر إرفاق الصورة تلقائياً في هذا المتصفح — استخدم زر اختيار ملف من الجهاز.';
     }
   }
+
+  var resultCanvas = document.getElementById('cameraResult');
+  var resultActions = document.getElementById('cameraResultActions');
+  var scannerCheck = document.getElementById('cameraScanner');
+  var controls = document.getElementById('cameraControls');
+  var stage = document.getElementById('cameraStage');
+  var cvReady = false;
+  var loadingOpenCV = false;
+
+  function loadOpenCV() {
+    return new Promise(function (resolve, reject) {
+      if (window.cv && window.cv.getBuildInformation) { cvReady = true; return resolve(); }
+      if (loadingOpenCV) { var iv = setInterval(function () { if (cvReady) { clearInterval(iv); resolve(); } }, 200); return; }
+      loadingOpenCV = true;
+      var script = document.createElement('script');
+      script.src = 'https://docs.opencv.org/4.10.0/opencv.js';
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      window.cv = window.cv || {};
+      window.cv.onRuntimeInitialized = function () { cvReady = true; loadingOpenCV = false; resolve(); };
+      script.onerror = function () { loadingOpenCV = false; reject(new Error('تعذر تحميل مكتبة الماسح')); };
+      document.body.appendChild(script);
+      setTimeout(function () { if (!cvReady) reject(new Error('انتهت مهلة تحميل الماسح')); }, 20000);
+    });
+  }
+
+  function showScanningState(loading) {
+    var tip = document.getElementById('cameraTip');
+    if (tip) tip.innerHTML = loading ? '<i class="fas fa-spinner fa-spin"></i> جارٍ تحميل مكتبة الماسح...' : '<i class="fas fa-circle-info"></i> ضع المستند أمام الكاميرا في إضاءة جيدة، ثم اضغط «التقاط الصورة».';
+  }
+
+  function distance(p1, p2) { return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2)); }
+  function orderPoints(pts) {
+    var arr = pts.slice(0);
+    arr.sort(function (a, b) { return (a.y - b.y) || (a.x - b.x); });
+    var top = arr.slice(0, 2).sort(function (a, b) { return a.x - b.x; });
+    var bottom = arr.slice(2).sort(function (a, b) { return a.x - b.x; });
+    return [top[0], top[1], bottom[1], bottom[0]]; // TL, TR, BR, BL
+  }
+
+  function detectCorners(src) {
+    if (!window.cv || !cv.Mat) return null;
+    try {
+      var gray = new cv.Mat();
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+      var blurred = new cv.Mat();
+      cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+      var edges = new cv.Mat();
+      cv.Canny(blurred, edges, 50, 150, 3);
+      var contours = new cv.MatVector();
+      var hierarchy = new cv.Mat();
+      cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+      var best = null;
+      var maxArea = 0;
+      var imgArea = src.cols * src.rows;
+      for (var i = 0; i < contours.size(); i++) {
+        var cnt = contours.get(i);
+        var area = cv.contourArea(cnt);
+        if (area < imgArea * 0.08) continue;
+        var peri = cv.arcLength(cnt, true);
+        var approx = new cv.Mat();
+        cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+        if (approx.rows === 4 && area > maxArea) {
+          var pts = [];
+          for (var j = 0; j < 4; j++) pts.push({ x: approx.data32S[j * 2], y: approx.data32S[j * 2 + 1] });
+          best = pts;
+          maxArea = area;
+          approx.delete();
+        } else { approx.delete(); }
+        cnt.delete();
+      }
+      contours.delete(); hierarchy.delete(); edges.delete(); blurred.delete(); gray.delete();
+      return best;
+    } catch (e) { console.error('detectCorners', e); return null; }
+  }
+
+  function warpDocument(src, pts) {
+    var ordered = orderPoints(pts);
+    var tl = ordered[0], tr = ordered[1], br = ordered[2], bl = ordered[3];
+    var widthA = distance(br, bl), widthB = distance(tr, tl);
+    var maxW = Math.max(widthA, widthB);
+    var heightA = distance(tr, br), heightB = distance(tl, bl);
+    var maxH = Math.max(heightA, heightB);
+    var dstW = Math.round(maxW), dstH = Math.round(maxH);
+    if (dstW < 200 || dstH < 200) return null;
+    var srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
+    var dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, dstW - 1, 0, dstW - 1, dstH - 1, 0, dstH - 1]);
+    var M = cv.getPerspectiveTransform(srcTri, dstTri);
+    var dst = new cv.Mat();
+    cv.warpPerspective(src, dst, M, new cv.Size(dstW, dstH));
+    srcTri.delete(); dstTri.delete(); M.delete();
+    return { mat: dst, width: dstW, height: dstH };
+  }
+
+  function setResultMode(show) {
+    video.hidden = show;
+    resultCanvas.hidden = !show;
+    resultActions.hidden = !show;
+    controls.style.display = show ? 'none' : 'flex';
+    if (show) resultActions.hidden = false;
+  }
+
+  function matToFile(mat, cb) {
+    var out = document.createElement('canvas');
+    out.width = mat.cols; out.height = mat.rows;
+    var ctx = out.getContext('2d');
+    var imgData = ctx.createImageData(mat.cols, mat.rows);
+    var data = mat.data;
+    if (data.length === imgData.data.length) imgData.data.set(data);
+    else {
+      for (var i = 0; i < imgData.data.length; i++) imgData.data[i] = data[i] || 0;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    out.toBlob(function (blob) {
+      if (!blob) { cb(null); return; }
+      cb(new File([blob], 'scan-' + Date.now() + '.jpg', { type: 'image/jpeg' }));
+    }, 'image/jpeg', 0.92);
+  }
+
   function capture() {
     if (!stream || !video.videoWidth || !video.videoHeight) return;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     var ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    var useScanner = scannerCheck && scannerCheck.checked && cvReady;
+    if (useScanner) {
+      try {
+        var src = cv.imread(canvas);
+        var corners = detectCorners(src);
+        if (corners) {
+          var warped = warpDocument(src, corners);
+          if (warped && warped.mat) {
+            cv.imshow(resultCanvas, warped.mat);
+            warped.mat.delete();
+            src.delete();
+            stopStream();
+            setResultMode(true);
+            return;
+          }
+        }
+        src.delete();
+      } catch (e) { console.error('scanner error', e); }
+    }
+    // fallback: use original captured image
+    var fallbackCtx = canvas.getContext('2d');
+    resultCanvas.width = canvas.width;
+    resultCanvas.height = canvas.height;
+    resultCanvas.getContext('2d').drawImage(canvas, 0, 0);
+    stopStream();
+    setResultMode(true);
+  }
+
+  function finishCapture() {
     var done = false;
-    canvas.toBlob(function (blob) {
+    resultCanvas.toBlob(function (blob) {
       if (done) return;
       done = true;
-      if (!blob) { setError('تعذر حفظ الصورة، حاول مرة أخرى.'); return; }
+      if (!blob) { setError('تعذر حفظ الصورة.'); return; }
       var file = new File([blob], 'scan-' + Date.now() + '.jpg', { type: 'image/jpeg' });
       attachFile(currentInput, file);
       closeModal();
+      setTimeout(function () { setResultMode(false); }, 200);
     }, 'image/jpeg', 0.92);
+  }
+
+  function retake() {
+    setResultMode(false);
+    startCamera();
+  }
+
+  function openCamera(input) {
+    currentInput = input;
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+    setResultMode(false);
+    if (scannerCheck && scannerCheck.checked) {
+      shoot.disabled = true;
+      showScanningState(true);
+      loadOpenCV().then(function () {
+        shoot.disabled = false;
+        showScanningState(false);
+      }).catch(function (err) {
+        showScanningState(false);
+        console.warn('OpenCV load failed', err);
+      });
+    }
+    startCamera();
   }
 
   document.querySelectorAll('[data-camera-open]').forEach(function (btn) {
@@ -406,6 +585,8 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
   shoot.addEventListener('click', capture);
+  document.getElementById('cameraUse').addEventListener('click', finishCapture);
+  document.getElementById('cameraRetake').addEventListener('click', retake);
   switchBtn.addEventListener('click', function () {
     facing = facing === 'environment' ? 'user' : 'environment';
     startCamera();

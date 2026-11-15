@@ -39,6 +39,20 @@
     © <%= new Date().getFullYear() %> <%= data.siteName %> — جميع الحقوق محفوظة
   </div>
 </footer>
+<div class="ai-chat-widget" id="aiChatWidget">
+  <button class="ai-chat-toggle" id="aiChatToggle" aria-label="المساعد الذكي"><i class="fas fa-robot"></i></button>
+  <div class="ai-chat-panel" id="aiChatPanel" hidden>
+    <div class="ai-chat-head"><span><i class="fas fa-robot"></i> مساعد <%= data.siteName %></span><button type="button" id="aiChatClose" aria-label="إغلاق">&times;</button></div>
+    <div class="ai-chat-messages" id="aiChatMsgs">
+      <div class="ai-msg ai-msg-bot">أهلاً بك! اسألني عن البرامج، الأسعار، الكباتن، مواعيد العمل أو أي شيء تريد معرفته عن الأكاديمية.</div>
+    </div>
+    <div class="ai-chat-input-wrap">
+      <input type="text" id="aiChatInput" placeholder="اكتب سؤالك..." maxlength="1200" aria-label="سؤالك">
+      <button type="button" id="aiChatSend"><i class="fas fa-paper-plane"></i></button>
+    </div>
+    <div class="ai-chat-note">الإجابة تُولَّد بالذكاء الاصطناعي بناءً على بيانات الموقع.</div>
+  </div>
+</div>
 <script src="/js/install.js?v=1"></script>
 <script>
   if ('serviceWorker' in navigator) {
@@ -46,6 +60,53 @@
       navigator.serviceWorker.register('/sw.js').catch(function () {});
     });
   }
+
+  /* مساعد الذكاء الاصطناعي العام من واجهة الموقع */
+  (function () {
+    var widget = document.getElementById('aiChatWidget');
+    if (!widget) return;
+    var toggle = document.getElementById('aiChatToggle');
+    var panel = document.getElementById('aiChatPanel');
+    var close = document.getElementById('aiChatClose');
+    var send = document.getElementById('aiChatSend');
+    var input = document.getElementById('aiChatInput');
+    var msgs = document.getElementById('aiChatMsgs');
+    function esc(s) { return String(s || '').replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    function scroll() { msgs.scrollTop = msgs.scrollHeight; }
+    function addMsg(text, who) {
+      var d = document.createElement('div');
+      d.className = 'ai-msg ai-msg-' + who;
+      d.innerHTML = text;
+      msgs.appendChild(d);
+      scroll();
+      return d;
+    }
+    function open() { panel.hidden = false; panel.classList.add('show'); input.focus(); }
+    function hide() { panel.classList.remove('show'); setTimeout(function () { panel.hidden = true; }, 160); }
+    toggle.addEventListener('click', open);
+    close.addEventListener('click', hide);
+    function ask() {
+      var q = input.value.trim();
+      if (!q) return;
+      addMsg(esc(q), 'user');
+      input.value = '';
+      var bot = addMsg('<i class="fas fa-spinner fa-spin"></i> جارٍ التفكير...', 'bot');
+      fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ message: q }).toString()
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (j.ok) bot.innerHTML = esc(j.text).replace(/\n/g, '<br>');
+        else bot.innerHTML = '<span style="color:#b91c1c"><i class="fas fa-circle-exclamation"></i> ' + esc(j.error) + '</span>';
+        scroll();
+      }).catch(function () {
+        bot.innerHTML = '<span style="color:#b91c1c"><i class="fas fa-circle-exclamation"></i> تعذر الاتصال بالمساعد</span>';
+        scroll();
+      });
+    }
+    send.addEventListener('click', ask);
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') ask(); });
+  })();
 </script>
 </body>
 </html>

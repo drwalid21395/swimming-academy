@@ -6,8 +6,11 @@ const { canView, canEdit, audit } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
 const { aiDraftReply, PROVIDERS, DEFAULT_MODEL, settingsMap } = require('../lib/ai');
 const { sendViaApi, logMessage, waLinkFor, normalizePhone } = require('../lib/whatsapp');
+const { createRateLimiter } = require('../lib/security');
 
 const AI_KEYS = ['ai_enabled', 'ai_provider', 'ai_api_key', 'ai_model', 'ai_tone', 'ai_max_length', 'ai_instructions', 'wa_auto_reply', 'whatsapp_webhook_token'];
+
+const publicAskLimit = createRateLimiter({ windowMs: 60 * 1000, max: 12, keyPrefix: 'ask' });
 
 router.get('/ai-replies', async function (req, res) {
   if (!canView(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
@@ -82,6 +85,18 @@ router.post('/ai-replies/send', async function (req, res) {
   audit(req.currentUser.id, req.currentUser.full_name, 'send', 'whatsapp', null,
     'رد ذكي للعميل ' + (guard || phone) + (mode === 'api' ? ' (واتساب API)' : ' (رابط)') + (apiError ? ' — ' + apiError : ''), req);
   return res.json({ ok: true, mode, url, error: apiError || null });
+});
+
+/* سؤال/جواب عام من واجهة الموقع الخارجية */
+router.post('/api/ask', publicAskLimit.middleware, async function (req, res) {
+  const message = String(req.body.message || '').trim();
+  if (!message) return res.status(400).json({ ok: false, error: 'أدخل سؤالك أولاً' });
+  if (message.length > 1200) return res.status(400).json({ ok: false, error: 'السؤال طويل جداً' });
+  const s = await settingsMap();
+  if (s.ai_enabled !== '1') return res.status(503).json({ ok: false, error: 'المساعد الذكي غير مفعّل حالياً. تواصل مع الإدارة.' });
+  const r = await aiDraftReply({ clientMessage: message, timeoutMs: 25000 });
+  if (r.ok) return res.json({ ok: true, text: r.text });
+  return res.status(500).json({ ok: false, error: r.error || 'تعذر توليد الرد' });
 });
 
 module.exports = router;
