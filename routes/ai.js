@@ -4,7 +4,7 @@ const router = express.Router();
 const { db } = require('../lib/db');
 const { canView, canEdit, audit } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
-const { aiDraftReply, PROVIDERS, DEFAULT_MODEL, settingsMap } = require('../lib/ai');
+const { aiDraftReply, smartPublicReply, PROVIDERS, DEFAULT_MODEL, settingsMap } = require('../lib/ai');
 const { sendViaApi, logMessage, waLinkFor, normalizePhone } = require('../lib/whatsapp');
 const { createRateLimiter } = require('../lib/security');
 
@@ -93,10 +93,12 @@ router.post('/api/ask', publicAskLimit.middleware, async function (req, res) {
   if (!message) return res.status(400).json({ ok: false, error: 'أدخل سؤالك أولاً' });
   if (message.length > 1200) return res.status(400).json({ ok: false, error: 'السؤال طويل جداً' });
   const s = await settingsMap();
-  if (s.ai_enabled !== '1') return res.status(503).json({ ok: false, error: 'المساعد الذكي غير مفعّل حالياً. تواصل مع الإدارة.' });
-  const r = await aiDraftReply({ clientMessage: message, timeoutMs: 25000 });
-  if (r.ok) return res.json({ ok: true, text: r.text });
-  return res.status(500).json({ ok: false, error: r.error || 'تعذر توليد الرد' });
+  if (s.ai_enabled === '1' && String(s.ai_api_key || '').trim()) {
+    const r = await aiDraftReply({ clientMessage: message, timeoutMs: 25000 });
+    if (r.ok) return res.json({ ok: true, text: r.text });
+  }
+  const text = await smartPublicReply(message);
+  return res.json({ ok: true, text });
 });
 
 module.exports = router;
