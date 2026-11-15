@@ -53,9 +53,31 @@
     </div>
     <a href="tel:<%= String(personPhone).replace(/[^\d+]/g, '') %>" class="btn btn-success btn-lg phone-dial-btn"><i class="fas fa-phone-volume"></i> اتصال</a>
     <% if (Number(row.remaining) > 0) { var transferCode = buildTransferCode(tplVal, personPhone, row.remaining); %>
-      <a href="<%= transferTelHref(transferCode) %>" class="btn btn-primary btn-lg phone-dial-btn" title="كود التحويل: <%= transferCode %>"><i class="fas fa-money-bill-transfer"></i> تحويل الراتب (<%= money(row.remaining) %>)</a>
+      <a href="<%= transferTelHref(transferCode) %>" class="btn btn-primary btn-lg phone-dial-btn" title="كود التحويل: <%= transferCode %>"><i class="fas fa-money-bill-transfer"></i> إرسال الراتب (<%= money(row.remaining) %>)</a>
     <% } %>
-    <span class="font-11 text-muted">يفتح لوحة الاتصال بالرقم مباشرة دون اتصال تلقائي.<% if (Number(row.remaining) > 0) { %> — زر التحويل يفتح الهاتف على كود القالب الجاهز بمبلغ المتبقي.<% } %></span>
+    <span class="font-11 text-muted">يفتح لوحة الاتصال بالرقم مباشرة دون اتصال تلقائي.<% if (Number(row.remaining) > 0) { %> — زر «إرسال الراتب» يفتح الهاتف على كود القالب الجاهز بمبلغ المتبقي.<% } %></span>
+  </div>
+</div>
+<% } %>
+
+<% if (canEdit && Number(row.remaining) > 0) { %>
+<div class="card no-print">
+  <div class="card-header"><i class="fas fa-check-double"></i> تم الاستحقاق</div>
+  <div class="card-body">
+    <p class="form-hint" style="margin-bottom:12px"><i class="fas fa-circle-info"></i> إذا تم دفع/تسوية باقي المستحقات للفترة (<%= money(row.remaining) %>) خارج النظام، اضغط الزر لإغلاق الكشف وعدم ظهوره في الاستحقاقات مرة أخرى.</p>
+    <div class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="margin:0">
+        <label class="font-11 text-muted">طريقة التسوية</label>
+        <select id="settleMethod" class="form-control">
+          <% PAY_METHODS.forEach(function (m) { %><option value="<%= m %>"><%= m %></option><% }); %>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;min-width:200px">
+        <label class="font-11 text-muted">ملاحظة</label>
+        <input type="text" id="settleNote" class="form-control" value="تم الاستحقاق">
+      </div>
+      <button type="button" class="btn btn-success btn-lg" id="settleBtn"><i class="fas fa-check-double"></i> تم الاستحقاق</button>
+    </div>
   </div>
 </div>
 <% } %>
@@ -550,6 +572,24 @@
         if (res.ok) { App.showToast('تم الاعتماد', 'success'); setTimeout(function () { location.reload(); }, 600); }
         else { App.showToast('فشل الاعتماد', 'error'); }
       });
+    });
+  });
+
+  var settleBtn = document.getElementById('settleBtn');
+  if (settleBtn) settleBtn.addEventListener('click', function () {
+    App.showConfirm('تأكيد «تم الاستحقاق»؟ سيتم تسجيل باقي المبلغ دفعة واحدة وإغلاق الكشف وعدم ظهوره مرة أخرى.', function () {
+      settleBtn.disabled = true;
+      var payload = {
+        method: document.getElementById('settleMethod').value,
+        note: document.getElementById('settleNote').value
+      };
+      fetch('/payroll/<%= row.id %>/settle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (res.ok) { App.showToast('تم الاستحقاق وإغلاق الكشف', 'success'); setTimeout(function () { location.reload(); }, 700); }
+          else { settleBtn.disabled = false; App.showToast(res.error || 'فشل التسوية', 'error'); }
+        })
+        .catch(function () { settleBtn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
     });
   });
 })();

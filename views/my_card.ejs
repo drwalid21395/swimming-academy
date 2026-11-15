@@ -107,8 +107,10 @@
     <div class="pp-result" id="result">
       <div class="pp-actions">
         <a href="#" class="btn btn-primary" id="pdfLink" download><i class="fas fa-file-pdf"></i> تحميل التقرير PDF</a>
+        <button type="button" class="btn btn-success" id="shareWa" data-academy="<%= academyName %>"><i class="fab fa-whatsapp"></i> مشاركة البطاقة</button>
         <button type="button" class="btn btn-outline" id="reset"><i class="fas fa-rotate-right"></i> بحث جديد</button>
       </div>
+      <canvas id="cardCanvas" hidden></canvas>
       <div id="resultBody"></div>
     </div>
   </div>
@@ -139,6 +141,7 @@
   var stream = null;
   var snapReader = null;
   var snapCanvas = null;
+  var currentSwimmer = null;
 
   function showMsg(html, type) {
     message.innerHTML = '<div class="alert alert-' + (type || 'info') + '">' + html + '</div>';
@@ -151,6 +154,7 @@
 
   function renderReport(data) {
     var s = data.swimmer;
+    currentSwimmer = s || null;
     var r = data.report;
     var html = '';
 
@@ -297,6 +301,142 @@
   function esc(t) { return String(t == null ? '—' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]; }); }
   function formatMoney(n) { return Number(n || 0).toFixed(2) + ' ج.م'; }
 
+  function waNumber(phone) {
+    var d = String(phone || '').replace(/\D/g, '');
+    if (d.indexOf('00') === 0) d = d.slice(2);
+    if (d.indexOf('0') === 0) d = d.slice(1);
+    if (d.length <= 10) d = '20' + d;
+    return d;
+  }
+
+  function drawCard(s, cb) {
+    var canvas = document.getElementById('cardCanvas');
+    var w = 900, h = 540;
+    canvas.width = w; canvas.height = h;
+    var ctx = canvas.getContext('2d');
+    // خلفية متدرجة
+    var grd = ctx.createLinearGradient(0, 0, w, h);
+    grd.addColorStop(0, '#0c4a6e');
+    grd.addColorStop(0.5, '#075985');
+    grd.addColorStop(1, '#0369a1');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, w, h);
+    // زخرفة
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,.18)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(w - 80, -40, 180, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-60, h - 60, 160, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    // شعار
+    var academy = document.getElementById('shareWa').getAttribute('data-academy') || 'أكاديمية السباحة';
+    var logo = new Image();
+    logo.crossOrigin = 'anonymous';
+    logo.onload = function () {
+      var lw = 80, lh = 80;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(80, 70, lw / 2, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(logo, 80 - lw / 2, 70 - lh / 2, lw, lh);
+      ctx.restore();
+      drawText();
+      cb();
+    };
+    logo.onerror = function () { drawText(); cb(); };
+    function drawText() {
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      ctx.font = 'bold 34px "Segoe UI", Tahoma, sans-serif';
+      ctx.fillText(academy, w - 40, 34);
+      ctx.font = '20px "Segoe UI", Tahoma, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,.85)';
+      ctx.fillText('بطاقة العضوية', w - 40, 78);
+
+      var x = w - 40, y = 160, lh = 44;
+      function line(label, value) {
+        ctx.font = '18px "Segoe UI", Tahoma, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,.75)';
+        ctx.fillText(label + ':', x, y);
+        ctx.font = 'bold 22px "Segoe UI", Tahoma, sans-serif';
+        ctx.fillStyle = '#ffffff';
+        var valW = ctx.measureText(String(value || '—')).width;
+        ctx.fillText(String(value || '—'), x - ctx.measureText(label + ':  ').width - 10, y);
+        y += lh;
+      }
+      line('الاسم', s.full_name);
+      line('رقم العضوية', s.membership_no);
+      line('البرنامج', s.program_name || '—');
+      line('المجموعة', s.group_name || '—');
+      line('المستوى', s.level_name || '—');
+      line('الكابتن', s.coach_name || '—');
+
+      // خط فاصل + باركود رقم العضوية كشرائط بسيطة
+      ctx.fillStyle = 'rgba(255,255,255,.2)';
+      ctx.fillRect(40, h - 120, w - 80, 1);
+      ctx.font = 'bold 28px "Segoe UI", Tahoma, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(s.membership_no || ''), w / 2, h - 86);
+      // خطوط الباركود
+      ctx.save();
+      ctx.translate(w / 2 - 140, h - 58);
+      var code = String(s.membership_no || '0');
+      ctx.fillStyle = '#fff';
+      for (var i = 0; i < 60; i++) {
+        var seed = code.charCodeAt(i % code.length) + i;
+        var bw = (seed % 3) + 1;
+        ctx.fillRect(i * 5, 0, bw, 34);
+      }
+      ctx.restore();
+
+      ctx.font = '14px "Segoe UI", Tahoma, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,.6)';
+      ctx.textAlign = 'center';
+      ctx.fillText('مع خالص التقدير — ' + academy, w / 2, h - 18);
+    }
+    logo.src = '/images/icon-192.png?v=2';
+  }
+
+  function shareWhatsApp() {
+    if (!currentSwimmer) { showMsg('ابحث عن بطاقة أولاً', 'warning'); return; }
+    var s = currentSwimmer;
+    drawCard(s, function () {
+      var canvas = document.getElementById('cardCanvas');
+      canvas.toBlob(function (blob) {
+        if (!blob) { showMsg('تعذر إنشاء صورة البطاقة', 'error'); return; }
+        var file = new File([blob], 'card-' + String(s.membership_no || s.id) + '.jpg', { type: 'image/jpeg' });
+        var text = '🏊 بطاقة العضوية\nالاسم: ' + (s.full_name || '') + '\nرقم العضوية: ' + (s.membership_no || '') + '\nالبرنامج: ' + (s.program_name || '—') + '\nالمجموعة: ' + (s.group_name || '—') + '\nالمستوى: ' + (s.level_name || '—');
+        var phone = waNumber(s.phone);
+        var mob = /Mobile|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Silk/i.test(navigator.userAgent);
+        function fallback() {
+          var url = mob ? ('whatsapp://send?phone=' + phone + '&text=' + encodeURIComponent(text))
+                        : ('https://wa.me/' + phone + '?text=' + encodeURIComponent(text));
+          var a = document.createElement('a'); a.href = url; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove();
+          showMsg('تم فتح واتساب بالدردشة. إذا لم تظهر الصورة، استخدم زر المشاركة من تطبيق واتساب مباشرة.', 'info');
+        }
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          navigator.share({ files: [file], title: 'بطاقة العضوية', text: text })
+            .then(function () { showMsg('تم فتح شاشة المشاركة — اختر واتساب لإرسال البطاقة', 'success'); })
+            .catch(function (err) {
+              if (err && err.name === 'AbortError') return;
+              fallback();
+            });
+        } else {
+          fallback();
+        }
+      }, 'image/jpeg', 0.92);
+    });
+  }
+
+  document.getElementById('shareWa').addEventListener('click', shareWhatsApp);
+
   function lookup(code) {
     if (!code) return;
     clearMsg();
@@ -323,6 +463,7 @@
     result.style.display = 'none';
     resultBody.innerHTML = '';
     manualCode.value = '';
+    currentSwimmer = null;
     clearMsg();
   });
 

@@ -959,6 +959,8 @@ async function upsertPayroll(p, range, req, opts) {
     ? await db.prepare('SELECT * FROM payroll WHERE id = ?').get(opts.payrollId)
     : await findPayroll(p.personType, p.coachId || p.staffId, range);
   const key = periodKey(range.from, range.to);
+  // إذا تم تسوية الفترة (تم الاستحقاق) لا نعيد حسابها أو نُظهرها مجدداً
+  if (existing && existing.settled_at) return existing.id;
   const paid = existing ? Number(existing.paid_amount || 0) : 0;
   const remaining = Math.round((Number(p.net || 0) - paid) * 100) / 100;
   const status = remaining <= 0 ? 'مسدد' : (paid > 0 ? 'مدفوع جزئياً' : 'مستحق');
@@ -1107,6 +1109,34 @@ router.post('/payroll/:id/pay', async function (req, res) {
   } catch (e) { /* لا نكسر العملية */ }
   audit(req.currentUser.id, req.currentUser.fullName || req.currentUser.full_name, 'approve_payment', 'payroll', id, 'صرف مستحقات ' + name + ': ' + money(amount) + ' (' + method + ')' + (transferCode ? ' — كود: ' + transferCode : ''), req);
   res.json({ ok: true, paidNow, remaining, status, id: Number(info.lastInsertRowid || 0) });
+});
+
+/* تسوية الفترة: «تم الاستحقاق» — تسجيل باقي المبلغ دفعة واحدة وإغلاق الكشف */
+router.post('/payroll/:id/settle', async function (req, res) {
+  if (!canEdit(req.currentUser, 'payroll')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
+  const id = Number(req.params.id);
+  const row = await db.prepare('SELECT * FROM payroll WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'الكشف غير موجود' });
+  const remaining = Number(row.remaining || 0);
+  if (remaining <= 0) return res.json({ ok: false, error: 'الكشف مسدد بالفعل' });
+  const now = new Date().toLocaleString('sv-SE').replace('T', ' ');
+  const method = String(req.body.method || 'تسوية').trim() || 'تسوية';
+  const note = String(req.body.note || 'تم الاستحقاق').trim() || 'تم الاستحقاق';
+  const info = await db.prepare(`INSERT INTO payroll_transactions (payroll_id, amount, paid_date, method, note, transfer_code, created_by) VALUES (?,?,?,?,?,?,?)`)
+    .run(id, remaining, today(), method, note, '', req.currentUser.id);
+  await db.prepare(`UPDATE payroll SET paid_amount=?, remaining=?, status='مسدد', settled_at=?, settled_by=? WHERE id=?`)
+    .run(Number(row.net || 0), 0, now, req.currentUser.id, id);
+  // مصروف مرتبط
+  const meta = await db.prepare(`SELECT COALESCE(c.full_name, s.full_name) AS pname FROM payroll p LEFT JOIN coaches c ON c.id=p.coach_id LEFT JOIN staff s ON s.id=p.staff_id WHERE p.id=?`).get(id);
+  const name = (meta && meta.pname) || ('#' + id);
+  try {
+    const expInfo = await db.prepare(`INSERT INTO expenses (category, date, description, amount, payment_method, beneficiary, status, created_by) VALUES ('رواتب وأجور', ?, ?, ?, ?, ?, 'معتمد', ?)`)
+      .run(today(), 'تسوية مستحقات: ' + name + ' (فترة ' + periodLabel(row) + ')', remaining, method, name, req.currentUser.id);
+    const expId = Number(expInfo.lastInsertRowid || 0) || 0;
+    if (expId) await db.prepare('UPDATE payroll_transactions SET expense_id = ? WHERE id = ?').run(expId, Number(info.lastInsertRowid || 0));
+  } catch (e) { /* لا نكسر العملية */ }
+  audit(req.currentUser.id, req.currentUser.fullName || req.currentUser.full_name, 'settle', 'payroll', id, 'تسوية مستحقات ' + name + ': ' + money(remaining), req);
+  res.json({ ok: true, remaining: 0, status: 'مسدد', settled_at: now });
 });
 
 /* إعادة احتساب إجماليات الكشف من الدفعات (تُستدعى بعد تعديل/حذف دفعة) */
