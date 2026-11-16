@@ -901,17 +901,17 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
 .camera-head b { font-size: 15px; }
 .camera-close { border: 0; background: transparent; color: var(--text-muted); font-size: 24px; cursor: pointer; line-height: 1; padding: 4px 8px; }
 .camera-stage { position: relative; flex: 1 1 auto; min-height: 380px; max-height: 78vh; background: #020617; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.camera-stage video, .camera-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; background: #020617; }
+.camera-stage video, .camera-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: #020617; }
 .camera-stage [hidden] { display: none !important; }
-.camera-stage video { z-index: 1; }
+.camera-stage video { object-fit: cover; z-index: 1; }
+.camera-stage canvas { object-fit: contain; }
 #cameraResult { z-index: 2; }
 #cameraAdjust { cursor: crosshair; touch-action: none; z-index: 3; }
 #cameraCanvas { z-index: 0; }
 .camera-error { position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; padding: 28px 20px; color: #fecaca; text-align: center; font-size: 13px; line-height: 1.8; background: rgba(2,6,23,.85); }
-.camera-overlay-actions { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; background: rgba(2,6,23,.72); border-top: 1px solid rgba(255,255,255,.08); }
-.camera-overlay-actions .btn { min-width: 130px; }
-.camera-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--card-border); background: var(--card); }
+.camera-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--card-border); background: var(--card); flex-shrink: 0; }
 .camera-toolbar .btn { flex: 1 1 auto; justify-content: center; }
+.camera-toolbar [hidden] { display: none !important; }
 .camera-mode { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-soft); cursor: pointer; margin-inline-start: auto; }
 .camera-mode input { width: 16px; height: 16px; accent-color: var(--primary); }
 .camera-tip { padding: 10px 16px 14px; margin: 0; flex-shrink: 0; background: var(--card); border-top: 1px solid var(--card-border); }
@@ -920,7 +920,6 @@ input[type="date"].form-control, input[type="time"].form-control { direction: lt
   .camera-dialog { max-height: 98vh; width: 100%; }
   .camera-stage { min-height: 300px; max-height: 68vh; }
   .camera-toolbar { padding: 10px 12px; }
-  .camera-overlay-actions .btn { min-width: 110px; }
 }
 .img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
 .img-tile { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--card-border); aspect-ratio: 4 / 3; }

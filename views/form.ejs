@@ -143,19 +143,14 @@
       <canvas id="cameraCanvas" hidden></canvas>
       <canvas id="cameraAdjust" hidden></canvas>
       <canvas id="cameraResult" hidden></canvas>
-      <div class="camera-overlay-actions" id="cameraAdjustActions" hidden>
-        <button type="button" class="btn btn-primary" id="cameraCrop"><i class="fas fa-crop-simple"></i> قص الصفحة</button>
-        <button type="button" class="btn btn-outline" id="cameraUseOriginal"><i class="fas fa-image"></i> استخدام الصورة الأصلية</button>
-        <button type="button" class="btn btn-ghost" data-camera-retake><i class="fas fa-rotate-left"></i> إعادة التقاط</button>
-      </div>
-      <div class="camera-overlay-actions" id="cameraResultActions" hidden>
-        <button type="button" class="btn btn-primary" id="cameraUse"><i class="fas fa-check"></i> استخدام الصورة</button>
-        <button type="button" class="btn btn-outline" data-camera-retake><i class="fas fa-rotate-left"></i> إعادة التقاط</button>
-      </div>
     </div>
     <div class="camera-toolbar" id="cameraControls">
       <button type="button" class="btn btn-primary" id="cameraShoot" disabled><i class="fas fa-camera"></i> التقاط الصورة</button>
       <button type="button" class="btn btn-outline" id="cameraSwitch"><i class="fas fa-camera-rotate"></i> تحويل الكاميرا</button>
+      <button type="button" class="btn btn-primary" id="cameraCrop" hidden><i class="fas fa-crop-simple"></i> قص الصفحة</button>
+      <button type="button" class="btn btn-outline" id="cameraUseOriginal" hidden><i class="fas fa-image"></i> استخدام الصورة الأصلية</button>
+      <button type="button" class="btn btn-primary" id="cameraUse" hidden><i class="fas fa-check"></i> استخدام الصورة</button>
+      <button type="button" class="btn btn-outline" data-camera-retake hidden><i class="fas fa-rotate-left"></i> إعادة التقاط</button>
       <button type="button" class="btn btn-ghost" data-camera-close><i class="fas fa-xmark"></i> إلغاء</button>
     </div>
     <div class="form-hint camera-tip" id="cameraTip"><i class="fas fa-circle-info"></i> وجّه الكاميرا نحو المستند في إضاءة جيدة ثم اضغط «التقاط الصورة». بعد الالتقاط اسحب النقاط الأربع الزرقاء لتحديد حواف الصفحة، ثم اضغط «قص الصفحة».</div>
@@ -403,14 +398,19 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   var resultCanvas = document.getElementById('cameraResult');
-  var resultActions = document.getElementById('cameraResultActions');
   var adjustCanvas = document.getElementById('cameraAdjust');
-  var adjustActions = document.getElementById('cameraAdjustActions');
+  var stage = document.getElementById('cameraStage');
   var controls = document.getElementById('cameraControls');
   var tipEl = document.getElementById('cameraTip');
+  var cropBtn = document.getElementById('cameraCrop');
+  var useOriginalBtn = document.getElementById('cameraUseOriginal');
+  var useBtn = document.getElementById('cameraUse');
+  var retakeBtns = Array.prototype.slice.call(document.querySelectorAll('[data-camera-retake]'));
   var cornerPoints = [];
   var draggingPoint = null;
   var adjustCtx = adjustCanvas ? adjustCanvas.getContext('2d') : null;
+
+  function toggleBtn(btn, show) { if (btn) btn.hidden = !show; }
 
   function distance(p1, p2) { return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2)); }
   function orderPoints(pts) {
@@ -511,32 +511,44 @@ document.addEventListener('DOMContentLoaded', function () {
     return { imageData: out, width: dstW, height: dstH };
   }
 
-  function setCameraMode() {
-    video.hidden = false;
+  function hideStageMedia() {
+    video.hidden = true;
     canvas.hidden = true;
     resultCanvas.hidden = true;
-    resultActions.hidden = true;
     adjustCanvas.hidden = true;
-    adjustActions.hidden = true;
+  }
+  function setCameraMode() {
+    hideStageMedia();
+    video.hidden = false;
     controls.style.display = 'flex';
+    toggleBtn(shoot, true);
+    toggleBtn(switchBtn, true);
+    toggleBtn(cropBtn, false);
+    toggleBtn(useOriginalBtn, false);
+    toggleBtn(useBtn, false);
+    retakeBtns.forEach(function (b) { b.hidden = true; });
   }
   function setAdjustMode() {
-    video.hidden = true;
-    canvas.hidden = true;
-    resultCanvas.hidden = true;
-    resultActions.hidden = true;
+    hideStageMedia();
     adjustCanvas.hidden = false;
-    adjustActions.hidden = false;
-    controls.style.display = 'none';
+    controls.style.display = 'flex';
+    toggleBtn(shoot, false);
+    toggleBtn(switchBtn, false);
+    toggleBtn(cropBtn, true);
+    toggleBtn(useOriginalBtn, true);
+    toggleBtn(useBtn, false);
+    retakeBtns.forEach(function (b) { b.hidden = false; });
   }
   function setResultMode() {
-    video.hidden = true;
-    canvas.hidden = true;
+    hideStageMedia();
     resultCanvas.hidden = false;
-    resultActions.hidden = false;
-    adjustCanvas.hidden = true;
-    adjustActions.hidden = true;
-    controls.style.display = 'none';
+    controls.style.display = 'flex';
+    toggleBtn(shoot, false);
+    toggleBtn(switchBtn, false);
+    toggleBtn(cropBtn, false);
+    toggleBtn(useOriginalBtn, false);
+    toggleBtn(useBtn, true);
+    retakeBtns.forEach(function (b) { b.hidden = false; });
   }
 
   function getAdjustPos(e) {
@@ -611,7 +623,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function doCrop() {
     if (!cornerPoints || cornerPoints.length !== 4) return;
-    var cropBtn = document.getElementById('cameraCrop');
     var oldHtml = cropBtn ? cropBtn.innerHTML : '';
     if (cropBtn) { cropBtn.disabled = true; cropBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جارٍ القص...'; }
     setTimeout(function () {
@@ -643,10 +654,20 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function capture() {
     if (!stream || !video.videoWidth || !video.videoHeight) return;
-    cameraCanvas.width = video.videoWidth;
-    cameraCanvas.height = video.videoHeight;
+    /* نلتقط بالضبط المنطقة الظاهرة داخل نافذة الكاميرا (المعروضة بـ cover)
+       حتى يملأ المستند النافذة كما يراه المستخدم تماماً دون أشرطة سوداء */
+    var vw = video.videoWidth, vh = video.videoHeight;
+    var stageW = stage.clientWidth || vw;
+    var stageH = stage.clientHeight || vh;
+    var scale = Math.max(stageW / vw, stageH / vh);
+    var sw = Math.min(vw, stageW / scale);
+    var sh = Math.min(vh, stageH / scale);
+    var sx = (vw - sw) / 2;
+    var sy = (vh - sh) / 2;
+    cameraCanvas.width = Math.max(1, Math.round(sw));
+    cameraCanvas.height = Math.max(1, Math.round(sh));
     var ctx = cameraCanvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, cameraCanvas.width, cameraCanvas.height);
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, cameraCanvas.width, cameraCanvas.height);
     stopStream();
     startAdjust();
   }
