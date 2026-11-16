@@ -355,7 +355,8 @@ router.post('/api/notifications/subscribe', async function (req, res) {
     await saveSubscription(req.currentUser.id, academyId, sub);
     return res.json({ ok: true });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: e.message });
+    console.error('Push subscribe error:', e);
+    return res.status(500).json({ ok: false, error: e && e.message ? e.message : 'save failed' });
   }
 });
 
