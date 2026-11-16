@@ -2,15 +2,22 @@
 <div class="page-head">
   <div>
     <div class="page-title"><i class="fas fa-user-tie"></i> <%= train.full_name %></div>
-    <div class="page-sub"><%= train.qualification || '' %><% if (train.specialization) { %> · <%= train.specialization %><% } %> · الفترة: <b><%= month %></b></div>
+    <div class="page-sub"><%= train.qualification || '' %><% if (train.specialization) { %> · <%= train.specialization %><% } %> · الفترة: <b><%= from %> ← <%= to %></b></div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
     <form method="get" action="/trainer-profile/<%= train.id %>" class="flex gap-1">
-      <input type="month" name="month" class="form-control" value="<%= month %>">
-      <button class="btn btn-outline btn-sm" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
+      <div class="form-group" style="margin:0">
+        <label class="font-11 text-muted">من</label>
+        <input type="date" name="from" class="form-control" value="<%= from %>">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="font-11 text-muted">إلى</label>
+        <input type="date" name="to" class="form-control" value="<%= to %>">
+      </div>
+      <button class="btn btn-outline btn-sm" type="submit" style="margin-top:18px"><i class="fas fa-magnifying-glass"></i> عرض</button>
     </form>
-    <a href="/trainer-attendance?month=<%= month %>" class="btn btn-ghost btn-sm"><i class="fas fa-list"></i> كل المدربين</a>
+    <a href="/trainer-attendance?from=<%= from %>&to=<%= to %>" class="btn btn-ghost btn-sm"><i class="fas fa-list"></i> كل المدربين</a>
   </div>
 </div>
 
@@ -26,7 +33,7 @@
 
 <div class="grid-2" style="align-items:start">
   <div class="card">
-    <div class="card-header"><i class="fas fa-clipboard-user"></i> سجل الحصص (<%= month %>)</div>
+    <div class="card-header"><i class="fas fa-clipboard-user"></i> سجل الحصص (<%= from %> ← <%= to %>)</div>
     <div class="table-wrap">
       <table class="data-table">
         <thead><tr><th class="sortable">التاريخ<span class="sort-ind"></span></th><th>المجموعة</th><th>الوقت</th><th class="sortable">الحالة<span class="sort-ind"></span></th><th class="sortable">القيمة<span class="sort-ind"></span></th></tr></thead>
@@ -43,7 +50,7 @@
               </tr>
             <% }); %>
           <% } else { %>
-            <tr><td colspan="5"><div class="empty-state"><i class="fas fa-clipboard-user"></i><p>لا توجد حصص مسجلة في هذا الشهر</p></div></td></tr>
+            <tr><td colspan="5"><div class="empty-state"><i class="fas fa-clipboard-user"></i><p>لا توجد حصص مسجلة في هذه الفترة</p></div></td></tr>
           <% } %>
         </tbody>
       </table>
@@ -84,7 +91,7 @@
         </table>
       </div>
       <div class="card-body">
-        <a href="/deductions?month=<%= month %>" class="btn btn-ghost btn-sm"><i class="fas fa-scale-balanced"></i> إدارة الخصومات والإضافات</a>
+        <a href="/deductions?from=<%= from %>&to=<%= to %>" class="btn btn-ghost btn-sm"><i class="fas fa-scale-balanced"></i> إدارة الخصومات والإضافات</a>
       </div>
     </div>
   </div>

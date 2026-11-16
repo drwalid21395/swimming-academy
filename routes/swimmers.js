@@ -191,7 +191,9 @@ crud(router, '/coaches', {
       { key: 'email', label: 'البريد الإلكتروني', type: 'email' },
       { key: 'cv', label: 'السيرة الذاتية (PDF)', type: 'file', accept: '.pdf', hint: 'يُرفع ملف PDF بسيرة الموظف الذاتية', section: 'بيانات إضافية', sectionIcon: 'fa-briefcase' },
       { key: 'hire_date', label: 'تاريخ التعيين', type: 'date' },
-      { key: 'salary', label: 'الراتب', type: 'number', number: true },
+      { key: 'contract_type', label: 'نوع التعاقد', type: 'select', options: contractTypes },
+      { key: 'salary_type', label: 'نظام الأجر', type: 'select', options: salaryTypes },
+      { key: 'salary', label: 'الراتب / قيمة الحصة', type: 'number', number: true },
       { key: 'status', label: 'الحالة', type: 'select', options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'متوقف' }] }
     ],
     view: true,
@@ -205,7 +207,9 @@ crud(router, '/coaches', {
       { key: 'email', label: 'البريد الإلكتروني' },
       { key: 'cv', label: 'السيرة الذاتية', html: v => cvLink(v) },
       { key: 'hire_date', label: 'تاريخ التعيين' },
-      { key: 'salary', label: 'الراتب', html: v => money(v) },
+      { key: 'contract_type', label: 'نوع التعاقد' },
+      { key: 'salary_type', label: 'نظام الأجر', html: v => ({ monthly: 'راتب شهري', per_session: 'قيمة الحصة', percent: 'نسبة من الاشتراكات' })[v] || v },
+      { key: 'salary', label: 'الراتب / قيمة الحصة', html: v => money(v) },
       { key: 'status', label: 'الحالة', html: v => v === 'active' ? 'نشط' : 'متوقف' }
     ]
   });

@@ -140,6 +140,115 @@ function amountForAttendance(row, pol) {
 function deductForLate(tier) { return tier.deduct; }
 
 /* ================================================================
+   دعم التعاقد بالحصة للمدربين والموظفين
+   ================================================================ */
+function isPerSessionCoach(c) {
+  return !!c && (c.salary_type === 'per_session' || c.contract_type === 'بالحصة');
+}
+function isPerSessionStaff(s) {
+  return !!s && (s.salary_type === 'per_session' || s.contract_type === 'بالحصة');
+}
+async function perSessionRateForStaff(staffId) {
+  const s = await db.prepare('SELECT salary FROM staff WHERE id = ?').get(staffId);
+  return Number((s && s.salary) || 0);
+}
+
+/* الحصص المستحقة للمدرب: حاضر/متأخر/معتذر/بديل (الملغاة حسب السياسة) */
+function coachPayableStatuses() { return ['حاضر', 'متأخر', 'معتذر', 'بديل']; }
+function staffPayableStatuses() { return ['حاضر', 'متأخر']; }
+
+function rangeWhere(range) {
+  if (!range || !range.from || !range.to) return { sql: '', args: [] };
+  return { sql: ' AND a.date >= ? AND a.date <= ?', args: [range.from, range.to] };
+}
+
+async function countSessionBalance(personType, personId, range) {
+  const id = Number(personId) || 0;
+  if (!id) return { attended: 0, claimed: 0, unclaimed: 0, rate: 0, amountDue: 0 };
+  const rw = rangeWhere(range);
+  let rate = 0;
+  if (personType === 'trainer') {
+    const r = await effectiveTrainerRate(id, null);
+    rate = Number(r.effective || 0);
+    const attendedRow = await db.prepare(`SELECT COUNT(*) AS c FROM trainer_session_attendance a
+      WHERE a.coach_id = ? AND a.status IN (${coachPayableStatuses().map(() => '?').join(',')})` + rw.sql).get(id, ...coachPayableStatuses(), ...rw.args);
+    const claimedRow = await db.prepare(`SELECT COUNT(*) AS c FROM trainer_session_attendance a
+      JOIN payroll_items pi ON pi.source_type = 'trainer' AND pi.source_id = a.id
+      WHERE a.coach_id = ? AND a.status IN (${coachPayableStatuses().map(() => '?').join(',')})` + rw.sql).get(id, ...coachPayableStatuses(), ...rw.args);
+    const subAttended = await db.prepare(`SELECT COUNT(*) AS c FROM trainer_session_attendance a
+      WHERE a.substitute_coach_id = ? AND a.status IN (${coachPayableStatuses().map(() => '?').join(',')})` + rw.sql).get(id, ...coachPayableStatuses(), ...rw.args);
+    const subClaimed = await db.prepare(`SELECT COUNT(*) AS c FROM trainer_session_attendance a
+      JOIN payroll_items pi ON pi.source_type = 'substitute' AND pi.source_id = a.id
+      WHERE a.substitute_coach_id = ? AND a.status IN (${coachPayableStatuses().map(() => '?').join(',')})` + rw.sql).get(id, ...coachPayableStatuses(), ...rw.args);
+    const attended = Number(attendedRow && attendedRow.c || 0) + Number(subAttended && subAttended.c || 0);
+    const claimed = Number(claimedRow && claimedRow.c || 0) + Number(subClaimed && subClaimed.c || 0);
+    return { attended, claimed, unclaimed: Math.max(0, attended - claimed), rate, amountDue: Math.max(0, attended - claimed) * rate };
+  }
+  // staff
+  rate = await perSessionRateForStaff(id);
+  const attendedRow = await db.prepare(`SELECT COUNT(*) AS c FROM staff_attendance a
+    WHERE a.staff_id = ? AND a.status IN (${staffPayableStatuses().map(() => '?').join(',')})` + rw.sql).get(id, ...staffPayableStatuses(), ...rw.args);
+  const claimedRow = await db.prepare(`SELECT COUNT(*) AS c FROM staff_attendance a
+    JOIN payroll_items pi ON pi.source_type = 'staff' AND pi.source_id = a.id
+    WHERE a.staff_id = ? AND a.status IN (${staffPayableStatuses().map(() => '?').join(',')})` + rw.sql).get(id, ...staffPayableStatuses(), ...rw.args);
+  const attended = Number(attendedRow && attendedRow.c || 0);
+  const claimed = Number(claimedRow && claimedRow.c || 0);
+  return { attended, claimed, unclaimed: Math.max(0, attended - claimed), rate, amountDue: Math.max(0, attended - claimed) * rate };
+}
+
+async function listUnclaimedSessions(personType, personId, limit, range) {
+  const id = Number(personId) || 0;
+  if (!id) return [];
+  limit = Math.max(1, Math.min(500, Number(limit) || 100));
+  const rw = rangeWhere(range);
+  if (personType === 'trainer') {
+    const pol = (await getPolicy()).pol;
+    const statuses = coachPayableStatuses();
+    const ph = statuses.map(() => '?').join(',');
+    const rows = await db.prepare(`SELECT a.*, g.name AS group_name,
+      CASE WHEN pi.id IS NULL THEN 0 ELSE 1 END AS claimed
+      FROM trainer_session_attendance a
+      LEFT JOIN groups g ON g.id = a.group_id
+      LEFT JOIN payroll_items pi ON pi.source_type = 'trainer' AND pi.source_id = a.id
+      WHERE a.coach_id = ? AND a.status IN (${ph}) AND pi.id IS NULL` + rw.sql + `
+      ORDER BY a.date ASC, a.start_time ASC LIMIT ?`).all(id, ...statuses, ...rw.args, limit);
+    const subRows = await db.prepare(`SELECT a.*, g.name AS group_name,
+      CASE WHEN pi.id IS NULL THEN 0 ELSE 1 END AS claimed
+      FROM trainer_session_attendance a
+      LEFT JOIN groups g ON g.id = a.group_id
+      LEFT JOIN payroll_items pi ON pi.source_type = 'substitute' AND pi.source_id = a.id
+      WHERE a.substitute_coach_id = ? AND a.status IN (${ph}) AND pi.id IS NULL` + rw.sql + `
+      ORDER BY a.date ASC, a.start_time ASC LIMIT ?`).all(id, ...statuses, ...rw.args, limit);
+    const map = {};
+    const out = [];
+    function add(r, isSub) {
+      const amt = amountForAttendance(r, pol);
+      out.push({
+        id: r.id, date: r.date, start_time: r.start_time, status: r.status,
+        title: (isSub ? 'بديل: ' : '') + (r.group_name || ('حصة #' + r.session_id)) + (r.start_time ? ' — ' + r.start_time : ''),
+        amount: Math.round(Number(amt || 0) * 100) / 100, source_type: isSub ? 'substitute' : 'trainer'
+      });
+    }
+    rows.forEach(r => add(r, false));
+    subRows.forEach(r => { if (!map[r.id]) { map[r.id] = 1; add(r, true); } });
+    out.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    return out.slice(0, limit);
+  }
+  // staff
+  const rate = await perSessionRateForStaff(id);
+  const statuses = staffPayableStatuses();
+  const ph = statuses.map(() => '?').join(',');
+  return await db.prepare(`SELECT a.id, a.date, a.status, a.session_rate,
+    CASE WHEN pi.id IS NULL THEN 0 ELSE 1 END AS claimed,
+    ('يوم عمل — ' || a.date) AS title,
+    COALESCE(a.session_rate, ?) AS amount
+    FROM staff_attendance a
+    LEFT JOIN payroll_items pi ON pi.source_type = 'staff' AND pi.source_id = a.id
+    WHERE a.staff_id = ? AND a.status IN (${ph}) AND pi.id IS NULL` + rw.sql + `
+    ORDER BY a.date ASC LIMIT ?`).all(rate, id, ...statuses, ...rw.args, limit);
+}
+
+/* ================================================================
    الشاشة السريعة: حصص اليوم + تسجيل حضور المدرب بضغطة
 ================================================================ */
 /* أسماء أيام الأسبوع الإنجليزية المقابلة لـ getDay() (0=الأحد ... 6=السبت) */
@@ -495,20 +604,22 @@ router.post('/staff-attendance/save', async function (req, res) {
   if (!staffId) return res.json({ ok: false, error: 'اختر الموظف' });
   const staffRow = await db.prepare('SELECT * FROM staff WHERE id = ?').get(staffId);
   const existing = await db.prepare('SELECT * FROM staff_attendance WHERE staff_id = ? AND date = ?').get(staffId, date);
+  const rate = isPerSessionStaff(staffRow) ? Number(staffRow.salary || 0) : 0;
   const rec = {
     staff_id: staffId, branch_id: b.branch_id || (staffRow && staffRow.branch_id) || null,
     date, check_in: b.check_in || '', check_out: b.check_out || '',
     status: String(b.status || 'حاضر'), shift_count: Number(b.shift_count || 1),
+    session_rate: rate, base_rate: rate,
     late_minutes: Number(b.late_minutes || 0), early_leave: Number(b.early_leave || 0),
     overtime_minutes: Number(b.overtime_minutes || 0), note: String(b.note || '')
   };
   if (existing) {
-    await db.prepare(`UPDATE staff_attendance SET branch_id=?, check_in=?, check_out=?, status=?, shift_count=?, late_minutes=?, early_leave=?, overtime_minutes=?, note=? WHERE id=?`)
-      .run(rec.branch_id, rec.check_in, rec.check_out, rec.status, rec.shift_count, rec.late_minutes, rec.early_leave, rec.overtime_minutes, rec.note, existing.id);
+    await db.prepare(`UPDATE staff_attendance SET branch_id=?, check_in=?, check_out=?, status=?, shift_count=?, session_rate=?, base_rate=?, late_minutes=?, early_leave=?, overtime_minutes=?, note=? WHERE id=?`)
+      .run(rec.branch_id, rec.check_in, rec.check_out, rec.status, rec.shift_count, rec.session_rate, rec.base_rate, rec.late_minutes, rec.early_leave, rec.overtime_minutes, rec.note, existing.id);
     audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'staffAttendance', existing.id, 'تعديل حضور: ' + (staffRow ? staffRow.full_name : staffId) + ' — ' + date, req);
   } else {
-    const info = await db.prepare(`INSERT INTO staff_attendance (staff_id, branch_id, date, check_in, check_out, status, shift_count, late_minutes, early_leave, overtime_minutes, note, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(rec.staff_id, rec.branch_id, rec.date, rec.check_in, rec.check_out, rec.status, rec.shift_count, rec.late_minutes, rec.early_leave, rec.overtime_minutes, rec.note, req.currentUser.id);
+    const info = await db.prepare(`INSERT INTO staff_attendance (staff_id, branch_id, date, check_in, check_out, status, shift_count, session_rate, base_rate, late_minutes, early_leave, overtime_minutes, note, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(rec.staff_id, rec.branch_id, rec.date, rec.check_in, rec.check_out, rec.status, rec.shift_count, rec.session_rate, rec.base_rate, rec.late_minutes, rec.early_leave, rec.overtime_minutes, rec.note, req.currentUser.id);
     audit(req.currentUser.id, req.currentUser.full_name, 'add', 'staffAttendance', Number(info.lastInsertRowid || 0), 'تسجيل حضور: ' + (staffRow ? staffRow.full_name : staffId) + ' — ' + date + ' (' + rec.status + ')', req);
   }
   res.json({ ok: true });
@@ -523,8 +634,8 @@ router.post('/staff-attendance/save-day', async function (req, res) {
   const b = req.body;
   const date = String(b.date || today());
   const statuses = b.statuses || {};
-  const stmtU = await db.prepare(`UPDATE staff_attendance SET branch_id=?, check_in=?, check_out=?, status=?, shift_count=?, late_minutes=?, early_leave=?, overtime_minutes=?, note=? WHERE id=?`);
-  const stmtI = await db.prepare(`INSERT INTO staff_attendance (staff_id, branch_id, date, check_in, check_out, status, shift_count, late_minutes, early_leave, overtime_minutes, note, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const stmtU = await db.prepare(`UPDATE staff_attendance SET branch_id=?, check_in=?, check_out=?, status=?, shift_count=?, session_rate=?, base_rate=?, late_minutes=?, early_leave=?, overtime_minutes=?, note=? WHERE id=?`);
+  const stmtI = await db.prepare(`INSERT INTO staff_attendance (staff_id, branch_id, date, check_in, check_out, status, shift_count, session_rate, base_rate, late_minutes, early_leave, overtime_minutes, note, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   let n = 0;
   for (const sid of Object.keys(statuses || {})) {
     const id = Number(sid);
@@ -532,11 +643,12 @@ router.post('/staff-attendance/save-day', async function (req, res) {
     const v = statuses[sid] || {};
     const staffRow = await db.prepare('SELECT * FROM staff WHERE id = ?').get(id);
     const status = String(v.status || 'حاضر');
+    const rate = isPerSessionStaff(staffRow) ? Number(staffRow.salary || 0) : 0;
     const existing = await db.prepare('SELECT * FROM staff_attendance WHERE staff_id = ? AND date = ?').get(id, date);
     if (existing) {
-      await stmtU.run(staffRow && staffRow.branch_id || null, v.check_in || '', v.check_out || '', status, Number(v.shift_count || 1), Number(v.late_minutes || 0), Number(v.early_leave || 0), Number(v.overtime_minutes || 0), String(v.note || ''), existing.id);
+      await stmtU.run(staffRow && staffRow.branch_id || null, v.check_in || '', v.check_out || '', status, Number(v.shift_count || 1), rate, rate, Number(v.late_minutes || 0), Number(v.early_leave || 0), Number(v.overtime_minutes || 0), String(v.note || ''), existing.id);
     } else {
-      await stmtI.run(id, staffRow && staffRow.branch_id || null, date, v.check_in || '', v.check_out || '', status, Number(v.shift_count || 1), Number(v.late_minutes || 0), Number(v.early_leave || 0), Number(v.overtime_minutes || 0), String(v.note || ''), req.currentUser.id);
+      await stmtI.run(id, staffRow && staffRow.branch_id || null, date, v.check_in || '', v.check_out || '', status, Number(v.shift_count || 1), rate, rate, Number(v.late_minutes || 0), Number(v.early_leave || 0), Number(v.overtime_minutes || 0), String(v.note || ''), req.currentUser.id);
     }
     n++;
   }
@@ -667,6 +779,20 @@ router.get('/payroll', async function (req, res) {
     ORDER BY p.person_type, c.full_name, s.full_name`).all();
   const rows = allRows.filter(function (r) { return overlapsRange(r, range); });
 
+  // حساب رصيد الحصص للتعاقدات بالحصة
+  for (const r of rows) {
+    let ps = false;
+    if (r.person_type === 'trainer' && r.coach_id) {
+      const coach = await db.prepare('SELECT salary_type, contract_type FROM coaches WHERE id = ?').get(r.coach_id);
+      ps = isPerSessionCoach(coach);
+    } else if (r.person_type === 'staff' && r.staff_id) {
+      const staff = await db.prepare('SELECT salary_type, contract_type FROM staff WHERE id = ?').get(r.staff_id);
+      ps = isPerSessionStaff(staff);
+    }
+    r.is_per_session = ps;
+    r.session_balance = ps ? await countSessionBalance(r.person_type, r.person_type === 'trainer' ? r.coach_id : r.staff_id) : null;
+  }
+
   const coaches = await db.prepare('SELECT * FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), '') + ' ORDER BY full_name').all();
   const staff = await db.prepare('SELECT * FROM staff ORDER BY full_name').all();
   res.render('attendance_payroll/payroll_list', {
@@ -693,6 +819,7 @@ async function computeTrainerPayroll(coachId, range, opts) {
   opts = opts || {};
   const t = await db.prepare('SELECT * FROM coaches WHERE id = ?').get(coachId);
   if (!t) return null;
+  const perSession = isPerSessionCoach(t);
   const pol = (await getPolicy()).pol;
   const linked = opts.payrollId ? await db.prepare('SELECT * FROM payroll_items WHERE payroll_id = ?').all(opts.payrollId) : [];
   const linkedSet = new Set(linked.map(function (it) { return it.source_type + ':' + it.source_id; }));
@@ -700,52 +827,63 @@ async function computeTrainerPayroll(coachId, range, opts) {
   const wanted = new Set((opts.keys || []).map(String));
   const acc = await accruedKeysForRange(range);
 
-  const atts = await db.prepare(`SELECT a.*, g.name AS group_name FROM trainer_session_attendance a
-    LEFT JOIN groups g ON g.id = a.group_id
-    WHERE a.coach_id = ? AND a.date >= ? AND a.date <= ? ORDER BY a.date`).all(coachId, range.from, range.to);
-  const subs = await db.prepare(`SELECT a.*, g.name AS group_name FROM trainer_session_attendance a
-    LEFT JOIN groups g ON g.id = a.group_id
-    WHERE a.substitute_coach_id = ? AND a.date >= ? AND a.date <= ? ORDER BY a.date`).all(coachId, range.from, range.to);
-  const priv = await db.prepare(`SELECT ps.*, sw.full_name AS swimmer_name FROM private_sessions ps
-    LEFT JOIN swimmers sw ON sw.id = ps.swimmer_id
-    WHERE ps.coach_id = ? AND ps.date >= ? AND ps.date <= ? AND ps.status IN ('present','late') ORDER BY ps.date`)
-    .all(coachId, range.from, range.to);
-
   let gross = 0, extras = 0, deductions = 0;
-  const items = [];
-  function include(key, amount, sourceType, sourceId, workDate, title) {
-    if (linkedMode) {
-      const allowed = linkedSet.has(key) || (wanted.size ? wanted.has(key) : (opts.includeNew === true && !acc.has(key)));
-      if (!allowed) return false;
-    } else if (wanted.size) {
-      if (!wanted.has(key)) return false;
-    } else if (opts.includeNew === false) {
-      return false;
-    } else if (acc.has(key)) {
-      return false;
-    }
-    gross += Number(amount || 0);
-    items.push({
-      source_type: sourceType, source_id: sourceId, work_date: workDate,
-      title: title || '', amount: Math.round(Number(amount || 0) * 100) / 100
-    });
-    return true;
-  }
+  let items = [];
 
-  atts.forEach(function (a) {
-    const amt = a.status === 'غائب' ? 0 : amountForAttendance(a, pol);
-    const inc = include(keyOf('trainer', a.id), amt, 'trainer', a.id, a.date,
-      (a.group_name || ('حصة #' + a.session_id)) + (a.start_time ? ' — ' + a.start_time : ''));
-    if (inc && a.status === 'غائب' && Number(pol.absence_deduction || 0) > 0) deductions += Number(pol.absence_deduction);
-  });
-  subs.forEach(function (a) {
-    include(keyOf('substitute', a.id), amountForAttendance(a, pol), 'substitute', a.id, a.date,
-      'بديل: ' + (a.group_name || ('حصة #' + a.session_id)));
-  });
-  priv.forEach(function (s) {
-    include(keyOf('private', s.id), Number(s.rate || 0), 'private', s.id, s.date,
-      'تدريب خاص — ' + (s.swimmer_name || ''));
-  });
+  if (!perSession) {
+    const atts = await db.prepare(`SELECT a.*, g.name AS group_name FROM trainer_session_attendance a
+      LEFT JOIN groups g ON g.id = a.group_id
+      WHERE a.coach_id = ? AND a.date >= ? AND a.date <= ? ORDER BY a.date`).all(coachId, range.from, range.to);
+    const subs = await db.prepare(`SELECT a.*, g.name AS group_name FROM trainer_session_attendance a
+      LEFT JOIN groups g ON g.id = a.group_id
+      WHERE a.substitute_coach_id = ? AND a.date >= ? AND a.date <= ? ORDER BY a.date`).all(coachId, range.from, range.to);
+    const priv = await db.prepare(`SELECT ps.*, sw.full_name AS swimmer_name FROM private_sessions ps
+      LEFT JOIN swimmers sw ON sw.id = ps.swimmer_id
+      WHERE ps.coach_id = ? AND ps.date >= ? AND ps.date <= ? AND ps.status IN ('present','late') ORDER BY ps.date`)
+      .all(coachId, range.from, range.to);
+
+    function include(key, amount, sourceType, sourceId, workDate, title) {
+      if (linkedMode) {
+        const allowed = linkedSet.has(key) || (wanted.size ? wanted.has(key) : (opts.includeNew === true && !acc.has(key)));
+        if (!allowed) return false;
+      } else if (wanted.size) {
+        if (!wanted.has(key)) return false;
+      } else if (opts.includeNew === false) {
+        return false;
+      } else if (acc.has(key)) {
+        return false;
+      }
+      gross += Number(amount || 0);
+      items.push({
+        source_type: sourceType, source_id: sourceId, work_date: workDate,
+        title: title || '', amount: Math.round(Number(amount || 0) * 100) / 100
+      });
+      return true;
+    }
+
+    atts.forEach(function (a) {
+      const amt = a.status === 'غائب' ? 0 : amountForAttendance(a, pol);
+      const inc = include(keyOf('trainer', a.id), amt, 'trainer', a.id, a.date,
+        (a.group_name || ('حصة #' + a.session_id)) + (a.start_time ? ' — ' + a.start_time : ''));
+      if (inc && a.status === 'غائب' && Number(pol.absence_deduction || 0) > 0) deductions += Number(pol.absence_deduction);
+    });
+    subs.forEach(function (a) {
+      include(keyOf('substitute', a.id), amountForAttendance(a, pol), 'substitute', a.id, a.date,
+        'بديل: ' + (a.group_name || ('حصة #' + a.session_id)));
+    });
+    priv.forEach(function (s) {
+      include(keyOf('private', s.id), Number(s.rate || 0), 'private', s.id, s.date,
+        'تدريب خاص — ' + (s.swimmer_name || ''));
+    });
+  } else {
+    // للتعاقد بالحصة: لا نُدخل الحصص تلقائياً هنا؛ تُستحق عبر صرف/استحقاق يدوي
+    // نحتفظ بالبنود المستحقة سابقاً إن وُجدت
+    if (opts.payrollId) {
+      const sum = await db.prepare('SELECT COALESCE(SUM(amount),0) AS s FROM payroll_items WHERE payroll_id = ?').get(opts.payrollId);
+      gross = Number(sum && sum.s || 0);
+    }
+    items = undefined;
+  }
 
   const adjustments = await payrollAdjustments('trainer', coachId, range);
   adjustments.forEach(function (x) { if (x.adj_type === 'bonus') extras += Number(x.amount || 0); else deductions += Number(x.amount || 0); });
@@ -753,7 +891,7 @@ async function computeTrainerPayroll(coachId, range, opts) {
   gross = Math.round(gross * 100) / 100;
   extras = Math.round(extras * 100) / 100;
   deductions = Math.round(deductions * 100) / 100;
-  return { coachId, personType: 'trainer', name: t.full_name, atts: items.length, items, gross, extras, deductions, net: Math.round((gross + extras - deductions) * 100) / 100 };
+  return { coachId, personType: 'trainer', name: t.full_name, atts: items && items.length || 0, items, gross, extras, deductions, net: Math.round((gross + extras - deductions) * 100) / 100 };
 }
 
 async function computeStaffPayroll(staffId, range, opts) {
@@ -761,24 +899,35 @@ async function computeStaffPayroll(staffId, range, opts) {
   const s = await db.prepare('SELECT * FROM staff WHERE id = ?').get(staffId);
   if (!s) return null;
   const rate = await db.prepare('SELECT * FROM staff_rates WHERE staff_id = ?').get(staffId);
-  const attendance = await db.prepare('SELECT * FROM staff_attendance WHERE staff_id = ? AND date >= ? AND date <= ?').all(staffId, range.from, range.to);
+  const perSession = isPerSessionStaff(s);
   let gross = 0;
-  if (rate && rate.pay_system === 'shift') {
-    const shiftVal = Number(rate.shift_value || 0);
-    const hourVal = Number(rate.hourly_value || 0);
-    attendance.forEach(a => {
-      let v = shiftVal * Number(a.shift_count || 1);
-      const ot = Number(a.overtime_minutes || 0);
-      if (ot > 0 && hourVal > 0) v += (ot / 60) * hourVal;
-      if (a.status !== 'حاضر' && a.status !== 'متأخر') v = 0;
-      gross += v;
-    });
+  let items = [];
+  if (!perSession) {
+    const attendance = await db.prepare('SELECT * FROM staff_attendance WHERE staff_id = ? AND date >= ? AND date <= ?').all(staffId, range.from, range.to);
+    if (rate && rate.pay_system === 'shift') {
+      const shiftVal = Number(rate.shift_value || 0);
+      const hourVal = Number(rate.hourly_value || 0);
+      attendance.forEach(a => {
+        let v = shiftVal * Number(a.shift_count || 1);
+        const ot = Number(a.overtime_minutes || 0);
+        if (ot > 0 && hourVal > 0) v += (ot / 60) * hourVal;
+        if (a.status !== 'حاضر' && a.status !== 'متأخر') v = 0;
+        gross += v;
+      });
+    } else {
+      // شهري: راتب ثابت للفترة (يُحتسب كامل بغض النظر عن أيام الحضور، مع خصم الغياب حسب الأيام)
+      gross = Number((rate && rate.monthly_salary) || s.salary || 0);
+      const dayValue = Number((rate && rate.day_value) || 0);
+      const absDays = attendance.filter(a => a.status === 'غائب').length;
+      if (absDays > 0 && dayValue > 0) gross = gross - (absDays * dayValue);
+    }
   } else {
-    // شهري: راتب ثابت للفترة (يُحتسب كامل بغض النظر عن أيام الحضور، مع خصم الغياب حسب الأيام)
-    gross = Number((rate && rate.monthly_salary) || s.salary || 0);
-    const dayValue = Number((rate && rate.day_value) || 0);
-    const absDays = attendance.filter(a => a.status === 'غائب').length;
-    if (absDays > 0 && dayValue > 0) gross = gross - (absDays * dayValue);
+    // للتعاقد بالحصة: لا نُحتسب الحصص تلقائياً
+    if (opts && opts.payrollId) {
+      const sum = await db.prepare('SELECT COALESCE(SUM(amount),0) AS s FROM payroll_items WHERE payroll_id = ?').get(opts.payrollId);
+      gross = Number(sum && sum.s || 0);
+    }
+    items = undefined;
   }
   let extras = 0, deductions = 0;
   const adjustments = await payrollAdjustments('staff', staffId, range);
@@ -786,7 +935,7 @@ async function computeStaffPayroll(staffId, range, opts) {
   gross = Math.round(gross * 100) / 100;
   extras = Math.round(extras * 100) / 100;
   deductions = Math.round(deductions * 100) / 100;
-  return { staffId, personType: 'staff', name: s.full_name, atts: attendance.length, items: [], gross, extras, deductions, net: Math.round((gross + extras - deductions) * 100) / 100 };
+  return { staffId, personType: 'staff', name: s.full_name, atts: (items && items.length) || 0, items, gross, extras, deductions, net: Math.round((gross + extras - deductions) * 100) / 100 };
 }
 
 /* ترحيل كسول: الكشوف الشهرية القديمة (YYYY-MM) ليس لها بنود مرتبطة.
@@ -908,9 +1057,10 @@ router.post('/payroll/generate', async function (req, res) {
   } else {
     const list = ids.length ? ids : (await db.prepare('SELECT id FROM staff').all()).map(r => r.id);
     for (const id of list) {
-      const p = await computeStaffPayroll(id, range);
+      const existing = await findPayroll('staff', id, range);
+      const p = await computeStaffPayroll(id, range, { payrollId: existing && existing.id });
       if (!p) continue;
-      await upsertPayroll(p, range, req);
+      await upsertPayroll(p, range, req, { payrollId: existing && existing.id });
       results.push(p);
     }
   }
@@ -982,6 +1132,7 @@ async function upsertPayroll(p, range, req, opts) {
         .run(payrollId, it.source_type, it.source_id, it.work_date, it.title || '', it.amount || 0);
     }
   }
+  // للتعاقد بالحصة: نحتفظ بالبنود المستحقة سابقاً دون مسح
   return payrollId;
 }
 
@@ -1006,6 +1157,25 @@ router.get('/payroll/:id', async function (req, res) {
   if (!row) return res.redirect('/payroll');
   const range = parsePeriod(row.period, row.from_date, row.to_date);
   const label = periodLabel(row);
+
+  /* بيانات التعاقد بالحصة */
+  let perSession = false, sessionBalance = null, unclaimedSessions = [];
+  if (row.person_type === 'trainer' && row.coach_id) {
+    const coach = await db.prepare('SELECT salary_type, contract_type, salary_amount FROM coaches WHERE id = ?').get(row.coach_id);
+    if (isPerSessionCoach(coach)) {
+      perSession = true;
+      sessionBalance = await countSessionBalance('trainer', row.coach_id, range);
+      unclaimedSessions = await listUnclaimedSessions('trainer', row.coach_id, 50, range);
+    }
+  } else if (row.person_type === 'staff' && row.staff_id) {
+    const staff = await db.prepare('SELECT salary_type, contract_type, salary FROM staff WHERE id = ?').get(row.staff_id);
+    if (isPerSessionStaff(staff)) {
+      perSession = true;
+      sessionBalance = await countSessionBalance('staff', row.staff_id, range);
+      unclaimedSessions = await listUnclaimedSessions('staff', row.staff_id, 50, range);
+    }
+  }
+
   let statementRows = [];
   if (row.person_type === 'trainer' && row.coach_id) {
     const items = await db.prepare('SELECT * FROM payroll_items WHERE payroll_id = ? ORDER BY work_date, id').all(id);
@@ -1070,6 +1240,7 @@ router.get('/payroll/:id', async function (req, res) {
   res.render('attendance_payroll/payroll_detail', {
     title: 'كشف حساب ' + (row.coach_name || row.staff_name || ''), active: 'payroll',
     row, statementRows, adjustments, pays, month: label, periodLabel: label, range, pol,
+    perSession, sessionBalance, unclaimedSessions,
     STATUS: row.person_type === 'trainer' ? TRAINER_STATUS : STAFF_STATUS,
     canEdit: canEdit(req.currentUser, 'payroll'), canDel: canDel(req.currentUser, 'payroll'),
     canExport: canExport(req.currentUser, 'payroll'), PAY_METHODS, money, fmtMoney, fmtDate
@@ -1137,6 +1308,75 @@ router.post('/payroll/:id/settle', async function (req, res) {
   } catch (e) { /* لا نكسر العملية */ }
   audit(req.currentUser.id, req.currentUser.fullName || req.currentUser.full_name, 'settle', 'payroll', id, 'تسوية مستحقات ' + name + ': ' + money(remaining), req);
   res.json({ ok: true, remaining: 0, status: 'مسدد', settled_at: now });
+});
+
+/* صرف أو استحقاق عدد محدد من الحصص (للتعاقد بالحصة) */
+router.post('/payroll/:id/sessions-pay', async function (req, res) {
+  if (!canEdit(req.currentUser, 'payroll')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
+  const id = Number(req.params.id);
+  const row = await db.prepare('SELECT * FROM payroll WHERE id = ?').get(id);
+  if (!row) return res.status(404).json({ ok: false, error: 'الكشف غير موجود' });
+  if (row.settled_at) return res.json({ ok: false, error: 'الكشف مُسوَّى ولا يمكن تعديله' });
+
+  const b = req.body;
+  const action = String(b.action || 'pay'); // 'pay' => تحويل + استحقاق, 'claim' => استحقاق فقط
+  const sessionsCount = Math.max(0, Math.round(Number(b.sessions_count) || 0));
+  if (!sessionsCount) return res.json({ ok: false, error: 'أدخل عدد الحصص' });
+
+  const personType = row.person_type;
+  const personId = personType === 'trainer' ? row.coach_id : row.staff_id;
+  if (!personId) return res.json({ ok: false, error: 'لا يوجد شخص مرتبط بالكشف' });
+  const range = parsePeriod(row.period, row.from_date, row.to_date);
+
+  const unclaimed = await listUnclaimedSessions(personType, personId, 1000, range);
+  if (sessionsCount > unclaimed.length) return res.json({ ok: false, error: 'الحصص المطلوبة (' + sessionsCount + ') أكبر من غير المستحقة (' + unclaimed.length + ')' });
+
+  const selected = unclaimed.slice(0, sessionsCount);
+  const totalAmount = Math.round(selected.reduce((s, it) => s + Number(it.amount || 0), 0) * 100) / 100;
+  if (totalAmount <= 0) return res.json({ ok: false, error: 'لا توجد قيمة مستحقة للحصص المختارة' });
+
+  const paidDate = String(b.paid_date || today());
+  const method = String(b.method || 'نقدي');
+  const transferCode = String(b.transfer_code || '').trim().slice(0, 60);
+  const note = String(b.note || '');
+
+  // إضافة البنود للكشف
+  for (const it of selected) {
+    await db.prepare(`INSERT OR IGNORE INTO payroll_items (payroll_id, source_type, source_id, work_date, title, amount) VALUES (?,?,?,?,?,?)`)
+      .run(id, it.source_type || (personType === 'trainer' ? 'trainer' : 'staff'), it.id, it.date, it.title || '', it.amount || 0);
+  }
+
+  // تحديث إجماليات الكشف
+  const newGross = Math.round((Number(row.gross || 0) + totalAmount) * 100) / 100;
+  const newNet = Math.round((Number(row.net || 0) + totalAmount) * 100) / 100;
+  let paidNow = Number(row.paid_amount || 0);
+  if (action === 'pay') paidNow = Math.round((paidNow + totalAmount) * 100) / 100;
+  const remaining = Math.round((newNet - paidNow) * 100) / 100;
+  const status = remaining <= 0 ? 'مسدد' : (paidNow > 0 ? 'مدفوع جزئياً' : 'مستحق');
+  await db.prepare(`UPDATE payroll SET gross=?, net=?, paid_amount=?, remaining=?, status=?, updated_at=? WHERE id=?`)
+    .run(newGross, newNet, paidNow, remaining, status, new Date().toLocaleString('sv-SE').replace('T', ' '), id);
+
+  let txnId = 0;
+  if (action === 'pay') {
+    const info = await db.prepare(`INSERT INTO payroll_transactions (payroll_id, amount, paid_date, method, note, transfer_code, created_by) VALUES (?,?,?,?,?,?,?)`)
+      .run(id, totalAmount, paidDate, method, note, transferCode, req.currentUser.id);
+    txnId = Number(info.lastInsertRowid || 0);
+    // مصروف تلقائي
+    const meta = await db.prepare(`SELECT COALESCE(c.full_name, s.full_name) AS pname FROM payroll p LEFT JOIN coaches c ON c.id=p.coach_id LEFT JOIN staff s ON s.id=p.staff_id WHERE p.id=?`).get(id);
+    const name = (meta && meta.pname) || ('#' + id);
+    try {
+      const expInfo = await db.prepare(`INSERT INTO expenses (category, date, description, amount, payment_method, beneficiary, status, created_by) VALUES ('رواتب وأجور', ?, ?, ?, ?, ?, 'معتمد', ?)`)
+        .run(paidDate, 'صرف مستحقات: ' + name + ' — ' + sessionsCount + ' حصة (فترة ' + periodLabel(row) + ')' + (transferCode ? ' — كود: ' + transferCode : ''), totalAmount, method, name, req.currentUser.id);
+      const expId = Number(expInfo.lastInsertRowid || 0) || 0;
+      if (expId && txnId) await db.prepare('UPDATE payroll_transactions SET expense_id = ? WHERE id = ?').run(expId, txnId);
+    } catch (e) { /* لا نكسر العملية */ }
+  }
+
+  const meta = await db.prepare(`SELECT COALESCE(c.full_name, s.full_name) AS pname FROM payroll p LEFT JOIN coaches c ON c.id=p.coach_id LEFT JOIN staff s ON s.id=p.staff_id WHERE p.id=?`).get(id);
+  const name = (meta && meta.pname) || ('#' + id);
+  audit(req.currentUser.id, req.currentUser.fullName || req.currentUser.full_name, action === 'pay' ? 'approve_payment' : 'add', 'payroll', id,
+    (action === 'pay' ? 'صرف ' : 'استحقاق ') + sessionsCount + ' حصة لـ ' + name + ': ' + money(totalAmount), req);
+  res.json({ ok: true, sessionsCount, totalAmount, remaining, status, txnId });
 });
 
 /* إعادة احتساب إجماليات الكشف من الدفعات (تُستدعى بعد تعديل/حذف دفعة) */
@@ -1332,7 +1572,7 @@ router.post('/attendance-policy', async function (req, res) {
 /* ================================================================
    التقارير (عرض + تصدير CSV)
 ================================================================ */
-async function reportData(month, type, filterCoach, sid) {
+async function reportData(range, type, filterCoach, sid) {
   const f = filterCoach ? Number(filterCoach) : 0;
   let coaches;
   if (f) {
@@ -1344,7 +1584,7 @@ async function reportData(month, type, filterCoach, sid) {
   const rows = [];
   const pol = (await getPolicy()).pol;
   for (const c of coachesList) {
-    const atts = await db.prepare(`SELECT * FROM trainer_session_attendance WHERE coach_id=? AND substr(date,1,7)=?`).all(c.id, month);
+    const atts = await db.prepare(`SELECT * FROM trainer_session_attendance WHERE coach_id=? AND date >= ? AND date <= ?`).all(c.id, range.from, range.to);
     let present = 0, absent = 0, late = 0, cancelled = 0, substitute = 0, excused = 0, total = 0, cost = 0;
     atts.forEach(a => {
       total++;
@@ -1360,18 +1600,18 @@ async function reportData(month, type, filterCoach, sid) {
   }
   let presentTotal = 0, absentTotal = 0, lateTotal = 0, costTotal = 0, totalSessions = 0;
   rows.forEach(r => { presentTotal += r.present; absentTotal += r.absent; lateTotal += r.late; costTotal += r.cost; totalSessions += r.total; });
-  return { rows, month, summary: { presentTotal, absentTotal, lateTotal, costTotal, totalSessions } };
+  return { rows, range, summary: { presentTotal, absentTotal, lateTotal, costTotal, totalSessions } };
 }
 
 router.get('/attendance-reports', async function (req, res) {
   if (!canView(req.currentUser, 'reports') && !canView(req.currentUser, 'payroll')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const month = (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) ? req.query.month : today().slice(0, 7);
+  const range = rangeFromQuery(req.query);
   const type = String(req.query.type || 'trainers');
   const filterCoach = req.query.coach || 0;
   try {
-    const data = await reportData(month, type, filterCoach, activeSport(req));
+    const data = await reportData(range, type, filterCoach, activeSport(req));
     const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), '') + ' ORDER BY full_name').all();
-    res.render('attendance_payroll/reports', { title: 'تقارير الحضور والمستحقات', active: 'reports', ...data, type, coaches, month, filterCoach, canExport: canExport(req.currentUser, 'payroll') || canExport(req.currentUser, 'reports') });
+    res.render('attendance_payroll/reports', { title: 'تقارير الحضور والمستحقات', active: 'reports', ...data, type, coaches, from: range.from, to: range.to, filterCoach, canExport: canExport(req.currentUser, 'payroll') || canExport(req.currentUser, 'reports') });
   } catch (e) {
     console.error('attendance-reports error:', e);
     res.status(500).send('حدث خطأ في تقرير الحضور: ' + e.message);
@@ -1380,16 +1620,16 @@ router.get('/attendance-reports', async function (req, res) {
 
 router.get('/attendance-reports/export', async function (req, res) {
   if (!canExport(req.currentUser, 'payroll') && !canExport(req.currentUser, 'reports')) return res.status(403).send('غير مصرح');
-  const month = (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) ? req.query.month : today().slice(0, 7);
+  const range = rangeFromQuery(req.query);
   const type = String(req.query.type || 'trainers');
-  const data = await reportData(month, type, 0, activeSport(req));
+  const data = await reportData(range, type, 0, activeSport(req));
   const head = ['المدرب', 'إجمالي الحصص', 'حاضر', 'غائب', 'متأخر', 'ملغاة', 'بديل', 'معتذر', 'قيمة الحصص'];
   const lines = [head.join(',')];
   data.rows.forEach(r => lines.push([r.coach, r.total, r.present, r.absent, r.late, r.cancelled, r.substitute, r.excused, r.cost.toFixed(2)].join(',')));
   lines.push(['الإجمالي', data.summary.totalSessions, data.summary.presentTotal, data.summary.absentTotal, data.summary.lateTotal, '', '', '', data.summary.costTotal.toFixed(2)].join(','));
   const csv = '\uFEFF' + lines.join('\r\n');
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="attendance_' + month + '.csv"');
+  res.setHeader('Content-Disposition', 'attachment; filename="attendance_' + range.from + '_' + range.to + '.csv"');
   res.send(csv);
 });
 
@@ -1409,11 +1649,11 @@ router.get('/trainer-profile/:id', async function (req, res) {
   if (!canView(req.currentUser, 'trainerAttendance')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const train = await db.prepare('SELECT * FROM coaches WHERE id=?').get(Number(req.params.id));
   if (!train) return res.redirect('/trainer-attendance');
-  const month = (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) ? req.query.month : today().slice(0, 7);
-  const atts = await db.prepare(`SELECT a.*, g.name AS group_name, b.name AS branch_name FROM trainer_session_attendance a LEFT JOIN groups g ON g.id=a.group_id LEFT JOIN branches b ON b.id=a.branch_id WHERE a.coach_id=? AND substr(a.date,1,7)=? ORDER BY a.date`).all(train.id, month);
+  const range = rangeFromQuery(req.query);
+  const atts = await db.prepare(`SELECT a.*, g.name AS group_name, b.name AS branch_name FROM trainer_session_attendance a LEFT JOIN groups g ON g.id=a.group_id LEFT JOIN branches b ON b.id=a.branch_id WHERE a.coach_id=? AND a.date >= ? AND a.date <= ? ORDER BY a.date`).all(train.id, range.from, range.to);
   const rate = await effectiveTrainerRate(train.id);
-  const adjustments = await db.prepare('SELECT * FROM salary_adjustments WHERE coach_id=? AND period=? ORDER BY date DESC').all(train.id, month);
-  res.render('attendance_payroll/trainer_profile', { title: 'ملف ' + train.full_name, active: 'trainerAttendance', train, atts, rate, adjustments, month, STATUS: TRAINER_STATUS, money, fmtDate });
+  const adjustments = await db.prepare('SELECT * FROM salary_adjustments WHERE coach_id=? AND date >= ? AND date <= ? ORDER BY date DESC').all(train.id, range.from, range.to);
+  res.render('attendance_payroll/trainer_profile', { title: 'ملف ' + train.full_name, active: 'trainerAttendance', train, atts, rate, adjustments, from: range.from, to: range.to, STATUS: TRAINER_STATUS, money, fmtDate });
 });
 
 module.exports = router;

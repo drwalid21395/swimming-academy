@@ -60,7 +60,50 @@
 </div>
 <% } %>
 
-<% if (canEdit && Number(row.remaining) > 0) { %>
+<% if (perSession && sessionBalance) { %>
+<div class="card no-print">
+  <div class="card-header"><i class="fas fa-list-check"></i> صرف/استحقاق بالحصص</div>
+  <div class="card-body">
+    <div class="kpi-row">
+      <div class="kpi"><div class="k-val text-primary"><%= sessionBalance.attended %></div><div class="k-lbl">إجمالي الحضور</div></div>
+      <div class="kpi"><div class="k-val text-success"><%= sessionBalance.claimed %></div><div class="k-lbl">مستحقة</div></div>
+      <div class="kpi"><div class="k-val text-danger"><%= sessionBalance.unclaimed %></div><div class="k-lbl">غير مستحقة</div></div>
+      <div class="kpi"><div class="k-val"><%= money(sessionBalance.rate) %></div><div class="k-lbl">قيمة الحصة</div></div>
+    </div>
+    <% if (unclaimedSessions.length) { %>
+    <div class="table-wrap" style="margin:12px 0">
+      <table class="data-table rtable">
+        <thead><tr><th>التاريخ</th><th>البيان</th><th>الحالة</th><th>القيمة</th></tr></thead>
+        <tbody>
+          <% unclaimedSessions.forEach(function(s){ %>
+          <tr><td data-label="التاريخ"><%= fmtDate(s.date) %></td><td data-label="البيان"><%= s.title %></td><td data-label="الحالة"><span class="badge badge-success"><%= s.status %></span></td><td data-label="القيمة"><%= money(s.amount) %></td></tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <% } %>
+    <form id="sessionPayForm">
+      <div class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="margin:0">
+          <label class="font-11 text-muted">عدد الحصص (غير مستحقة: <%= sessionBalance.unclaimed %>)</label>
+          <input type="number" min="1" max="<%= sessionBalance.unclaimed %>" id="sessCount" class="form-control" value="<%= sessionBalance.unclaimed > 0 ? 1 : 0 %>" style="width:130px" <%= sessionBalance.unclaimed <= 0 ? 'disabled' : '' %>>
+        </div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">التاريخ</label><input type="date" id="sessDate" class="form-control" value="<%= today() %>"></div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">طريقة الدفع</label><select id="sessMethod" class="form-control"><% PAY_METHODS.forEach(function(m){ %><option value="<%= m %>"><%= m %></option><% }) %></select></div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">كود/رقم التحويل</label><input type="text" id="sessCode" class="form-control" dir="ltr" value="<%= personPhone %>" style="width:160px"></div>
+        <div class="form-group" style="margin:0;min-width:170px"><label class="font-11 text-muted">ملاحظة</label><input type="text" id="sessNote" class="form-control"></div>
+      </div>
+      <div class="flex gap-1" style="margin-top:10px">
+        <button type="submit" class="btn btn-success btn-lg" data-action="pay"><i class="fas fa-money-bill-transfer"></i> تحويل + استحقاق</button>
+        <button type="button" class="btn btn-outline btn-lg" id="claimOnlyBtn"><i class="fas fa-check-circle"></i> استحقاق فقط</button>
+      </div>
+    </form>
+    <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> «تحويل + استحقاق» تسجّل الدفعة وتُثبّت الحصص كمستحقة. «استحقاق فقط» تُثبّت الحصص دون تسجيل دفعة.</div>
+  </div>
+</div>
+<% } %>
+
+<% if (canEdit && Number(row.remaining) > 0 && !perSession) { %>
 <div class="card no-print">
   <div class="card-header"><i class="fas fa-check-double"></i> تم الاستحقاق</div>
   <div class="card-body">
@@ -82,7 +125,7 @@
 </div>
 <% } %>
 
-<% if (canEdit && Number(row.remaining) > 0) { %>
+<% if (canEdit && Number(row.remaining) > 0 && !perSession) { %>
 <div class="card no-print">
   <div class="card-header"><i class="fas fa-money-bill-wave"></i> تسجيل دفعة</div>
   <div class="card-body">
@@ -592,6 +635,50 @@
         .catch(function () { settleBtn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
     });
   });
+
+  /* صرف/استحقاق بالحصص */
+  var sessionPayForm = document.getElementById('sessionPayForm');
+  if (sessionPayForm) {
+    function doSessionPay(action) {
+      var countEl = document.getElementById('sessCount');
+      var count = Number(countEl && countEl.value || 0);
+      if (!count || count <= 0) { App.showToast('أدخل عدد الحصص', 'warning'); return; }
+      var payload = {
+        action: action,
+        sessions_count: count,
+        paid_date: document.getElementById('sessDate').value,
+        method: document.getElementById('sessMethod').value,
+        transfer_code: document.getElementById('sessCode').value,
+        note: document.getElementById('sessNote').value
+      };
+      var btn = sessionPayForm.querySelector('button[type="submit"]');
+      if (btn) btn.disabled = true;
+      var claimBtn = document.getElementById('claimOnlyBtn');
+      if (claimBtn) claimBtn.disabled = true;
+      postJSON('/payroll/<%= row.id %>/sessions-pay', payload).then(function (o) {
+        if (btn) btn.disabled = false;
+        if (claimBtn) claimBtn.disabled = false;
+        if (o.j && o.j.ok) {
+          App.showToast((action === 'pay' ? 'تم الصرف والاستحقاق: ' : 'تم الاستحقاق: ') + o.j.sessionsCount + ' حصة (' + money(o.j.totalAmount) + ')', 'success');
+          setTimeout(function () { location.reload(); }, 700);
+        } else {
+          App.showToast((o.j && o.j.error) || ('فشل العملية (' + o.r.status + ')'), 'error');
+        }
+      }).catch(function () {
+        if (btn) btn.disabled = false;
+        if (claimBtn) claimBtn.disabled = false;
+        App.showToast('تعذر الاتصال بالخادم', 'error');
+      });
+    }
+    sessionPayForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      App.showConfirm('تأكيد تحويل/استحقاق الحصص المحددة؟', function () { doSessionPay('pay'); });
+    });
+    var claimOnlyBtn = document.getElementById('claimOnlyBtn');
+    if (claimOnlyBtn) claimOnlyBtn.addEventListener('click', function () {
+      App.showConfirm('تأكيد استحقاق الحصص المحددة دون تسجيل دفعة؟', function () { doSessionPay('claim'); });
+    });
+  }
 })();
 </script>
 <%- include('../partials/layout_bottom') %>

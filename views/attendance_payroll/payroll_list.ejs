@@ -118,6 +118,7 @@
           <th class="sortable">المدفوع<span class="sort-ind"></span></th>
           <th class="sortable">المتبقي<span class="sort-ind"></span></th>
           <th class="sortable">الحالة<span class="sort-ind"></span></th>
+          <th>الحصص</th>
           <th></th>
         </tr>
       </thead>
@@ -137,6 +138,13 @@
                 <% if (r.status === 'مسدد') { %><span class="badge badge-success"><i class="fas fa-check-circle"></i> مسدد</span>
                 <% } else if (r.status === 'مدفوع جزئياً') { %><span class="badge badge-warning"><i class="fas fa-hourglass-half"></i> جزئي</span>
                 <% } else { %><span class="badge badge-danger"><i class="fas fa-hourglass"></i> مستحق</span><% } %>
+              </td>
+              <td data-label="الحصص">
+                <% if (r.is_per_session && r.session_balance) { %>
+                  <span class="badge badge-info"><%= r.session_balance.attended %> حضور</span><br>
+                  <span class="badge badge-success"><%= r.session_balance.claimed %> مستحقة</span><br>
+                  <span class="badge badge-danger"><%= r.session_balance.unclaimed %> غير مستحقة</span>
+                <% } else { %>—<% } %>
               </td>
               <td class="rt-actions" data-label="إجراءات">
                 <div class="table-actions">
@@ -159,7 +167,7 @@
             </tr>
           <% }); %>
         <% } else { %>
-          <tr><td colspan="10"><div class="empty-state"><i class="fas fa-sack-dollar"></i><p>لا توجد كشوف مستحقات في هذه الفترة — استخدم "توليد الكشوف" أعلاه</p></div></td></tr>
+          <tr><td colspan="11"><div class="empty-state"><i class="fas fa-sack-dollar"></i><p>لا توجد كشوف مستحقات في هذه الفترة — استخدم "توليد الكشوف" أعلاه</p></div></td></tr>
         <% } %>
       </tbody>
     </table>
