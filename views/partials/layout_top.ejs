@@ -144,13 +144,12 @@
         { url: '/sports', label: 'الألعاب الرياضية', icon: 'fa-medal', module: 'sports' },
         { sec: 'الجداول والحضور' },
         { url: '/sessions', label: 'الحصص والحضور', icon: 'fa-calendar-check', module: 'sessions', modules: ['sessions', 'attendance'] },
+        { url: '/trainer-attendance', label: 'حضور المدربين', icon: 'fa-user-check', module: 'trainerAttendance' },
+        { url: '/staff-attendance', label: 'حضور الموظفين', icon: 'fa-user-clock', module: 'staffAttendance' },
         { url: '/membership-cards', label: 'بطاقات العضوية', icon: 'fa-id-card', module: 'membershipCards' },
         { sec: 'التدريب الخاص' },
         { url: '/private-training', label: 'التدريب الخاص', icon: 'fa-dumbbell', module: 'privateTraining' },
         { url: '/water-rentals', label: 'حجز إيجار الميه', icon: 'fa-water', module: 'waterRentals' },
-        { sec: 'الحضور' },
-        { url: '/trainer-attendance', label: 'حضور المدربين', icon: 'fa-user-check', module: 'trainerAttendance' },
-        { url: '/staff-attendance', label: 'حضور الموظفين', icon: 'fa-user-clock', module: 'staffAttendance' },
         { sec: 'الجوانب الفنية' },
         { url: '/assessments', label: 'التقييمات الفنية', icon: 'fa-clipboard-check', module: 'assessments' },
         { url: '/tests', label: 'الاختبارات', icon: 'fa-vial-circle-check', module: 'tests' },
@@ -193,7 +192,7 @@
       <% const navGroups = []; %>
       <% nav.forEach(function (it) { if (it.sec) navGroups.push({ sec: it.sec, items: [] }); else if (navGroups.length) navGroups[navGroups.length - 1].items.push(it); }); %>
       <% navGroups.forEach(function (g, gi) { %>
-        <% const groupId = 'nav-g-' + gi; %>
+        <% const groupId = 'nav-sec-' + g.sec.replace(/[^\u0600-\u06FFa-zA-Z0-9]+/g, '-'); %>
         <% const visible = g.items.filter(function (it) { return it.modules ? it.modules.some(function (m) { return canView(user, m); }) : canView(user, it.module); }); %>
         <% if (!visible.length) return; %>
         <button type="button" class="nav-section" data-nav-toggle="<%= groupId %>" aria-expanded="false" aria-controls="<%= groupId %>">
