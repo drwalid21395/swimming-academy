@@ -2,6 +2,7 @@
 const express = require('express');
 const { db } = require('../lib/db');
 const { fmtDate, money, dayAr, today, calcAge } = require('../lib/helpers');
+const { sendPushToUsers } = require('../lib/push');
 const { withAcademy } = require('../lib/tenant-context');
 const { sendReminder, logMessage, buildReserveFollowUpMessage } = require('../lib/whatsapp');
 const { enabledSportsForAcademy, academySportRow, getSport } = require('../lib/sports');
@@ -314,14 +315,16 @@ async function submitReserve(req, res, acad, base) {
       values.notes ? 'ملاحظات: ' + values.notes : ''
     ].filter(Boolean).join(' | ');
 
-    const notif = await db.prepare(`INSERT INTO notifications (title, message, type, link, is_broadcast, created_by)
-      VALUES (?,?,?,?,?,?)`)
-      .run('حجز مكان جديد في ' + acad.name, detail, 'حجوزات', '/reservations', 1, 0);
+    const notif = await db.prepare(`INSERT INTO notifications (title, message, type, link, is_broadcast, created_by, academy_id)
+      VALUES (?,?,?,?,?,?,?)`)
+      .run('حجز مكان جديد في ' + acad.name, detail, 'حجوزات', '/reservations', 1, 0, acad.id);
 
     try {
-      const recipients = await db.prepare("SELECT id FROM users WHERE status='active'").all();
-      const insR = db.prepare('INSERT INTO notification_recipients (notification_id, user_id) VALUES (?,?)');
-      for (const u of recipients) await insR.run(notif.lastInsertRowid, u.id);
+      const recipients = await db.prepare("SELECT id FROM users WHERE status='active' AND COALESCE(academy_id, 1) = ?").all(acad.id);
+      const insR = db.prepare('INSERT INTO notification_recipients (notification_id, user_id, academy_id) VALUES (?,?,?)');
+      const ids = [];
+      for (const u of recipients) { ids.push(u.id); await insR.run(notif.lastInsertRowid, u.id, acad.id); }
+      sendPushToUsers(ids, { title: 'حجز مكان جديد في ' + acad.name, message: detail, link: '/reservations', id: notif.lastInsertRowid, tag: 'sw-' + notif.lastInsertRowid }).catch(() => {});
     } catch (e) { /* الإشعار يعرض حتى لو تعذر إسناد مستلمين */ }
   });
 

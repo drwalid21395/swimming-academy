@@ -20,6 +20,34 @@ self.addEventListener('activate', (event) => {
   })());
 });
 
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = { title: 'تحديث جديد' }; }
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      /* إذا كان التطبيق مفتوحاً ومرئياً، نترك التنبيه الداخلي يتولى الأمر */
+      const visible = clientList.some((c) => c.visibilityState === 'visible');
+      if (visible) return;
+      const title = data.title || 'تحديث جديد';
+      const options = {
+        body: String(data.message || '').slice(0, 180),
+        icon: '/images/icon-192.png',
+        badge: '/images/icon-192.png',
+        tag: String(data.tag || 'sw-notif'),
+        requireInteraction: false,
+        data: { url: data.link || '/notifications', id: data.id },
+        vibrate: [120, 70, 120]
+      };
+      return self.registration.showNotification(title, options);
+    }).catch(() => {
+      return self.registration.showNotification(data.title || 'تحديث جديد', {
+        body: String(data.message || '').slice(0, 180),
+        icon: '/images/icon-192.png'
+      });
+    })
+  );
+});
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const url = event.notification.data && event.notification.data.url ? event.notification.data.url : '/notifications';

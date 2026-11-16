@@ -24,6 +24,7 @@
     "express": "^4.21.2",
     "express-session": "^1.18.1",
     "multer": "^2.0.1",
-    "pdfmake": "^0.3.11"
+    "pdfmake": "^0.3.11",
+    "web-push": "^4.0.0"
   }
 }

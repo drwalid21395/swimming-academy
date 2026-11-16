@@ -248,15 +248,54 @@
     if (e && e.persisted) pollNow();
   });
 
+  /* ---------- Web Push (إشعارات الهاتف/سطح المكتب) ---------- */
+  function urlBase64ToUint8Array(base64String) {
+    var padding = '='.repeat((4 - base64String.length % 4) % 4);
+    var base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+    var rawData = window.atob(base64);
+    var outputArray = new Uint8Array(rawData.length);
+    for (var i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+    return outputArray;
+  }
+
+  async function subscribePush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const res = await fetch('/api/notifications/vapid-public-key', { cache: 'no-store', credentials: 'same-origin' });
+      const data = await res.json();
+      if (!data || !data.ok || !data.key) return false;
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(data.key) });
+    }
+    await fetch('/api/notifications/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(sub.toJSON())
+    });
+    return true;
+  }
+
+  /* إذا كان الإذن ممنوحاً مسبقاً، نتأكد من تسجيل الاشتراك لدى الخادم */
+  if ('Notification' in window && Notification.permission === 'granted') {
+    subscribePush().catch(function () {});
+  }
+
   /* واجهة للاختبار من صفحة الإعدادات */
   window.SWNotif = {
     test: function (type, volume) { playSound(type, volume); },
     unlock: ensureCtx,
     requestPermission: function (cb) {
-      if (!('Notification' in window)) { if (cb) cb('unsupported'); return; }
-      if (Notification.permission === 'granted') { if (cb) cb('granted'); return; }
+      if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+        if (cb) cb('unsupported');
+        return;
+      }
       try {
-        Notification.requestPermission().then(function (p) { if (cb) cb(p); }).catch(function () { if (cb) cb('denied'); });
+        Notification.requestPermission().then(function (perm) {
+          if (perm !== 'granted') { if (cb) cb(perm); return; }
+          subscribePush().then(function (ok) { if (cb) cb(ok ? 'granted' : 'error'); }).catch(function () { if (cb) cb('error'); });
+        }).catch(function () { if (cb) cb('denied'); });
       } catch (e) { if (cb) cb('denied'); }
     }
   };

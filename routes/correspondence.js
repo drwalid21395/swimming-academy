@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('node:path');
 const { db } = require('../lib/db');
 const { audit, money, fmtDate, fmtDateTime, today, canView, canAdd, canEdit, canDel, canExport, getPermissions } = require('../lib/helpers');
+const { saveSubscription, removeSubscription, sendPushToUsers } = require('../lib/push');
 const { uploadAndStore, removeUploaded } = require('../lib/upload');
 const { setFlash } = require('../lib/auth-cookie');
 const router = express.Router();
@@ -343,6 +344,46 @@ router.get('/api/notifications/poll', async function (req, res) {
   }
 });
 
+/* اشتراك/إلغاء اشتراك الجهاز في Web Push */
+router.post('/api/notifications/subscribe', async function (req, res) {
+  res.set('Cache-Control', 'no-store');
+  if (!req.currentUser) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  const sub = req.body || {};
+  if (!sub.endpoint) return res.status(400).json({ ok: false, error: 'invalid subscription' });
+  const academyId = req.currentUser.impersonatingAcademyId || req.currentUser.academy_id || 1;
+  try {
+    await saveSubscription(req.currentUser.id, academyId, sub);
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+router.post('/api/notifications/unsubscribe', async function (req, res) {
+  res.set('Cache-Control', 'no-store');
+  if (!req.currentUser) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  try {
+    const endpoint = req.body && req.body.endpoint;
+    if (endpoint) await removeSubscription(endpoint);
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+/* مفتاح VAPID العام لاشتراك المتصفح في Web Push */
+router.get('/api/notifications/vapid-public-key', async function (req, res) {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const { getVapidPublicKey } = require('../lib/push');
+    const key = await getVapidPublicKey();
+    if (!key) return res.status(500).json({ ok: false, error: 'no key' });
+    return res.json({ ok: true, key: key });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 router.get('/notifications', async function (req, res) {
   if (!canView(req.currentUser, 'notifications')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const uid = req.currentUser.id;
@@ -391,17 +432,23 @@ router.get('/notifications/new', async function (req, res) {
 router.post('/notifications/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'notifications')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const b = req.body;
-  const info = await db.prepare('INSERT INTO notifications (title, message, type, link, is_broadcast, created_by) VALUES (?,?,?,?,?,?)')
-    .run(b.title, b.message || '', b.type || 'عام', b.link || '', b.is_broadcast === '1' ? 1 : 0, req.currentUser.id);
+  const academyId = req.currentUser.impersonatingAcademyId || req.currentUser.academy_id || 1;
+  const info = await db.prepare('INSERT INTO notifications (title, message, type, link, is_broadcast, created_by, academy_id) VALUES (?,?,?,?,?,?,?)')
+    .run(b.title, b.message || '', b.type || 'عام', b.link || '', b.is_broadcast === '1' ? 1 : 0, req.currentUser.id, academyId);
+  const recipientIds = [];
   if (b.is_broadcast === '1') {
-    const users = await db.prepare("SELECT id FROM users WHERE status='active'").all();
-    const st = await db.prepare('INSERT INTO notification_recipients (notification_id, user_id) VALUES (?,?)');
-    users.forEach(u => st.run(info.lastInsertRowid, u.id));
+    const users = await db.prepare("SELECT id FROM users WHERE status='active' AND COALESCE(academy_id, 1) = ?").all(academyId);
+    const st = db.prepare('INSERT INTO notification_recipients (notification_id, user_id, academy_id) VALUES (?,?,?)');
+    await Promise.all(users.map(function (u) { recipientIds.push(u.id); return st.run(info.lastInsertRowid, u.id, academyId); }));
   } else if (b.user_id) {
-    await db.prepare('INSERT INTO notification_recipients (notification_id, user_id) VALUES (?,?)').run(info.lastInsertRowid, b.user_id);
+    await db.prepare('INSERT INTO notification_recipients (notification_id, user_id, academy_id) VALUES (?,?,?)').run(info.lastInsertRowid, b.user_id, academyId);
+    recipientIds.push(Number(b.user_id));
   } else {
-    await db.prepare('INSERT INTO notification_recipients (notification_id, user_id) VALUES (?,?)').run(info.lastInsertRowid, req.currentUser.id);
+    await db.prepare('INSERT INTO notification_recipients (notification_id, user_id, academy_id) VALUES (?,?,?)').run(info.lastInsertRowid, req.currentUser.id, academyId);
+    recipientIds.push(req.currentUser.id);
   }
+  const payload = { title: b.title, message: b.message || '', link: b.link || '/notifications', id: info.lastInsertRowid, tag: 'sw-' + info.lastInsertRowid };
+  sendPushToUsers(recipientIds, payload).catch(() => {});
   audit(req.currentUser.id, req.currentUser.full_name, 'add', 'notifications', info.lastInsertRowid, 'إشعار: ' + b.title, req);
   setFlash(res, { type: 'success', message: 'تم إرسال الإشعار' });
   res.redirect('/notifications');

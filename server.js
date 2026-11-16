@@ -323,7 +323,8 @@ app.use(function (err, req, res, next) {
 });
 
 /* التهيئة عند بدء التشغيل المحلي (على Vercel تعمل تلقائياً مع أول طلب) */
-ready().then(() => {
+ready().then(async () => {
+  try { await require('./lib/push').ensureVapid(); } catch (e) { console.error('تهيئة Web Push:', e.message); }
   if (!process.env.VERCEL) {
     app.listen(PORT, () => {
       console.log('============================================');

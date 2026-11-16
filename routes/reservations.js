@@ -2,6 +2,7 @@
 const express = require('express');
 const { db } = require('../lib/db');
 const { audit, fmtDateTime, today, canView, canDel, canEdit, canExport } = require('../lib/helpers');
+const { sendPushToUsers } = require('../lib/push');
 const { setFlash } = require('../lib/auth-cookie');
 const { nextMembership, isUniqueViolation } = require('../lib/membership');
 const { activeSport } = require('../lib/sport-context');
@@ -155,11 +156,16 @@ async function convertReservation(req, res, r) {
 
       /* إشعار للمسؤولين لاستكمال تسكين المجموعة */
       try {
-        const n = await db.prepare('INSERT INTO notifications (title, message, type, link, is_broadcast, created_by) VALUES (?,?,?,?,?,?)')
-          .run('تحويل حجز للاعب: ' + r.swimmer_name, 'رقم العضوية: ' + membership_no + ' | البرنامج: ' + (r.program_name || '—'), 'حجوزات', '/swimmers/' + swimmerId, 1, req.currentUser.id);
-        const rcpts = await db.prepare("SELECT id FROM users WHERE status='active'").all();
-        const insR = db.prepare('INSERT INTO notification_recipients (notification_id, user_id) VALUES (?,?)');
-        for (const rc of rcpts) await insR.run(n.lastInsertRowid, rc.id);
+        const academyId = req.currentUser.impersonatingAcademyId || req.currentUser.academy_id || 1;
+        const title = 'تحويل حجز للاعب: ' + r.swimmer_name;
+        const message = 'رقم العضوية: ' + membership_no + ' | البرنامج: ' + (r.program_name || '—');
+        const n = await db.prepare('INSERT INTO notifications (title, message, type, link, is_broadcast, created_by, academy_id) VALUES (?,?,?,?,?,?,?)')
+          .run(title, message, 'حجوزات', '/swimmers/' + swimmerId, 1, req.currentUser.id, academyId);
+        const rcpts = await db.prepare("SELECT id FROM users WHERE status='active' AND COALESCE(academy_id, 1) = ?").all(academyId);
+        const insR = db.prepare('INSERT INTO notification_recipients (notification_id, user_id, academy_id) VALUES (?,?,?)');
+        const ids = [];
+        for (const rc of rcpts) { ids.push(rc.id); await insR.run(n.lastInsertRowid, rc.id, academyId); }
+        sendPushToUsers(ids, { title: title, message: message, link: '/swimmers/' + swimmerId, id: n.lastInsertRowid, tag: 'sw-' + n.lastInsertRowid }).catch(() => {});
       } catch (e) { /* تجاهل أخطاء الإشعار */ }
 
       const canSendCard = canView(req.currentUser, 'membershipCards') &&
