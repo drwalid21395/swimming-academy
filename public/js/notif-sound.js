@@ -260,23 +260,19 @@
 
   async function subscribePush() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      console.log('SWNotif: PushManager غير مدعوم');
-      return false;
+      return { ok: false, error: 'المتصفح لا يدعم PushManager' };
     }
     try {
       const reg = await navigator.serviceWorker.ready;
+      if (!reg) return { ok: false, error: 'Service Worker لم يُجهّز' };
       let sub = await reg.pushManager.getSubscription();
       if (!sub) {
         const res = await fetch('/api/notifications/vapid-public-key', { cache: 'no-store', credentials: 'same-origin' });
         const data = await res.json();
         if (!data || !data.ok || !data.key) {
-          console.log('SWNotif: لم يتم الحصول على مفتاح VAPID', data);
-          return false;
+          return { ok: false, error: 'لم يتم الحصول على مفتاح VAPID (' + (data ? data.error : 'no response') + ')' };
         }
         sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(data.key) });
-        console.log('SWNotif: تم الاشتراك في Push');
-      } else {
-        console.log('SWNotif: الاشتراك موجود مسبقاً، يُعاد إرساله للخادم');
       }
       const saveRes = await fetch('/api/notifications/subscribe', {
         method: 'POST',
@@ -285,11 +281,13 @@
         body: JSON.stringify(sub.toJSON())
       });
       const saveData = await saveRes.json();
-      console.log('SWNotif: نتيجة حفظ الاشتراك', saveData);
-      return saveData && saveData.ok;
+      if (!saveData || !saveData.ok) {
+        return { ok: false, error: 'فشل حفظ الاشتراك في الخادم (' + (saveData && saveData.error ? saveData.error : saveRes.status) + ')' };
+      }
+      return { ok: true };
     } catch (e) {
       console.error('SWNotif: خطأ في الاشتراك', e);
-      return false;
+      return { ok: false, error: e && e.message ? e.message : 'خطأ غير معروف' };
     }
   }
 
@@ -310,9 +308,11 @@
       try {
         Notification.requestPermission().then(function (perm) {
           if (perm !== 'granted') { if (cb) cb(perm); return; }
-          subscribePush().then(function (ok) { if (cb) cb(ok ? 'granted' : 'error'); }).catch(function () { if (cb) cb('error'); });
+          subscribePush().then(function (result) {
+            if (cb) cb(result.ok ? 'granted' : 'error: ' + (result.error || 'unknown'));
+          }).catch(function (e) { if (cb) cb('error: ' + (e && e.message ? e.message : 'exception')); });
         }).catch(function () { if (cb) cb('denied'); });
-      } catch (e) { if (cb) cb('denied'); }
+      } catch (e) { if (cb) cb('error: ' + (e && e.message ? e.message : 'exception')); }
     }
   };
 

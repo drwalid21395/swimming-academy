@@ -202,6 +202,7 @@ window.addEventListener('load', function () {
             if (p === 'granted') toast('تم تفعيل إشعارات الجهاز بنجاح', 'success');
             else if (p === 'denied') toast('تم رفض إذن الإشعارات من المتصفح', 'warning');
             else if (p === 'unsupported') toast('المتصفح/الجهاز لا يدعم إشعارات Push (ثبّت التطبيق أولاً)', 'info');
+            else if (p.indexOf('error:') === 0) toast('خطأ: ' + p.slice(6).trim(), 'error');
             else toast('لم يتم التفعيل: ' + p, 'error');
           });
         });
