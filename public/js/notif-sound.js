@@ -259,22 +259,38 @@
   }
 
   async function subscribePush() {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
-    const reg = await navigator.serviceWorker.ready;
-    let sub = await reg.pushManager.getSubscription();
-    if (!sub) {
-      const res = await fetch('/api/notifications/vapid-public-key', { cache: 'no-store', credentials: 'same-origin' });
-      const data = await res.json();
-      if (!data || !data.ok || !data.key) return false;
-      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(data.key) });
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      console.log('SWNotif: PushManager غير مدعوم');
+      return false;
     }
-    await fetch('/api/notifications/subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify(sub.toJSON())
-    });
-    return true;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        const res = await fetch('/api/notifications/vapid-public-key', { cache: 'no-store', credentials: 'same-origin' });
+        const data = await res.json();
+        if (!data || !data.ok || !data.key) {
+          console.log('SWNotif: لم يتم الحصول على مفتاح VAPID', data);
+          return false;
+        }
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(data.key) });
+        console.log('SWNotif: تم الاشتراك في Push');
+      } else {
+        console.log('SWNotif: الاشتراك موجود مسبقاً، يُعاد إرساله للخادم');
+      }
+      const saveRes = await fetch('/api/notifications/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(sub.toJSON())
+      });
+      const saveData = await saveRes.json();
+      console.log('SWNotif: نتيجة حفظ الاشتراك', saveData);
+      return saveData && saveData.ok;
+    } catch (e) {
+      console.error('SWNotif: خطأ في الاشتراك', e);
+      return false;
+    }
   }
 
   /* إذا كان الإذن ممنوحاً مسبقاً، نتأكد من تسجيل الاشتراك لدى الخادم */

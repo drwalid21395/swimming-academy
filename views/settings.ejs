@@ -72,6 +72,9 @@
       يتم تنبيه مستخدمي الأكاديمية بصوت عند أي إشعار أو تعديل داخل الموقع.
       <b>مَن يسمع الصوت يُحدَّد من خلال صلاحية «استقبال صوت إشعارات النشاط»</b>
       في صفحة المستخدم أو الدور.
+      <br><i class="fas fa-mobile-screen"></i> لتلقي الإشعارات على الهاتف وشاشة القفل:
+      ثبّت التطبيق من المتصفح (<b>إضافة إلى الشاشة الرئيسية</b>)، ثم اضغط
+      <b>تفعيل إشعارات الجهاز</b> من الهاتف واسمح بالإذن.
     </p>
     <% if (!canEdit) { %>
       <div class="detail-grid">
@@ -158,30 +161,53 @@
   </div>
 </div>
 <script>
-(function () {
-  var volRange = document.getElementById('volRange');
-  var volVal = document.getElementById('volVal');
-  var testBtn = document.getElementById('notifTestSound');
-  var devBtn = document.getElementById('notifDevicePerm');
-  var soundType = document.getElementById('soundTypeSelect');
-  if (volRange && volVal) {
-    volRange.addEventListener('input', function () { volVal.textContent = volRange.value; });
-  }
-  if (testBtn && typeof window.SWNotif !== 'undefined') {
-    testBtn.addEventListener('click', function () {
-      window.SWNotif.unlock();
-      window.SWNotif.test(soundType ? soundType.value : 'chime', volRange ? volRange.value : 70);
-    });
-  }
-  if (devBtn && typeof window.SWNotif !== 'undefined') {
-    devBtn.addEventListener('click', function () {
-      window.SWNotif.requestPermission(function (p) {
-        if (p === 'granted') { if (window.App && App.showToast) App.showToast('تم تفعيل إشعارات الجهاز', 'success'); }
-        else if (p === 'denied') { if (window.App && App.showToast) App.showToast('تم رفض الإذن', 'warning'); }
-        else { if (window.App && App.showToast) App.showToast('تفعيل الإشعارات غير مدعوم أو ممنوع', 'info'); }
-      });
-    });
-  }
-})();
+window.addEventListener('load', function () {
+  (function () {
+    var volRange = document.getElementById('volRange');
+    var volVal = document.getElementById('volVal');
+    var testBtn = document.getElementById('notifTestSound');
+    var devBtn = document.getElementById('notifDevicePerm');
+    var soundType = document.getElementById('soundTypeSelect');
+    if (volRange && volVal) {
+      volRange.addEventListener('input', function () { volVal.textContent = volRange.value; });
+    }
+    function toast(msg, type) {
+      if (window.App && App.showToast) App.showToast(msg, type);
+      else window.alert(msg);
+    }
+    if (testBtn) {
+      if (typeof window.SWNotif === 'undefined') {
+        testBtn.disabled = true;
+        testBtn.title = 'سكربت الصوت لم يُحمّل بعد';
+      } else {
+        testBtn.addEventListener('click', function () {
+          window.SWNotif.unlock();
+          window.SWNotif.test(soundType ? soundType.value : 'chime', volRange ? volRange.value : 70);
+          toast('تجربة الصوت', 'info');
+        });
+      }
+    }
+    if (devBtn) {
+      if (typeof window.SWNotif === 'undefined') {
+        devBtn.disabled = true;
+        devBtn.title = 'سكربت الإشعارات لم يُحمّل بعد';
+      } else {
+        devBtn.addEventListener('click', function () {
+          devBtn.disabled = true;
+          var oldText = devBtn.innerHTML;
+          devBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جارِ التفعيل...';
+          window.SWNotif.requestPermission(function (p) {
+            devBtn.disabled = false;
+            devBtn.innerHTML = oldText;
+            if (p === 'granted') toast('تم تفعيل إشعارات الجهاز بنجاح', 'success');
+            else if (p === 'denied') toast('تم رفض إذن الإشعارات من المتصفح', 'warning');
+            else if (p === 'unsupported') toast('المتصفح/الجهاز لا يدعم إشعارات Push (ثبّت التطبيق أولاً)', 'info');
+            else toast('لم يتم التفعيل: ' + p, 'error');
+          });
+        });
+      }
+    }
+  })();
+});
 </script>
 <%- include('partials/layout_bottom') %>
