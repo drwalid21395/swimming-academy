@@ -13,6 +13,25 @@
 <script src="/vendor/chart.umd.js"></script>
 <script src="/js/app.js?v=12"></script>
 <script src="/js/install.js?v=1"></script>
+<%
+  /* إعدادات صوت الإشعارات للعميل */
+  try {
+    var _notifReceive = (typeof user !== 'undefined' && user && user.id &&
+                         (typeof canView === 'function') &&
+                         canView(user, 'notifications') && canView(user, 'notifSound'));
+    var _settings = (typeof settings !== 'undefined' && settings) ? settings : {};
+    var _vol = parseInt(_settings.notif_sound_volume, 10);
+    if (isNaN(_vol)) _vol = 70;
+    var _poll = parseInt(_settings.notif_poll_seconds, 10);
+    if (isNaN(_poll) || _poll < 5) _poll = 20;
+    var _type = ['chime','bell','ping','beep','alarm'].indexOf(_settings.notif_sound_type) > -1 ? _settings.notif_sound_type : 'chime';
+    var _enabled = String(_settings.notif_sound_enabled) !== '0';
+%>
+<script>
+window.SW_NOTIF_CFG = { receive: <%= _notifReceive ? 'true' : 'false' %>, enabled: <%= _enabled ? 'true' : 'false' %>, volume: <%= _vol %>, sound: '<%= _type %>', pollSeconds: <%= _poll %>, userId: <%= (user && user.id) || 0 %> };
+</script>
+<script src="/js/notif-sound.js?v=1"></script>
+<% } catch (e) { /* تجاهل */ } %>
 <% if (typeof pageScripts !== 'undefined' && pageScripts) { pageScripts.forEach(function (s) { %><script src="<%= s %>"></script><% }); } %>
 <% if (typeof inlineScript !== 'undefined' && inlineScript) { %><script><%= inlineScript %></script><% } %>
 <script>

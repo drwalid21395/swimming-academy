@@ -1,5 +1,5 @@
 /* Service Worker — نظام إدارة أكاديمية السباحة (PWA) */
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const CACHE_NAME = 'academy-assets-' + CACHE_VERSION;
 const STATIC_PREFIXES = ['/vendor/', '/css/', '/js/', '/images/', '/webfonts/'];
 const OFFLINE_URL = '/offline.html';
@@ -18,6 +18,19 @@ self.addEventListener('activate', (event) => {
     await Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)));
     await self.clients.claim();
   })());
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = event.notification.data && event.notification.data.url ? event.notification.data.url : '/notifications';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url && 'focus' in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
+    }).catch(() => {})
+  );
 });
 
 async function cacheFirst(request) {

@@ -258,9 +258,9 @@
         <% } %>
         <button class="icon-btn with-label" data-print title="طباعة / PDF"><i class="fas fa-print"></i><span class="btn-text">طباعة</span></button>
         <button class="icon-btn with-label" id="themeToggle" title="الوضع الليلي/النهاري"><i class="fas fa-moon"></i><span class="btn-text">الوضع</span></button>
-        <a href="/notifications" class="icon-btn with-label" title="الإشعارات">
+        <a href="/notifications" class="icon-btn with-label" id="notifBell" title="الإشعارات">
           <i class="fas fa-bell"></i><span class="btn-text">الإشعارات</span>
-          <% if (typeof unreadCount !== 'undefined' && unreadCount > 0) { %><span class="dot"><%= unreadCount > 99 ? '99+' : unreadCount %></span><% } %>
+          <span class="dot" id="notifDot" style="display:<%= (typeof unreadCount !== 'undefined' && unreadCount > 0) ? 'flex' : 'none' %>;"><%= (typeof unreadCount !== 'undefined' && unreadCount > 0) ? (unreadCount > 99 ? '99+' : unreadCount) : '' %></span>
         </a>
         <button type="button" class="icon-btn with-label install-app-btn" title="تثبيت التطبيق على الهاتف">
           <i class="fas fa-download"></i><span class="btn-text">تثبيت التطبيق</span>

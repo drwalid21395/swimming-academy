@@ -31,7 +31,8 @@ const MODULE_LABELS = {
   waterRentals: 'حجز إيجار الميه',
   reports: 'التقارير', branches: 'الفروع', pools: 'حمامات السباحة', users: 'المستخدمون والصلاحيات', settings: 'إعدادات النظام',
   auditLog: 'سجل النشاط', site: 'الموقع التعريفي',
-  trainerAttendance: 'حضور المدربين', staffAttendance: 'حضور الموظفين', payroll: 'المستحقات والرواتب'
+  trainerAttendance: 'حضور المدربين', staffAttendance: 'حضور الموظفين', payroll: 'المستحقات والرواتب',
+  notifSound: 'استقبال صوت إشعارات النشاط'
 };
 const MODULE_GROUPS = [
   ['الأعضاء والتسجيل', ['swimmers', 'guardians', 'coaches', 'staff']],
@@ -40,7 +41,7 @@ const MODULE_GROUPS = [
   ['الجوانب الفنية', ['assessments', 'tests', 'teams', 'competitions']],
   ['المالية', ['subscriptions', 'payments', 'revenues', 'expenses', 'coachPayments']],
   ['الحضور والمستحقات', ['trainerAttendance', 'staffAttendance', 'payroll']],
-  ['الإدارة والمراسلات', ['incoming', 'outgoing', 'documents', 'notifications', 'complaints', 'reservations']],
+  ['الإدارة والمراسلات', ['incoming', 'outgoing', 'documents', 'notifications', 'notifSound', 'complaints', 'reservations']],
   ['النظام', ['reports', 'branches', 'pools', 'users', 'settings', 'auditLog', 'site']],
   ['الأنشطة والموقع', ['sports']]
 ];
@@ -257,6 +258,11 @@ router.get('/settings', async function (req, res) {
   if (!current.receipt_group_text) current.receipt_group_text = DEFAULT_RECEIPT_GROUP_TEXT;
   if (!current.receipt_group_link) current.receipt_group_link = DEFAULT_RECEIPT_GROUP_LINK;
   if (!current.receipt_footer_text) current.receipt_footer_text = DEFAULT_RECEIPT_FOOTER;
+  /* إعدادات صوت الإشعارات: قيم افتراضية ظاهرة حتى قبل أول حفظ */
+  if (current.notif_sound_enabled === undefined) current.notif_sound_enabled = '1';
+  if (current.notif_sound_volume === undefined) current.notif_sound_volume = '70';
+  if (current.notif_sound_type === undefined) current.notif_sound_type = 'chime';
+  if (current.notif_poll_seconds === undefined) current.notif_poll_seconds = '20';
   /* سياق الأكاديمية الحالية: معلومات الاشتراك + صلاحية رفع الشعار */
   const acadId = req.currentUser.impersonatingAcademyId || req.currentUser.academy_id;
   try { await maybeNotifyAcademySubscription(acadId); } catch (e) { /* تجاهل */ }
@@ -332,6 +338,29 @@ router.post('/settings', async function (req, res) {
   for (const def of SETTING_DEFS) st.run(def.key, req.body[def.key] || '');
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'settings', 0, 'تحديث إعدادات النظام', req);
   setFlash(res, { type: 'success', message: 'تم حفظ الإعدادات' });
+  res.redirect('/settings');
+});
+
+/* إعدادات صوت إشعارات النشاط (مستوى الصوت ونوعه ومدة التحديث) */
+const NOTIF_SOUND_TYPES = ['chime', 'bell', 'ping', 'beep', 'alarm'];
+router.post('/settings/notifications', async function (req, res) {
+  if (!canEdit(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const b = req.body || {};
+  const enabled = String(b.notif_sound_enabled) === '0' ? '0' : '1';
+  let volume = Number(b.notif_sound_volume);
+  if (!Number.isFinite(volume)) volume = 70;
+  volume = Math.max(0, Math.min(100, Math.round(volume)));
+  let pollSeconds = Number(b.notif_poll_seconds);
+  if (!Number.isFinite(pollSeconds)) pollSeconds = 20;
+  pollSeconds = Math.max(5, Math.min(120, Math.round(pollSeconds)));
+  const soundType = NOTIF_SOUND_TYPES.indexOf(String(b.notif_sound_type)) > -1 ? String(b.notif_sound_type) : 'chime';
+  const st = await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)');
+  await st.run('notif_sound_enabled', enabled);
+  await st.run('notif_sound_volume', String(volume));
+  await st.run('notif_sound_type', soundType);
+  await st.run('notif_poll_seconds', String(pollSeconds));
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'settings', 0, 'تحديث إعدادات صوت الإشعارات', req);
+  setFlash(res, { type: 'success', message: 'تم حفظ إعدادات صوت الإشعارات' });
   res.redirect('/settings');
 });
 

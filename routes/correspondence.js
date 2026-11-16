@@ -296,6 +296,53 @@ router.post('/documents/:id/delete', async function (req, res) {
 /*                          الإشعارات                             */
 /* ============================================================== */
 const NOTIFY_TYPES = ['عام', 'أكاديمي', 'مالي', 'تنبيه', 'بطولة'];
+const NOTIF_SOUND_TYPES = ['chime', 'bell', 'ping', 'beep', 'alarm'];
+
+/* تحديث فوري خفيف (Polling) لصوت الإشعارات: يعيد كل ما هو جديد للمستخدم
+   بعد آخر معرّف رآه، مع حالة القراءة وإعدادات الصوت العامة. لا يُخزَّن في الكاش. */
+router.get('/api/notifications/poll', async function (req, res) {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.set('Pragma', 'no-cache');
+  if (!req.currentUser) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const uid = req.currentUser.id;
+  const after = Math.max(0, Number(req.query.after) || 0);
+  const receive = canView(req.currentUser, 'notifications') && canView(req.currentUser, 'notifSound');
+
+  const settingsMap = {};
+  try {
+    const rows = await db.prepare("SELECT key, value FROM settings WHERE key IN ('notif_sound_enabled','notif_sound_volume','notif_sound_type','notif_poll_seconds')").all();
+    rows.forEach(function (r) { settingsMap[r.key] = r.value; });
+  } catch (e) { /* تجاهل */ }
+  const volume = Math.max(0, Math.min(100, parseInt(settingsMap.notif_sound_volume, 10) || 70));
+  const sound = NOTIF_SOUND_TYPES.indexOf(String(settingsMap.notif_sound_type)) > -1 ? String(settingsMap.notif_sound_type) : 'chime';
+  const pollSeconds = Math.max(5, Math.min(120, parseInt(settingsMap.notif_poll_seconds, 10) || 20));
+  const enabled = String(settingsMap.notif_sound_enabled) !== '0';
+
+  const base = { ok: true, receive: receive, enabled: enabled, volume: volume, sound: sound, pollSeconds: pollSeconds };
+  if (!receive) return res.json(Object.assign(base, { unread: 0, latestId: 0, items: [] }));
+
+  try {
+    const unreadRow = await db.prepare('SELECT COUNT(*) AS c FROM notification_recipients WHERE user_id = ? AND is_read = 0').get(uid);
+    const latestRow = await db.prepare(`SELECT MAX(n.id) AS id FROM notifications n
+      JOIN notification_recipients nr ON nr.notification_id = n.id WHERE nr.user_id = ?`).get(uid);
+    const latestId = Number(latestRow && latestRow.id) || 0;
+    let items = [];
+    if (after > 0 && latestId > after) {
+      items = await db.prepare(`SELECT n.id, n.title, n.message, n.type, n.link, n.created_at,
+          u.full_name AS sender_name
+        FROM notifications n
+        JOIN notification_recipients nr ON nr.notification_id = n.id
+        LEFT JOIN users u ON u.id = n.created_by
+        WHERE nr.user_id = ? AND n.id > ?
+        ORDER BY n.id ASC LIMIT 30`).all(uid, after);
+    }
+    return res.json(Object.assign(base, { unread: Number(unreadRow && unreadRow.c) || 0, latestId: latestId, items: items }));
+  } catch (e) {
+    return res.json(Object.assign(base, { unread: 0, latestId: 0, items: [] }));
+  }
+});
+
 router.get('/notifications', async function (req, res) {
   if (!canView(req.currentUser, 'notifications')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const uid = req.currentUser.id;
