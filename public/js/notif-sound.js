@@ -305,6 +305,12 @@
         if (cb) cb('unsupported');
         return;
       }
+      var isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      var isStandalone = window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+      if (isIos && !isStandalone) {
+        if (cb) cb('unsupported: يجب تثبيت التطبيق على الشاشة الرئيسية أولاً (Add to Home Screen)');
+        return;
+      }
       try {
         Notification.requestPermission().then(function (perm) {
           if (perm !== 'granted') { if (cb) cb(perm); return; }

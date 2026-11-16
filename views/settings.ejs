@@ -75,6 +75,7 @@
       <br><i class="fas fa-mobile-screen"></i> لتلقي الإشعارات على الهاتف وشاشة القفل:
       ثبّت التطبيق من المتصفح (<b>إضافة إلى الشاشة الرئيسية</b>)، ثم اضغط
       <b>تفعيل إشعارات الجهاز</b> من الهاتف واسمح بالإذن.
+      إذا سبق التفعيل ولا تصلك الإشعارات، أغلق التطبيق كلياً وأعد فتحه.
     </p>
     <% if (!canEdit) { %>
       <div class="detail-grid">
@@ -201,7 +202,7 @@ window.addEventListener('load', function () {
             devBtn.innerHTML = oldText;
             if (p === 'granted') toast('تم تفعيل إشعارات الجهاز بنجاح', 'success');
             else if (p === 'denied') toast('تم رفض إذن الإشعارات من المتصفح', 'warning');
-            else if (p === 'unsupported') toast('المتصفح/الجهاز لا يدعم إشعارات Push (ثبّت التطبيق أولاً)', 'info');
+            else if (p.indexOf('unsupported') === 0) toast('غير مدعوم: ' + p.replace(/^unsupported:?\s*/, ''), 'info');
             else if (p.indexOf('error:') === 0) toast('خطأ: ' + p.slice(6).trim(), 'error');
             else toast('لم يتم التفعيل: ' + p, 'error');
           });
