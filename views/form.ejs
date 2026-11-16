@@ -157,9 +157,8 @@
       <button type="button" class="btn btn-primary" id="cameraShoot" disabled><i class="fas fa-camera"></i> التقاط الصورة</button>
       <button type="button" class="btn btn-outline" id="cameraSwitch"><i class="fas fa-camera-rotate"></i> تحويل الكاميرا</button>
       <button type="button" class="btn btn-ghost" data-camera-close><i class="fas fa-xmark"></i> إلغاء</button>
-      <label class="camera-mode" title="يحدّد حواف الصفحة تلقائياً ويسمح بتعديلها يدوياً"><input type="checkbox" id="cameraScanner" checked> <span>وضع الماسح (Scanner)</span></label>
     </div>
-    <div class="form-hint camera-tip" id="cameraTip"><i class="fas fa-circle-info"></i> ضع المستند في الإطار، ثم اضغط «التقاط الصورة». بعدها اسحب النقاط الأربع لضبط الحدود ثم «قص الصفحة». الكاميرا تظهر بالكامل — الأزرار أسفل الصورة.</div>
+    <div class="form-hint camera-tip" id="cameraTip"><i class="fas fa-circle-info"></i> وجّه الكاميرا نحو المستند في إضاءة جيدة ثم اضغط «التقاط الصورة». بعد الالتقاط اسحب النقاط الأربع الزرقاء لتحديد حواف الصفحة، ثم اضغط «قص الصفحة».</div>
   </div>
 </div>
 <% if (form.transfer) { %>
@@ -359,10 +358,17 @@ document.addEventListener('DOMContentLoaded', function () {
       setError('المتصفح لا يدعم تشغيل الكاميرا — يمكنك اختيار صورة من ملفات الجهاز بدلاً منها.');
       return;
     }
-    var constraints = { video: { facingMode: { ideal: facing } }, audio: false };
+    var constraints = { video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false };
     navigator.mediaDevices.getUserMedia(constraints).then(function (s) {
       stream = s;
       video.srcObject = s;
+      var track = s.getVideoTracks && s.getVideoTracks()[0];
+      if (track && track.applyConstraints) {
+        try {
+          var focus = track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+          if (focus && focus.catch) focus.catch(function () {});
+        } catch (e) {}
+      }
       var p = video.play();
       if (p && p.catch) p.catch(function () {});
       shoot.disabled = false;
@@ -378,6 +384,8 @@ document.addEventListener('DOMContentLoaded', function () {
     currentInput = input;
     modal.classList.add('show');
     modal.setAttribute('aria-hidden', 'false');
+    setCameraMode();
+    if (tipEl) tipEl.innerHTML = '<i class="fas fa-circle-info"></i> وجّه الكاميرا نحو المستند في إضاءة جيدة ثم اضغط «التقاط الصورة». بعد الالتقاط اسحب النقاط الأربع الزرقاء لتحديد حواف الصفحة، ثم اضغط «قص الصفحة».';
     startCamera();
   }
   function attachFile(input, file) {
@@ -398,35 +406,11 @@ document.addEventListener('DOMContentLoaded', function () {
   var resultActions = document.getElementById('cameraResultActions');
   var adjustCanvas = document.getElementById('cameraAdjust');
   var adjustActions = document.getElementById('cameraAdjustActions');
-  var scannerCheck = document.getElementById('cameraScanner');
   var controls = document.getElementById('cameraControls');
-  var cvReady = false;
-  var loadingOpenCV = false;
+  var tipEl = document.getElementById('cameraTip');
   var cornerPoints = [];
   var draggingPoint = null;
   var adjustCtx = adjustCanvas ? adjustCanvas.getContext('2d') : null;
-
-  function loadOpenCV() {
-    return new Promise(function (resolve, reject) {
-      if (window.cv && window.cv.getBuildInformation) { cvReady = true; return resolve(); }
-      if (loadingOpenCV) { var iv = setInterval(function () { if (cvReady) { clearInterval(iv); resolve(); } }, 200); return; }
-      loadingOpenCV = true;
-      var script = document.createElement('script');
-      script.src = 'https://docs.opencv.org/4.10.0/opencv.js';
-      script.async = true;
-      script.crossOrigin = 'anonymous';
-      window.cv = window.cv || {};
-      window.cv.onRuntimeInitialized = function () { cvReady = true; loadingOpenCV = false; resolve(); };
-      script.onerror = function () { loadingOpenCV = false; reject(new Error('تعذر تحميل مكتبة الماسح')); };
-      document.body.appendChild(script);
-      setTimeout(function () { if (!cvReady) reject(new Error('انتهت مهلة تحميل الماسح')); }, 20000);
-    });
-  }
-
-  function showScanningState(loading) {
-    var tip = document.getElementById('cameraTip');
-    if (tip) tip.innerHTML = loading ? '<i class="fas fa-spinner fa-spin"></i> جارٍ تحميل مكتبة الماسح...' : '<i class="fas fa-circle-info"></i> ضع المستند أمام الكاميرا في إضاءة جيدة، ثم اضغط «التقاط الصورة». بعدها اسحب النقاط الأربع لضبط الحواف، ثم اضغط «قص الصفحة».';
-  }
 
   function distance(p1, p2) { return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2)); }
   function orderPoints(pts) {
@@ -437,58 +421,94 @@ document.addEventListener('DOMContentLoaded', function () {
     return [top[0], top[1], bottom[1], bottom[0]]; // TL, TR, BR, BL
   }
 
-  function detectCorners(src) {
-    if (!window.cv || !cv.Mat) return null;
-    try {
-      var gray = new cv.Mat();
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-      var blurred = new cv.Mat();
-      cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
-      var edges = new cv.Mat();
-      cv.Canny(blurred, edges, 50, 150, 3);
-      var contours = new cv.MatVector();
-      var hierarchy = new cv.Mat();
-      cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-      var best = null;
-      var maxArea = 0;
-      var imgArea = src.cols * src.rows;
-      for (var i = 0; i < contours.size(); i++) {
-        var cnt = contours.get(i);
-        var area = cv.contourArea(cnt);
-        if (area < imgArea * 0.06) continue;
-        var peri = cv.arcLength(cnt, true);
-        var approx = new cv.Mat();
-        cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
-        if (approx.rows === 4 && area > maxArea) {
-          var pts = [];
-          for (var j = 0; j < 4; j++) pts.push({ x: approx.data32S[j * 2], y: approx.data32S[j * 2 + 1] });
-          best = pts;
-          maxArea = area;
-          approx.delete();
-        } else { approx.delete(); }
-        cnt.delete();
+  /* حل معادلات الهوموغرافي (8 مجاهيل) بطريقة الحذف الغاوسي:
+     يحوّل إحداثيات مستطيل النتيجة إلى إحداثيات رباعي الصفحة في الصورة الأصلية */
+  function solveHomography(src, dst) {
+    var A = [], b = [];
+    for (var i = 0; i < 4; i++) {
+      var u = dst[i].x, v = dst[i].y, x = src[i].x, y = src[i].y;
+      A.push([u, v, 1, 0, 0, 0, -u * x, -v * x]); b.push(x);
+      A.push([0, 0, 0, u, v, 1, -u * y, -v * y]); b.push(y);
+    }
+    var n = 8;
+    for (var col = 0; col < n; col++) {
+      var pivot = col;
+      for (var r = col + 1; r < n; r++) {
+        if (Math.abs(A[r][col]) > Math.abs(A[pivot][col])) pivot = r;
       }
-      contours.delete(); hierarchy.delete(); edges.delete(); blurred.delete(); gray.delete();
-      return best;
-    } catch (e) { console.error('detectCorners', e); return null; }
+      if (Math.abs(A[pivot][col]) < 1e-10) return null;
+      if (pivot !== col) {
+        var tmp = A[pivot]; A[pivot] = A[col]; A[col] = tmp;
+        var tb = b[pivot]; b[pivot] = b[col]; b[col] = tb;
+      }
+      var div = A[col][col];
+      for (var c = col; c < n; c++) A[col][c] /= div;
+      b[col] /= div;
+      for (var r2 = 0; r2 < n; r2++) {
+        if (r2 === col) continue;
+        var f = A[r2][col];
+        if (!f) continue;
+        for (var c2 = col; c2 < n; c2++) A[r2][c2] -= f * A[col][c2];
+        b[r2] -= f * b[col];
+      }
+    }
+    return { h11: b[0], h12: b[1], h13: b[2], h21: b[3], h22: b[4], h23: b[5], h31: b[6], h32: b[7] };
   }
 
-  function warpDocument(src, pts) {
+  /* قص المنظور بدون أي مكتبات خارجية: لكل بكسل في النتيجة نحسب موقعه في الصورة
+     الأصلية ثم نأخذ عينة ثنائية الخطية (bilinear) للحصول على صورة واضحة */
+  function perspectiveCrop(sourceCanvas, pts) {
     var ordered = orderPoints(pts);
     var tl = ordered[0], tr = ordered[1], br = ordered[2], bl = ordered[3];
-    var widthA = distance(br, bl), widthB = distance(tr, tl);
-    var maxW = Math.max(widthA, widthB);
-    var heightA = distance(tr, br), heightB = distance(tl, bl);
-    var maxH = Math.max(heightA, heightB);
-    var dstW = Math.round(maxW), dstH = Math.round(maxH);
-    if (dstW < 200 || dstH < 200) return null;
-    var srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
-    var dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, dstW - 1, 0, dstW - 1, dstH - 1, 0, dstH - 1]);
-    var M = cv.getPerspectiveTransform(srcTri, dstTri);
-    var dst = new cv.Mat();
-    cv.warpPerspective(src, dst, M, new cv.Size(dstW, dstH));
-    srcTri.delete(); dstTri.delete(); M.delete();
-    return { mat: dst, width: dstW, height: dstH };
+    var dstW = Math.round(Math.max(distance(tl, tr), distance(bl, br)));
+    var dstH = Math.round(Math.max(distance(tl, bl), distance(tr, br)));
+    if (dstW < 60 || dstH < 60) return null;
+
+    var maxPixels = 3200000;
+    var maxSide = 2240;
+    var scale = Math.min(1, maxSide / Math.max(dstW, dstH));
+    if (dstW * dstH * scale * scale > maxPixels) scale = Math.sqrt(maxPixels / (dstW * dstH));
+    dstW = Math.max(60, Math.round(dstW * scale));
+    dstH = Math.max(60, Math.round(dstH * scale));
+
+    var H = solveHomography([tl, tr, br, bl], [
+      { x: 0, y: 0 }, { x: dstW, y: 0 }, { x: dstW, y: dstH }, { x: 0, y: dstH }
+    ]);
+    if (!H) return null;
+
+    var sw = sourceCanvas.width, sh = sourceCanvas.height;
+    var srcData = sourceCanvas.getContext('2d').getImageData(0, 0, sw, sh).data;
+    var out = new ImageData(dstW, dstH);
+    var data = out.data;
+
+    for (var y = 0; y < dstH; y++) {
+      var denY = H.h32 * y;
+      var rowOff = H.h12 * y + H.h13;
+      var rowOff2 = H.h22 * y + H.h23;
+      for (var x = 0; x < dstW; x++) {
+        var den = H.h31 * x + denY + 1;
+        if (!den) den = 1e-9;
+        var sx = (H.h11 * x + rowOff) / den;
+        var sy = (H.h21 * x + rowOff2) / den;
+        var o = (y * dstW + x) * 4;
+        if (sx < 0 || sy < 0 || sx > sw - 1 || sy > sh - 1) {
+          data[o] = 255; data[o + 1] = 255; data[o + 2] = 255; data[o + 3] = 255;
+          continue;
+        }
+        var x0 = Math.floor(sx), y0 = Math.floor(sy);
+        var x1 = x0 + 1 < sw ? x0 + 1 : x0;
+        var y1 = y0 + 1 < sh ? y0 + 1 : y0;
+        var fx = sx - x0, fy = sy - y0;
+        var i00 = (y0 * sw + x0) * 4, i10 = (y0 * sw + x1) * 4;
+        var i01 = (y1 * sw + x0) * 4, i11 = (y1 * sw + x1) * 4;
+        var w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
+        data[o] = srcData[i00] * w00 + srcData[i10] * w10 + srcData[i01] * w01 + srcData[i11] * w11;
+        data[o + 1] = srcData[i00 + 1] * w00 + srcData[i10 + 1] * w10 + srcData[i01 + 1] * w01 + srcData[i11 + 1] * w11;
+        data[o + 2] = srcData[i00 + 2] * w00 + srcData[i10 + 2] * w10 + srcData[i01 + 2] * w01 + srcData[i11 + 2] * w11;
+        data[o + 3] = 255;
+      }
+    }
+    return { imageData: out, width: dstW, height: dstH };
   }
 
   function setCameraMode() {
@@ -531,8 +551,8 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   function clampPoint(p) {
     return {
-      x: Math.max(0, Math.min(adjustCanvas.width, p.x)),
-      y: Math.max(0, Math.min(adjustCanvas.height, p.y))
+      x: Math.max(0, Math.min(adjustCanvas.width - 1, p.x)),
+      y: Math.max(0, Math.min(adjustCanvas.height - 1, p.y))
     };
   }
   function findNearest(p) {
@@ -577,45 +597,41 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!adjustCanvas) return;
     adjustCanvas.width = cameraCanvas.width;
     adjustCanvas.height = cameraCanvas.height;
-    cornerPoints = [];
-    var margin = Math.min(cameraCanvas.width, cameraCanvas.height) * 0.05;
-    var defaults = [
+    var margin = Math.min(cameraCanvas.width, cameraCanvas.height) * 0.06;
+    cornerPoints = [
       { x: margin, y: margin },
       { x: cameraCanvas.width - margin, y: margin },
       { x: cameraCanvas.width - margin, y: cameraCanvas.height - margin },
       { x: margin, y: cameraCanvas.height - margin }
     ];
-    if (scannerCheck && scannerCheck.checked && cvReady) {
-      try {
-        var src = cv.imread(cameraCanvas);
-        var corners = detectCorners(src);
-        src.delete();
-        if (corners) cornerPoints = orderPoints(corners);
-      } catch (e) { console.error('auto detect failed', e); }
-    }
-    if (!cornerPoints.length) cornerPoints = defaults;
     setAdjustMode();
+    if (tipEl) tipEl.innerHTML = '<i class="fas fa-crop-simple"></i> اسحب النقاط الزرقاء الأربع لتطابق حواف الصفحة، ثم اضغط «قص الصفحة».';
     drawAdjust();
   }
 
   function doCrop() {
-    if (!cornerPoints.length || cornerPoints.length !== 4) return;
-    if (!cvReady) {
-      loadOpenCV().then(doCrop).catch(function () { useOriginal(); });
-      return;
-    }
-    try {
-      var src = cv.imread(cameraCanvas);
-      var warped = warpDocument(src, cornerPoints);
-      src.delete();
-      if (warped && warped.mat) {
-        cv.imshow(resultCanvas, warped.mat);
-        warped.mat.delete();
-        setResultMode();
-        return;
+    if (!cornerPoints || cornerPoints.length !== 4) return;
+    var cropBtn = document.getElementById('cameraCrop');
+    var oldHtml = cropBtn ? cropBtn.innerHTML : '';
+    if (cropBtn) { cropBtn.disabled = true; cropBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جارٍ القص...'; }
+    setTimeout(function () {
+      try {
+        var out = perspectiveCrop(cameraCanvas, cornerPoints);
+        if (out) {
+          resultCanvas.width = out.width;
+          resultCanvas.height = out.height;
+          resultCanvas.getContext('2d').putImageData(out.imageData, 0, 0);
+          setResultMode();
+          if (tipEl) tipEl.innerHTML = '<i class="fas fa-circle-check"></i> تم قص الصفحة. راجع النتيجة ثم اضغط «استخدام الصورة» أو «إعادة التقاط».';
+        } else {
+          useOriginal();
+        }
+      } catch (e) {
+        console.error('crop failed', e);
+        useOriginal();
       }
-    } catch (e) { console.error('crop failed', e); }
-    useOriginal();
+      if (cropBtn) { cropBtn.disabled = false; cropBtn.innerHTML = oldHtml; }
+    }, 30);
   }
 
   function useOriginal() {
@@ -632,11 +648,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var ctx = cameraCanvas.getContext('2d');
     ctx.drawImage(video, 0, 0, cameraCanvas.width, cameraCanvas.height);
     stopStream();
-    if (scannerCheck && scannerCheck.checked) {
-      startAdjust();
-    } else {
-      useOriginal();
-    }
+    startAdjust();
   }
 
   function finishCapture() {
@@ -654,25 +666,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function retake() {
     setCameraMode();
-    startCamera();
-  }
-
-  function openCamera(input) {
-    currentInput = input;
-    modal.classList.add('show');
-    modal.setAttribute('aria-hidden', 'false');
-    setCameraMode();
-    if (scannerCheck && scannerCheck.checked) {
-      shoot.disabled = true;
-      showScanningState(true);
-      loadOpenCV().then(function () {
-        shoot.disabled = false;
-        showScanningState(false);
-      }).catch(function (err) {
-        showScanningState(false);
-        console.warn('OpenCV load failed', err);
-      });
-    }
     startCamera();
   }
 

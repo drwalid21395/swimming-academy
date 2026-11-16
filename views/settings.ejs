@@ -83,7 +83,13 @@
             <div class="form-group <%= d.type === 'textarea' ? 'full' : '' %>">
               <label><%= d.label %></label>
               <% if (d.type === 'textarea') { %>
-                <textarea class="form-control" name="<%= d.key %>" rows="4"><%= current[d.key] || '' %></textarea>
+                <textarea class="form-control" name="<%= d.key %>" rows="<%= d.key === 'receipt_message_template' ? 14 : 4 %>"><%= current[d.key] || '' %></textarea>
+                <% if (d.key === 'receipt_message_template') { %>
+                  <div class="form-hint" style="line-height:2">
+                    المتغيّرات المتاحة: <code>{academy}</code> اسم الأكاديمية، <code>{player}</code> اللاعب، <code>{guardian_line}</code> ولي الأمر، <code>{membership_line}</code>، <code>{program_line}</code>، <code>{group_line}</code>، <code>{period_line}</code>، <code>{sessions_line}</code>، <code>{type_block}</code>، <code>{price_line}</code>، <code>{discount_line}</code>، <code>{tax_line}</code>، <code>{total_line}</code>، <code>{paid_line}</code>، <code>{remaining_line}</code>، <code>{method_line}</code>، <code>{receipt_line}</code>، <code>{group_text}</code>، <code>{group_link}</code>، <code>{footer}</code>، <code>{separator}</code>.
+                    الأسطر الفارغة تُحذف تلقائياً، ويمكنك تغيير النص والرابط بحرية. اتركه فارغاً لاستخدام القالب الافتراضي.
+                  </div>
+                <% } %>
               <% } else { %>
                 <input type="<%= d.type || 'text' %>" class="form-control" name="<%= d.key %>" value="<%= current[d.key] || '' %>">
               <% } %>

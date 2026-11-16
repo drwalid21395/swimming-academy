@@ -8,6 +8,7 @@ const { setFlash } = require('../lib/auth-cookie');
 const { upload, uploadAndStore, uploadSinglePlusArray, removeUploaded } = require('../lib/upload');
 const { getAcademy, getActiveSubscription, subscriptionStatus, featureEnabled, maybeNotifyAcademySubscription } = require('../lib/tenant');
 const { listActiveSports, getSport, academySportRow, enabledSportsForAcademy } = require('../lib/sports');
+const { DEFAULT_RECEIPT_TEMPLATE, DEFAULT_RECEIPT_GROUP_TEXT, DEFAULT_RECEIPT_GROUP_LINK, DEFAULT_RECEIPT_FOOTER } = require('../lib/whatsapp');
 const router = express.Router();
 
 async function getArr(key, fallback) {
@@ -238,6 +239,10 @@ const SETTING_DEFS = [
   { key: 'whatsapp_country_code', label: 'مفتاح دولة الواتساب (مثال: 20 لمصر)', type: 'text', section: 'إعدادات الواتساب' },
   { key: 'whatsapp_api_token', label: 'رمز WhatsApp API (Access Token)', type: 'text', section: 'إعدادات الواتساب' },
   { key: 'whatsapp_phone_id', label: 'معرّف رقم الهاتف (Phone Number ID)', type: 'text', section: 'إعدادات الواتساب' },
+  { key: 'receipt_message_template', label: 'قالب رسالة الإيصال (النص الكامل — عدّل الصيغة والرابط كما تريد)', type: 'textarea', section: 'رسالة إيصال الاشتراك عبر واتساب' },
+  { key: 'receipt_group_text', label: 'النص الذي يسبق رابط المجموعة', type: 'text', section: 'رسالة إيصال الاشتراك عبر واتساب' },
+  { key: 'receipt_group_link', label: 'رابط مجموعة الواتساب', type: 'text', section: 'رسالة إيصال الاشتراك عبر واتساب' },
+  { key: 'receipt_footer_text', label: 'نص ختام الإيصال', type: 'text', section: 'رسالة إيصال الاشتراك عبر واتساب' },
   { key: 'admin_name', label: 'اسم المسؤول الإداري (في رسالة الحجز)', type: 'text', section: 'رسالة حجز الواتساب' },
   { key: 'tech_director_name', label: 'اسم المدير الفني (في رسالة الحجز)', type: 'text', section: 'رسالة حجز الواتساب' },
   { key: 'app_name', label: 'اسم التطبيق عند التثبيت على الهاتف', type: 'text', section: 'تطبيق الموبايل (اسم التطبيق عند التثبيت)' },
@@ -247,6 +252,11 @@ router.get('/settings', async function (req, res) {
   if (!canView(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const current = {};
   (await db.prepare('SELECT * FROM settings').all()).forEach(r => { current[r.key] = r.value; });
+  /* إظهار القيم الافتراضية لرسالة الإيصال حتى يستطيع الأدمن تعديلها مباشرة */
+  if (!current.receipt_message_template) current.receipt_message_template = DEFAULT_RECEIPT_TEMPLATE;
+  if (!current.receipt_group_text) current.receipt_group_text = DEFAULT_RECEIPT_GROUP_TEXT;
+  if (!current.receipt_group_link) current.receipt_group_link = DEFAULT_RECEIPT_GROUP_LINK;
+  if (!current.receipt_footer_text) current.receipt_footer_text = DEFAULT_RECEIPT_FOOTER;
   /* سياق الأكاديمية الحالية: معلومات الاشتراك + صلاحية رفع الشعار */
   const acadId = req.currentUser.impersonatingAcademyId || req.currentUser.academy_id;
   try { await maybeNotifyAcademySubscription(acadId); } catch (e) { /* تجاهل */ }

@@ -353,7 +353,11 @@ async function receiptPayload(id) {
     paidAmount: Number(s.paid_amount || 0),
     remaining: Number(s.remaining || 0),
     paymentMethod: s.payment_method,
-    receiptNo: s.receipt_no
+    receiptNo: s.receipt_no,
+    template: sm.receipt_message_template,
+    groupText: sm.receipt_group_text,
+    groupLink: sm.receipt_group_link,
+    footerText: sm.receipt_footer_text
   });
   return { s, text, phone: String(s.phone || '').trim() };
 }

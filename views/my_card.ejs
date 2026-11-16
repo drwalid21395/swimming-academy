@@ -46,6 +46,27 @@
     .pp-score-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 12px; }
     .pp-score-name { font-size: 14px; color: var(--text); }
     .pp-score-val { font-size: 15px; font-weight: 800; color: var(--primary); background: var(--primary-soft); padding: 4px 12px; border-radius: 8px; min-width: 46px; text-align: center; }
+    .pp-progress-head { display: flex; align-items: stretch; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .pp-progress-box { flex: 1 1 120px; background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 10px 12px; text-align: center; }
+    .pp-progress-box .k { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+    .pp-progress-box .v { font-size: 22px; font-weight: 800; line-height: 1.2; }
+    .pp-progress-box .d { font-size: 10.5px; color: var(--text-muted); margin-top: 3px; }
+    .pp-progress-arrow { align-self: center; color: var(--text-muted); font-size: 18px; }
+    .pp-delta { color: #10b981; }
+    .pp-delta.down { color: #ef4444; }
+    .pp-delta.flat { color: var(--text-muted); }
+    .pp-chart-wrap { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 8px 6px 2px; }
+    .pp-chart { width: 100%; height: auto; display: block; }
+    .pp-compare-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .pp-compare-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; padding: 8px 12px; }
+    .pp-compare-name { font-size: 13px; color: var(--text); }
+    .pp-compare-nums { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
+    .pp-compare-nums .first { color: var(--text-muted); }
+    .pp-compare-nums .cur { font-weight: 800; color: var(--primary); }
+    .pp-compare-delta { font-size: 12px; font-weight: 800; min-width: 42px; text-align: center; padding: 3px 8px; border-radius: 999px; background: rgba(16,185,129,.12); color: #10b981; }
+    .pp-compare-delta.down { background: rgba(239,68,68,.12); color: #ef4444; }
+    .pp-compare-delta.flat { background: var(--bg-soft); color: var(--text-muted); }
+    .pp-note { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
     .pp-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; border: 1px solid var(--card-border); }
     .pp-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 420px; }
     .pp-table th, .pp-table td { padding: 8px; border-bottom: 1px solid var(--card-border); text-align: right; }
@@ -69,6 +90,14 @@
       .pp-score-row { padding: 8px 10px; }
       .pp-score-name { font-size: 13px; }
       .pp-score-val { font-size: 14px; }
+      .pp-progress-head { gap: 6px; }
+      .pp-progress-box { flex: 1 1 30%; padding: 8px 6px; }
+      .pp-progress-box .v { font-size: 18px; }
+      .pp-progress-arrow { font-size: 14px; }
+      .pp-compare-row { padding: 7px 9px; gap: 6px; }
+      .pp-compare-name { font-size: 12px; }
+      .pp-compare-nums { font-size: 12px; }
+      .pp-compare-delta { font-size: 11px; min-width: 36px; }
     }
   </style>
 </head>
@@ -211,6 +240,35 @@
       html += '</tbody></table></div></div>';
     }
 
+    if (r.progress && r.progress.first && r.progress.current) {
+      var pr = r.progress;
+      var deltaCls = pr.delta > 0 ? '' : pr.delta < 0 ? ' down' : ' flat';
+      var deltaLabel = pr.delta > 0 ? 'تحسن' : pr.delta < 0 ? 'تراجع' : 'ثابت';
+      html += '<div class="pp-section"><h3><i class="fas fa-chart-line"></i> خط التقدم الفني</h3>';
+      html += '<div class="pp-progress-head">';
+      html += '<div class="pp-progress-box"><div class="k">أول تقييم</div><div class="v">' + (pr.first.percent || 0) + '%</div><div class="d">' + esc(pr.first.date || '—') + (pr.first.level ? ' · ' + esc(pr.first.level) : '') + '</div></div>';
+      html += '<div class="pp-progress-arrow"><i class="fas fa-arrow-left-long"></i></div>';
+      html += '<div class="pp-progress-box"><div class="k">الوضع الحالي</div><div class="v" style="color:var(--primary)">' + (pr.current.percent || 0) + '%</div><div class="d">' + esc(pr.current.date || '—') + (pr.current.level ? ' · ' + esc(pr.current.level) : '') + '</div></div>';
+      html += '<div class="pp-progress-box"><div class="k">الفرق</div><div class="v pp-delta' + deltaCls + '">' + (pr.delta > 0 ? '+' : '') + pr.delta + '%</div><div class="d">' + deltaLabel + '</div></div>';
+      html += '</div>';
+      html += progressChart(pr.history);
+      if ((pr.count || 1) < 2) html += '<div class="pp-note"><i class="fas fa-circle-info"></i> يوجد تقييم واحد فقط حتى الآن — سيظهر خط التقدم بعد إضافة تقييم جديد.</div>';
+      if (pr.skills && pr.skills.length) {
+        html += '<div class="pp-compare-list">';
+        pr.skills.forEach(function (sk) {
+          var d = sk.delta;
+          var cls = d === null ? ' flat' : d > 0 ? '' : d < 0 ? ' down' : ' flat';
+          var txt = d === null ? '—' : (d > 0 ? '+' : '') + d;
+          html += '<div class="pp-compare-row"><span class="pp-compare-name">' + esc(sk.name) + '</span>';
+          html += '<span class="pp-compare-nums"><span class="first">' + (sk.first === null ? '—' : sk.first) + '</span><i class="fas fa-arrow-left" style="font-size:11px;color:var(--text-muted)"></i><span class="cur">' + (sk.current === null ? '—' : sk.current) + '</span></span>';
+          html += '<span class="pp-compare-delta' + cls + '">' + txt + '</span></div>';
+        });
+        html += '</div>';
+        html += '<div class="pp-note">المقارنة بين درجات أول تقييم وآخر تقييم لكل مهارة (من 100).</div>';
+      }
+      html += '</div>';
+    }
+
     if (r.assessment) {
       var a = r.assessment;
       html += '<div class="pp-section"><h3><i class="fas fa-chart-line"></i> آخر تقييم فني</h3><div class="pp-grid">';
@@ -300,6 +358,53 @@
   function stat(n, l, c) { return '<div class="pp-stat"><b class="text-' + c + '">' + n + '</b><span>' + l + '</span></div>'; }
   function esc(t) { return String(t == null ? '—' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]; }); }
   function formatMoney(n) { return Number(n || 0).toFixed(2) + ' ج.م'; }
+
+  function shortDate(d) {
+    var s = String(d || '');
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? m[3] + '/' + m[2] : s;
+  }
+
+  /* خط تقدم SVG خفيف يعمل بدون أي مكتبات خارجية */
+  function progressChart(history) {
+    if (!history || !history.length) return '';
+    var W = 660, H = 220, padL = 36, padR = 14, padT = 18, padB = 34;
+    var vals = history.map(function (h) { return Number(h.percent) || 0; });
+    var lo = Math.min.apply(null, vals);
+    var hi = Math.max.apply(null, vals);
+    var min = Math.max(0, Math.floor((lo - 8) / 10) * 10);
+    var max = Math.min(100, Math.ceil((hi + 8) / 10) * 10);
+    if (max - min < 20) {
+      max = Math.min(100, min + 20);
+      if (max - min < 20) min = Math.max(0, max - 20);
+    }
+    var n = history.length;
+    function px(i) { return n === 1 ? padL + (W - padL - padR) / 2 : padL + i * (W - padL - padR) / (n - 1); }
+    function py(v) { return padT + (max - v) * (H - padT - padB) / (max - min); }
+    var pts = vals.map(function (v, i) { return { x: px(i), y: py(v), v: v, d: history[i].date }; });
+    var linePath = pts.map(function (p, i) { return (i ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.y.toFixed(1); }).join(' ');
+    var areaPath = linePath + ' L ' + pts[pts.length - 1].x.toFixed(1) + ' ' + (H - padB) + ' L ' + pts[0].x.toFixed(1) + ' ' + (H - padB) + ' Z';
+
+    var grid = '';
+    for (var g = 0; g <= 4; g++) {
+      var gv = min + (max - min) * g / 4;
+      var gy = py(gv);
+      grid += '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + gy.toFixed(1) + '" stroke="rgba(148,163,184,.25)" stroke-width="1" />';
+      grid += '<text x="' + (padL - 8) + '" y="' + (gy + 4).toFixed(1) + '" text-anchor="end" font-size="10" fill="var(--text-muted)">' + Math.round(gv) + '</text>';
+    }
+    var dots = pts.map(function (p, i) {
+      var showLabel = n <= 8 || i === 0 || i === n - 1;
+      var label = showLabel ? '<text x="' + p.x.toFixed(1) + '" y="' + (H - padB + 16) + '" text-anchor="middle" font-size="9" fill="var(--text-muted)">' + esc(shortDate(p.d)) + '</text>' : '';
+      return '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="' + (i === 0 || i === n - 1 ? 5.5 : 4) + '" fill="' + (i === 0 ? '#94a3b8' : i === n - 1 ? 'var(--primary)' : '#38bdf8') + '" stroke="#fff" stroke-width="2"><title>' + esc((p.d || '') + ' — ' + p.v + '%') + '</title></circle>' + label;
+    }).join('');
+
+    return '<div class="pp-chart-wrap"><svg class="pp-chart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="خط التقدم الفني">'
+      + '<defs><linearGradient id="ppArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--primary)" stop-opacity=".28"/><stop offset="100%" stop-color="var(--primary)" stop-opacity="0"/></linearGradient></defs>'
+      + grid
+      + '<path d="' + areaPath + '" fill="url(#ppArea)" />'
+      + '<path d="' + linePath + '" fill="none" stroke="var(--primary)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />'
+      + dots + '</svg></div>';
+  }
 
   function waNumber(phone) {
     var d = String(phone || '').replace(/\D/g, '');
