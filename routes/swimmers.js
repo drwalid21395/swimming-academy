@@ -1,7 +1,7 @@
 /** اللاعبون (ملف شامل) + أولياء الأمور + المدربون + الموظفون */
 const express = require('express');
 const { db } = require('../lib/db');
-const { audit, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON, today, canView, canExport, canDel, canEdit } = require('../lib/helpers');
+const { audit, money, fmtDate, fmtDateTime, dayAr, calcAge, pct, parseJSON, today, canView, canExport, canDel, canEdit, buildDiff } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
 const { nextMembership, isUniqueViolation } = require('../lib/membership');
 const crud = require('../lib/crud');
@@ -506,14 +506,24 @@ router.get('/swimmers/:id/edit', async function (req, res) {
   const curC = row.coach_id ? await db.prepare('SELECT full_name FROM coaches WHERE id = ?').get(row.coach_id) : null;
   res.render('form', { form: { title: 'تعديل ملف اللاعب', subtitle: row.full_name, icon: 'fa-user-pen', active: 'swimmers', action: '/swimmers/' + row.id + '/edit', encType: 'multipart/form-data', fields: await swimmerFields(row, req), values: row, submitLabel: 'حفظ التعديلات', cancelUrl: '/swimmers/' + row.id, csrf: '', transfer: { action: '/swimmers/' + row.id + '/transfer', groups: tg, coaches: tc, current_group: row.group_id, current_group_name: curG ? curG.name : 'بدون مجموعة', current_coach_name: curC ? curC.full_name : '—' } } });
 });
+
+const SWIMMER_FIELD_LABELS = {
+  full_name: 'الاسم', birth_date: 'تاريخ الميلاد', gender: 'النوع', phone: 'الهاتف', address: 'العنوان',
+  school: 'المدرسة', guardian_id: 'ولي الأمر', blood_type: 'فصيلة الدم', emergency_name: 'طوارئ - اسم',
+  emergency_phone: 'طوارئ - هاتف', allergies: 'حساسية', chronic_diseases: 'أمراض مزمنة',
+  medical_note: 'ملاحظة طبية', level_id: 'المستوى', program_id: 'البرنامج', group_id: 'المجموعة',
+  coach_id: 'الكابتن', registration_date: 'تاريخ التسجيل', status: 'الحالة', notes: 'ملاحظات', avatar: 'الصورة'
+};
+
 router.post('/swimmers/:id/edit', uploadAndStore('avatar'), async function (req, res) {
   const id = Number(req.params.id);
   const b = req.body;
-  const old = await db.prepare('SELECT avatar, guardian_id FROM swimmers WHERE id = ?').get(id);
-  const guardianId = await resolveGuardian(db, b, old ? old.guardian_id : null);
-  let avatar = old ? old.avatar : null;
+  const oldRow = await db.prepare('SELECT * FROM swimmers WHERE id = ?').get(id);
+  const old = { avatar: oldRow ? oldRow.avatar : null, guardian_id: oldRow ? oldRow.guardian_id : null };
+  const guardianId = await resolveGuardian(db, b, old.guardian_id);
+  let avatar = old.avatar;
   if (req.file) {
-    if (old && old.avatar) removeUploaded(old.avatar);
+    if (old.avatar) removeUploaded(old.avatar);
     avatar = '/uploads/' + req.file.filename;
   }
   const cols = ['full_name','birth_date','gender','phone','address','school','guardian_id','blood_type','emergency_name','emergency_phone','allergies','chronic_diseases','medical_note','level_id','program_id','group_id','coach_id','registration_date','status','notes','avatar'];
@@ -524,7 +534,10 @@ router.post('/swimmers/:id/edit', uploadAndStore('avatar'), async function (req,
   const prog = b.program_id ? await db.prepare('SELECT sport_id FROM programs WHERE id = ?').get(Number(b.program_id)) : null;
   if (prog && prog.sport_id) await db.prepare('UPDATE swimmers SET sport_id = ? WHERE id = ?').run(Number(prog.sport_id), id);
   await syncSwimmerGroups(db, id, b.group_id);
-  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'swimmers', id, 'تعديل ملف: ' + b.full_name, req);
+  const newObj = {};
+  cols.forEach(function (c, i) { newObj[c] = vals[i]; });
+  const diff = buildDiff(oldRow, newObj, SWIMMER_FIELD_LABELS);
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'swimmers', id, 'تعديل ملف: ' + b.full_name + (diff ? ' — ' + diff : ''), req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/swimmers/' + id);
 });
