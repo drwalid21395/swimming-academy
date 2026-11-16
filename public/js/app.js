@@ -64,6 +64,37 @@
       restoreScroll();
     }
 
+    /* ---------- طي/فرد مجموعات القائمة الجانبية ---------- */
+    (function initNavGroups() {
+      var NAVKEY = 'sw-nav-collapsed';
+      var stored = [];
+      try { stored = JSON.parse(localStorage.getItem(NAVKEY) || '[]') || []; } catch (e) { stored = []; }
+      document.querySelectorAll('.nav-section[data-nav-toggle]').forEach(function (btn) {
+        var id = btn.getAttribute('data-nav-toggle');
+        var group = document.getElementById(id);
+        if (!group) return;
+        function apply(collapsed) {
+          group.hidden = collapsed;
+          btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        }
+        /* افتح دائماً المجموعة التي تحتوي على الصفحة الحالية حتى يرى المستخدم موقعه */
+        var hasActive = !!group.querySelector('.nav-item.active');
+        var collapsed = stored.indexOf(id) !== -1;
+        if (hasActive) collapsed = false;
+        apply(collapsed);
+        btn.addEventListener('click', function () {
+          var willCollapse = btn.getAttribute('aria-expanded') === 'true';
+          apply(willCollapse);
+          var list;
+          try { list = JSON.parse(localStorage.getItem(NAVKEY) || '[]') || []; } catch (e) { list = []; }
+          var idx = list.indexOf(id);
+          if (willCollapse) { if (idx === -1) list.push(id); }
+          else if (idx !== -1) { list.splice(idx, 1); }
+          try { localStorage.setItem(NAVKEY, JSON.stringify(list)); } catch (e) { }
+        });
+      });
+    })();
+
     /* ---------- قوائم منسدلة ---------- */
     document.querySelectorAll('.dropdown-toggle').forEach(function (btn) {
       btn.addEventListener('click', function (e) {
