@@ -157,9 +157,9 @@
                       <select class="form-control quick-method" style="width:110px;padding:3px 4px" aria-label="طريقة الدفع">
                         <% PAY_METHODS.forEach(function (m) { %><option value="<%= m %>"><%= m %></option><% }); %>
                       </select>
-                      <button type="submit" class="btn btn-success btn-sm" title="قبض الحصص المحددة وتسجيل المبلغ المحوّل">قبض المحدد</button>
+                      <button type="submit" class="btn btn-success btn-sm quick-pay-btn" title="يفتح كود التحويل بالمبلغ المحدد ويسجّل القبض"><i class="fas fa-money-bill-transfer"></i> قبض المحدد (<span class="quick-btn-amount"><%= money(r.session_balance.unclaimedAmount) %></span>)</button>
                     </div>
-                    <div class="font-11 text-muted" style="margin-top:4px">المبلغ المحدد: <b class="text-success quick-amount"><%= money(r.session_balance.unclaimedAmount) %></b> — <a class="quick-code" href="#" title="كود تحويل المبلغ المحدد">كود التحويل</a></div>
+                    <div class="font-11 text-muted" style="margin-top:4px">كود التحويل: <span dir="ltr" class="quick-code-text">—</span> — يُفتح تلقائياً عند الضغط على الزر.</div>
                   </form>
                   <% } %>
                 <% } else { %>—<% } %>
@@ -344,10 +344,21 @@
       .replace(/\{phone\}/g, String(phone || '').replace(/[^\d+]/g, ''))
       .replace(/\{amount\}/g, s);
   }
+  function openDialer(code) {
+    if (!code) return;
+    var a = document.createElement('a');
+    a.href = 'tel:' + String(code).replace(/#/g, '%23');
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
   Array.prototype.forEach.call(document.querySelectorAll('.quick-claim-form'), function (form) {
     var countEl = form.querySelector('.quick-count');
     var amountEl = form.querySelector('.quick-amount');
-    var codeEl = form.querySelector('.quick-code');
+    var codeEl = form.querySelector('.quick-code-text');
+    var btnAmountEl = form.querySelector('.quick-btn-amount');
+    var payBtn = form.querySelector('.quick-pay-btn');
     var amounts;
     try { amounts = JSON.parse(form.getAttribute('data-amounts') || '[]'); } catch (err) { amounts = []; }
     var phone = form.getAttribute('data-phone') || '';
@@ -359,13 +370,11 @@
     }
     function refresh() {
       var s = selected();
+      var code = s.amount > 0 ? payCode(phone, s.amount) : '';
       if (amountEl) amountEl.textContent = cash(s.amount);
-      if (codeEl) {
-        var code = s.amount > 0 ? payCode(phone, s.amount) : '';
-        codeEl.textContent = code || 'كود التحويل';
-        codeEl.href = code ? ('tel:' + code.replace(/#/g, '%23')) : '#';
-        codeEl.title = code ? ('كود تحويل ' + cash(s.amount) + ': ' + code) : 'كود التحويل';
-      }
+      if (btnAmountEl) btnAmountEl.textContent = cash(s.amount);
+      if (codeEl) codeEl.textContent = code || '—';
+      if (payBtn) { payBtn.dataset.code = code; payBtn.title = code ? ('يفتح كود التحويل: ' + code) : 'قبض الحصص المحددة'; }
     }
     if (countEl) countEl.addEventListener('input', refresh);
     refresh();
@@ -376,9 +385,10 @@
       var code = payCode(phone, s.amount);
       var methodEl = form.querySelector('.quick-method');
       var method = methodEl ? methodEl.value : 'نقدي';
-      App.showConfirm('قبض ' + s.count + ' حصة وتحويل ' + cash(s.amount) + ' (' + code + ')؟ سيُسجَّل المبلغ كدفعة وتُصبح الحصص «تم القبض».', function () {
+      App.showConfirm('قبض ' + s.count + ' حصة وتحويل ' + cash(s.amount) + ' (' + code + ')؟ سيفتح الزر كود التحويل ويسجّل المبلغ كدفعة وتُصبح الحصص «تم القبض».', function () {
         var btn = form.querySelector('button[type="submit"]');
         if (btn) btn.disabled = true;
+        openDialer(code);
         fetch('/payroll/' + form.getAttribute('data-id') + '/sessions-pay', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'pay', sessions_count: s.count, method: method, transfer_code: code, note: 'قبض من البطاقة الخارجية' })

@@ -99,11 +99,11 @@
         <div class="form-group" style="margin:0"><label class="font-11 text-muted">قيمة الحصص المحددة</label><input type="text" id="sessAmountHint" class="form-control" value="" readonly style="width:140px"></div>
         <div class="form-group" style="margin:0"><label class="font-11 text-muted">التاريخ</label><input type="date" id="sessDate" class="form-control" value="<%= today() %>"></div>
         <div class="form-group" style="margin:0"><label class="font-11 text-muted">طريقة الدفع</label><select id="sessMethod" class="form-control"><% PAY_METHODS.forEach(function(m){ %><option value="<%= m %>"><%= m %></option><% }) %></select></div>
-        <div class="form-group" style="margin:0"><label class="font-11 text-muted">كود التحويل (يتحدّث حسب العدد)</label><input type="text" id="sessCode" class="form-control" dir="ltr" value="<%= buildTransferCode(tplVal, personPhone, sessionBalance.unclaimedAmount || 0) %>" style="width:190px"></div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">كود التحويل (يُفتح تلقائياً من الزر)</label><input type="text" id="sessCode" class="form-control" dir="ltr" value="<%= buildTransferCode(tplVal, personPhone, sessionBalance.unclaimedAmount || 0) %>" readonly style="width:190px"></div>
         <div class="form-group" style="margin:0;min-width:170px"><label class="font-11 text-muted">ملاحظة</label><input type="text" id="sessNote" class="form-control"></div>
       </div>
       <div class="flex gap-1" style="margin-top:10px;flex-wrap:wrap">
-        <button type="submit" class="btn btn-success btn-lg" data-action="pay" <%= sessionBalance.unclaimed <= 0 ? 'disabled' : '' %>><i class="fas fa-hand-holding-usd"></i> تم القبض (<span id="sessBtnAmount"><%= money(sessionBalance.unclaimedAmount || 0) %></span>)</button>
+        <button type="submit" id="sessPayBtn" class="btn btn-success btn-lg" data-action="pay" <%= sessionBalance.unclaimed <= 0 ? 'disabled' : '' %>><i class="fas fa-money-bill-transfer"></i> تم القبض (<span id="sessBtnAmount"><%= money(sessionBalance.unclaimedAmount || 0) %></span>)</button>
       </div>
     </form>
     <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> المبلغ وكود التحويل مرتبطان بعدد الحصص الذي تختاره (قيمة الحصة من تسجيل الحضور). «تم القبض» يسجّل التحويل ويُبقي الحصص المتبقية في «لم يتم القبض» حتى تُقبض. العدد المتبقي بعد القبض: <b id="sessRemainHint"><%= sessionBalance.unclaimed %></b> حصة.</div>
@@ -655,6 +655,7 @@
     var sessRemainHint = document.getElementById('sessRemainHint');
     var sessCodeEl = document.getElementById('sessCode');
     var sessBtnAmount = document.getElementById('sessBtnAmount');
+    var sessPayBtn = document.getElementById('sessPayBtn');
     var sessTotal = 0;
     var payTpl = <%- JSON.stringify(tplVal) %>;
     var payPhone = <%- JSON.stringify(personPhone) %>;
@@ -664,6 +665,15 @@
       return String(payTpl || '*9*7*{phone}*{amount}#')
         .replace(/\{phone\}/g, String(payPhone || '').replace(/[^\d+]/g, ''))
         .replace(/\{amount\}/g, s);
+    }
+    function openDialer(code) {
+      if (!code) return;
+      var a = document.createElement('a');
+      a.href = 'tel:' + String(code).replace(/#/g, '%23');
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
     function syncSessAmount() {
       if (!sessCountEl || !sessAmountHint) return;
@@ -677,6 +687,7 @@
       sessAmountHint.value = money(total);
       if (sessCodeEl) sessCodeEl.value = code;
       if (sessBtnAmount) sessBtnAmount.textContent = money(total);
+      if (sessPayBtn) { sessPayBtn.dataset.code = code; sessPayBtn.title = 'يفتح كود التحويل: ' + code; }
       if (sessRemainHint) sessRemainHint.textContent = String(Math.max(0, sessUnclaimed - c));
       var topLink = document.getElementById('salaryTransferLink');
       if (topLink) {
@@ -701,6 +712,7 @@
       };
       var btn = sessionPayForm.querySelector('button[type="submit"]');
       if (btn) btn.disabled = true;
+      openDialer(payload.transfer_code);
       postJSON('/payroll/<%= row.id %>/sessions-pay', payload).then(function (o) {
         if (btn) btn.disabled = false;
         if (o.j && o.j.ok) {
@@ -716,7 +728,7 @@
     }
     sessionPayForm.addEventListener('submit', function (e) {
       e.preventDefault();
-      App.showConfirm('تأكيد تحويل ' + money(sessTotal) + ' للحصص المحددة؟ سيُسجَّل كدفعة وتُصبح الحصص «تم القبض».', function () { doSessionPay(); });
+      App.showConfirm('تأكيد تحويل ' + money(sessTotal) + ' للحصص المحددة؟ سيفتح الزر كود التحويل ويسجّل المبلغ كدفعة وتُصبح الحصص «تم القبض».', function () { doSessionPay(); });
     });
   }
 })();
