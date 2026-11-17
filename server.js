@@ -10,6 +10,7 @@ const { securityHeaders, stripServerHeader, csrfProtect } = require('./lib/secur
 const { readSport, setSport } = require('./lib/sport-context');
 const { enabledSportsForAcademy } = require('./lib/sports');
 const { syncExpiredSubscriptions } = require('./lib/expiry');
+const { NAV_ITEMS } = require('./lib/navigation');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -174,6 +175,7 @@ app.use(async function (req, res, next) {
     res.locals.appName = (settings.app_name && String(settings.app_name).trim()) || 'dr.walid academy';
     res.locals.appShortName = (settings.app_short_name && String(settings.app_short_name).trim()) || res.locals.appName;
     res.locals.settings = settings;
+    res.locals.navItems = NAV_ITEMS;
     res.locals.canView = canView;
     res.locals.canAdd = canAdd;
     res.locals.canEdit = canEdit;
