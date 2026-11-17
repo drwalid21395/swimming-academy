@@ -162,6 +162,32 @@ function rangeWhere(range) {
   return { sql: ' AND a.date >= ? AND a.date <= ?', args: [range.from, range.to] };
 }
 
+function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
+
+/* مزامنة إجماليات كشف التعاقد بالحصة مع بنوده الفعلية (إصلاح الكشوف التي بقيت بقيمة صفر) */
+async function syncPerSessionTotals(row) {
+  if (!row || !row.id || row.settled_at) return row;
+  const sum = await db.prepare('SELECT COALESCE(SUM(amount),0) AS s FROM payroll_items WHERE payroll_id = ?').get(row.id);
+  const gross = round2(sum && sum.s);
+  const extras = round2(row.extras);
+  const deductions = round2(row.deductions);
+  const net = round2(gross + extras - deductions);
+  const paid = round2(row.paid_amount);
+  const remaining = round2(net - paid);
+  let status;
+  if (net <= 0 && paid <= 0) status = row.status || 'مستحق';
+  else if (remaining <= 0) status = 'مسدد';
+  else if (paid > 0) status = 'مدفوع جزئياً';
+  else status = 'مستحق';
+  const changed = round2(row.gross) !== gross || round2(row.net) !== net || round2(row.remaining) !== remaining || row.status !== status;
+  row.gross = gross; row.net = net; row.paid_amount = paid; row.remaining = remaining; row.status = status;
+  if (changed) {
+    await db.prepare('UPDATE payroll SET gross=?, net=?, remaining=?, status=?, updated_at=? WHERE id=?')
+      .run(gross, net, remaining, status, new Date().toLocaleString('sv-SE').replace('T', ' '), row.id);
+  }
+  return row;
+}
+
 async function countSessionBalance(personType, personId, range) {
   const id = Number(personId) || 0;
   if (!id) return { attended: 0, claimed: 0, unclaimed: 0, rate: 0, amountDue: 0 };
@@ -790,7 +816,14 @@ router.get('/payroll', async function (req, res) {
       ps = isPerSessionStaff(staff);
     }
     r.is_per_session = ps;
+    if (ps) await syncPerSessionTotals(r);
     r.session_balance = ps ? await countSessionBalance(r.person_type, r.person_type === 'trainer' ? r.coach_id : r.staff_id) : null;
+    /* قيمة الحصص غير المقبوضة (تظهر في البطاقة الخارجية حتى لو كان الكشف صفراً) */
+    if (r.session_balance) {
+      const personId = r.person_type === 'trainer' ? r.coach_id : r.staff_id;
+      const pending = await listUnclaimedSessions(r.person_type, personId, 500);
+      r.session_balance.unclaimedAmount = Math.round(pending.reduce(function (s, it) { return s + Number(it.amount || 0); }, 0) * 100) / 100;
+    }
   }
 
   const coaches = await db.prepare('SELECT * FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), '') + ' ORDER BY full_name').all();
@@ -1176,6 +1209,8 @@ router.get('/payroll/:id', async function (req, res) {
       unclaimedSessions = await listUnclaimedSessions('staff', row.staff_id, 500);
     }
   }
+  /* إصلاح إجماليات الكشف للتعاقد بالحصة لتطابق بنود الحصص المسجلة */
+  if (perSession) await syncPerSessionTotals(row);
 
   let statementRows = [];
   if (row.person_type === 'trainer' && row.coach_id) {
@@ -1347,12 +1382,13 @@ router.post('/payroll/:id/sessions-pay', async function (req, res) {
       .run(id, it.source_type || (personType === 'trainer' ? 'trainer' : 'staff'), it.id, it.date, it.title || '', it.amount || 0);
   }
 
-  // تحديث إجماليات الكشف
-  const newGross = Math.round((Number(row.gross || 0) + totalAmount) * 100) / 100;
-  const newNet = Math.round((Number(row.net || 0) + totalAmount) * 100) / 100;
-  let paidNow = Number(row.paid_amount || 0);
-  if (action === 'pay') paidNow = Math.round((paidNow + totalAmount) * 100) / 100;
-  const remaining = Math.round((newNet - paidNow) * 100) / 100;
+  // تحديث إجماليات الكشف من مجموع بنوده الفعلية (يمنع بقاء القيمة صفراً إذا كانت هناك بنود سابقة)
+  const sum = await db.prepare('SELECT COALESCE(SUM(amount),0) AS s FROM payroll_items WHERE payroll_id = ?').get(id);
+  const newGross = round2(sum && sum.s);
+  const newNet = round2(newGross + Number(row.extras || 0) - Number(row.deductions || 0));
+  let paidNow = round2(row.paid_amount);
+  if (action === 'pay') paidNow = round2(paidNow + totalAmount);
+  const remaining = round2(newNet - paidNow);
   const status = remaining <= 0 ? 'مسدد' : (paidNow > 0 ? 'مدفوع جزئياً' : 'مستحق');
   await db.prepare(`UPDATE payroll SET gross=?, net=?, paid_amount=?, remaining=?, status=?, updated_at=? WHERE id=?`)
     .run(newGross, newNet, paidNow, remaining, status, new Date().toLocaleString('sv-SE').replace('T', ' '), id);

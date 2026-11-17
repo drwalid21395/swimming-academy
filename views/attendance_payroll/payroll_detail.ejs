@@ -68,6 +68,7 @@
       <div class="kpi"><div class="k-val text-primary"><%= sessionBalance.attended %></div><div class="k-lbl">إجمالي الحضور</div></div>
       <div class="kpi"><div class="k-val text-success"><%= sessionBalance.claimed %></div><div class="k-lbl">تم قبضها</div></div>
       <div class="kpi"><div class="k-val text-danger"><%= sessionBalance.unclaimed %></div><div class="k-lbl">لم يتم قبضها</div></div>
+      <div class="kpi"><div class="k-val text-danger"><%= money(unclaimedSessions.reduce(function(s, it){ return s + Number(it.amount || 0); }, 0)) %></div><div class="k-lbl">قيمة لم تُقبض</div></div>
       <div class="kpi"><div class="k-val"><%= money(sessionBalance.rate) %></div><div class="k-lbl">قيمة الحصة</div></div>
     </div>
     <div class="form-hint" style="margin:10px 0"><i class="fas fa-circle-info"></i> إجمالي الحضور يظهر لكل الفترات. أي حصة يتم تسجيل حضورها تُضاف تلقائياً إلى «لم يتم قبضها» حتى يتم قبضها من هذه البطاقة.</div>

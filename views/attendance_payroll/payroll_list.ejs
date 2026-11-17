@@ -144,6 +144,15 @@
                   <span class="badge badge-info"><%= r.session_balance.attended %> حضور</span><br>
                   <span class="badge badge-success"><%= r.session_balance.claimed %> تم قبضها</span><br>
                   <span class="badge badge-danger"><%= r.session_balance.unclaimed %> لم تُقبض</span>
+                  <div class="font-11 text-muted" style="margin-top:4px">قيمة لم تُقبض: <b class="text-danger"><%= money(r.session_balance.unclaimedAmount) %></b></div>
+                  <% if (canEdit && r.session_balance.unclaimed > 0) { %>
+                  <form class="quick-claim-form" data-id="<%= r.id %>" style="margin-top:5px">
+                    <div class="flex gap-1" style="align-items:center">
+                      <input type="number" class="form-control" min="1" max="<%= r.session_balance.unclaimed %>" value="<%= r.session_balance.unclaimed %>" style="width:64px;padding:3px 6px" aria-label="عدد الحصص المطلوب قبضها">
+                      <button type="submit" class="btn btn-success btn-sm" title="تحويل الحصص المحددة إلى «تم قبضها» — استحقاق بدون تسجيل دفعة">قبض المحدد</button>
+                    </div>
+                  </form>
+                  <% } %>
                 <% } else { %>—<% } %>
               </td>
               <td class="rt-actions" data-label="إجراءات">
@@ -314,6 +323,36 @@
       if (res.ok) { App.showToast('تم توليد ' + (res.count || 0) + ' كشف', 'success'); setTimeout(function () { location.reload(); }, 800); }
       else { App.showToast(res.error || 'فشل التوليد', 'error'); }
     }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+  });
+
+  /* القبض السريع من البطاقة الخارجية: تحديد عدد الحصص غير المقبوضة وتحويلها إلى «تم قبضها» */
+  Array.prototype.forEach.call(document.querySelectorAll('.quick-claim-form'), function (form) {
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var id = form.getAttribute('data-id');
+      var countEl = form.querySelector('input');
+      var count = Number((countEl && countEl.value) || 0);
+      if (!count || count <= 0) { App.showToast('أدخل عدد الحصص المطلوب قبضها', 'warning'); return; }
+      App.showConfirm('تحويل ' + count + ' حصة من «لم تُقبض» إلى «تم قبضها»؟ سيُضاف مبلغها إلى الكشف كاستحقاق بدون تسجيل دفعة.', function () {
+        var btn = form.querySelector('button[type="submit"]');
+        if (btn) btn.disabled = true;
+        fetch('/payroll/' + id + '/sessions-pay', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'claim', sessions_count: count, note: 'قبض من البطاقة الخارجية' })
+        }).then(function (r) { return r.json(); }).then(function (res) {
+          if (res.ok) {
+            App.showToast('تم قبض ' + (res.sessionsCount || count) + ' حصة بقيمة ' + cash(res.totalAmount), 'success');
+            setTimeout(function () { location.reload(); }, 700);
+          } else {
+            if (btn) btn.disabled = false;
+            App.showToast(res.error || 'تعذر القبض', 'error');
+          }
+        }).catch(function () {
+          if (btn) btn.disabled = false;
+          App.showToast('تعذر الاتصال بالخادم', 'error');
+        });
+      });
+    });
   });
 })();
 </script>
