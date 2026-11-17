@@ -142,8 +142,8 @@
               <td data-label="الحصص">
                 <% if (r.is_per_session && r.session_balance) { %>
                   <span class="badge badge-info"><%= r.session_balance.attended %> حضور</span><br>
-                  <span class="badge badge-success"><%= r.session_balance.claimed %> مستحقة</span><br>
-                  <span class="badge badge-danger"><%= r.session_balance.unclaimed %> غير مستحقة</span>
+                  <span class="badge badge-success"><%= r.session_balance.claimed %> تم قبضها</span><br>
+                  <span class="badge badge-danger"><%= r.session_balance.unclaimed %> لم تُقبض</span>
                 <% } else { %>—<% } %>
               </td>
               <td class="rt-actions" data-label="إجراءات">

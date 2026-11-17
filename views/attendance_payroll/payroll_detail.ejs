@@ -61,15 +61,16 @@
 <% } %>
 
 <% if (perSession && sessionBalance && canEdit) { %>
-<div class="card no-print">
-  <div class="card-header"><i class="fas fa-list-check"></i> صرف/استحقاق بالحصص</div>
+<div class="card no-print" id="sessionCard">
+  <div class="card-header"><i class="fas fa-list-check"></i> عداد حصص <%= row.person_type === 'trainer' ? 'المدرب' : 'الموظف' %> — القبض والاستحقاق</div>
   <div class="card-body">
     <div class="kpi-row">
       <div class="kpi"><div class="k-val text-primary"><%= sessionBalance.attended %></div><div class="k-lbl">إجمالي الحضور</div></div>
-      <div class="kpi"><div class="k-val text-success"><%= sessionBalance.claimed %></div><div class="k-lbl">مستحقة</div></div>
-      <div class="kpi"><div class="k-val text-danger"><%= sessionBalance.unclaimed %></div><div class="k-lbl">غير مستحقة</div></div>
+      <div class="kpi"><div class="k-val text-success"><%= sessionBalance.claimed %></div><div class="k-lbl">تم قبضها</div></div>
+      <div class="kpi"><div class="k-val text-danger"><%= sessionBalance.unclaimed %></div><div class="k-lbl">لم يتم قبضها</div></div>
       <div class="kpi"><div class="k-val"><%= money(sessionBalance.rate) %></div><div class="k-lbl">قيمة الحصة</div></div>
     </div>
+    <div class="form-hint" style="margin:10px 0"><i class="fas fa-circle-info"></i> إجمالي الحضور يظهر لكل الفترات. أي حصة يتم تسجيل حضورها تُضاف تلقائياً إلى «لم يتم قبضها» حتى يتم قبضها من هذه البطاقة.</div>
     <% if (unclaimedSessions.length) { %>
     <div class="table-wrap" style="margin:12px 0">
       <table class="data-table rtable">
@@ -85,20 +86,21 @@
     <form id="sessionPayForm">
       <div class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
         <div class="form-group" style="margin:0">
-          <label class="font-11 text-muted">عدد الحصص (غير مستحقة: <%= sessionBalance.unclaimed %>)</label>
-          <input type="number" min="1" max="<%= sessionBalance.unclaimed %>" id="sessCount" class="form-control" value="<%= sessionBalance.unclaimed > 0 ? 1 : 0 %>" style="width:130px" <%= sessionBalance.unclaimed <= 0 ? 'disabled' : '' %>>
+          <label class="font-11 text-muted">عدد الحصص المطلوب قبضها (المتبقي دون قبض: <b><%= sessionBalance.unclaimed %></b>)</label>
+          <input type="number" min="1" max="<%= sessionBalance.unclaimed %>" id="sessCount" class="form-control" value="<%= sessionBalance.unclaimed > 0 ? sessionBalance.unclaimed : 0 %>" style="width:150px" <%= sessionBalance.unclaimed <= 0 ? 'disabled' : '' %>>
         </div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">قيمة الحصص المحددة</label><input type="text" id="sessAmountHint" class="form-control" value="" readonly style="width:140px"></div>
         <div class="form-group" style="margin:0"><label class="font-11 text-muted">التاريخ</label><input type="date" id="sessDate" class="form-control" value="<%= today() %>"></div>
         <div class="form-group" style="margin:0"><label class="font-11 text-muted">طريقة الدفع</label><select id="sessMethod" class="form-control"><% PAY_METHODS.forEach(function(m){ %><option value="<%= m %>"><%= m %></option><% }) %></select></div>
         <div class="form-group" style="margin:0"><label class="font-11 text-muted">كود/رقم التحويل</label><input type="text" id="sessCode" class="form-control" dir="ltr" value="<%= personPhone %>" style="width:160px"></div>
         <div class="form-group" style="margin:0;min-width:170px"><label class="font-11 text-muted">ملاحظة</label><input type="text" id="sessNote" class="form-control"></div>
       </div>
-      <div class="flex gap-1" style="margin-top:10px">
-        <button type="submit" class="btn btn-success btn-lg" data-action="pay"><i class="fas fa-money-bill-transfer"></i> تحويل + استحقاق</button>
-        <button type="button" class="btn btn-outline btn-lg" id="claimOnlyBtn"><i class="fas fa-check-circle"></i> استحقاق فقط</button>
+      <div class="flex gap-1" style="margin-top:10px;flex-wrap:wrap">
+        <button type="submit" class="btn btn-success btn-lg" data-action="pay" <%= sessionBalance.unclaimed <= 0 ? 'disabled' : '' %>><i class="fas fa-hand-holding-usd"></i> تم القبض</button>
+        <button type="button" class="btn btn-outline btn-lg" id="claimOnlyBtn" <%= sessionBalance.unclaimed <= 0 ? 'disabled' : '' %>><i class="fas fa-check-circle"></i> استحقاق فقط (بدون قبض)</button>
       </div>
     </form>
-    <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> «تحويل + استحقاق» تسجّل الدفعة وتُثبّت الحصص كمستحقة. «استحقاق فقط» تُثبّت الحصص دون تسجيل دفعة.</div>
+    <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> «تم القبض» يسجّل الدفعة ويخصم العدد من «لم يتم قبضها». «استحقاق فقط» يثبّت الحصص دون تسجيل دفعة. العدد المتبقي بعد القبض: <b id="sessRemainHint"><%= sessionBalance.unclaimed %></b> حصة.</div>
   </div>
 </div>
 <% } %>
@@ -639,6 +641,23 @@
   /* صرف/استحقاق بالحصص */
   var sessionPayForm = document.getElementById('sessionPayForm');
   if (sessionPayForm) {
+    var sessRate = Number(<%= JSON.stringify(Number(sessionBalance && sessionBalance.rate) || 0) %>);
+    var sessUnclaimed = Number(<%= JSON.stringify(Number(sessionBalance && sessionBalance.unclaimed) || 0) %>);
+    var sessAmounts = <%= JSON.stringify(unclaimedSessions.map(function (s) { return Number(s.amount || 0); })) %>;
+    var sessCountEl = document.getElementById('sessCount');
+    var sessAmountHint = document.getElementById('sessAmountHint');
+    var sessRemainHint = document.getElementById('sessRemainHint');
+    function syncSessAmount() {
+      if (!sessCountEl || !sessAmountHint) return;
+      var c = Math.max(0, Number(sessCountEl.value || 0));
+      var total = 0;
+      for (var i = 0; i < c && i < sessAmounts.length; i++) total += Number(sessAmounts[i] || 0);
+      if (c > sessAmounts.length) total += (c - sessAmounts.length) * sessRate;
+      sessAmountHint.value = money(total);
+      if (sessRemainHint) sessRemainHint.textContent = String(Math.max(0, sessUnclaimed - c));
+    }
+    if (sessCountEl) sessCountEl.addEventListener('input', syncSessAmount);
+    syncSessAmount();
     function doSessionPay(action) {
       var countEl = document.getElementById('sessCount');
       var count = Number(countEl && countEl.value || 0);

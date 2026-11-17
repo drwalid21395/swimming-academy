@@ -1164,15 +1164,16 @@ router.get('/payroll/:id', async function (req, res) {
     const coach = await db.prepare('SELECT salary_type, contract_type, salary_amount FROM coaches WHERE id = ?').get(row.coach_id);
     if (isPerSessionCoach(coach)) {
       perSession = true;
-      sessionBalance = await countSessionBalance('trainer', row.coach_id, range);
-      unclaimedSessions = await listUnclaimedSessions('trainer', row.coach_id, 50, range);
+      /* العداد يشمل كل حضور المدرب (كل الفترات) — والحصص غير المقبوضة تتراكم حتى يتم قبضها */
+      sessionBalance = await countSessionBalance('trainer', row.coach_id);
+      unclaimedSessions = await listUnclaimedSessions('trainer', row.coach_id, 500);
     }
   } else if (row.person_type === 'staff' && row.staff_id) {
     const staff = await db.prepare('SELECT salary_type, contract_type, salary FROM staff WHERE id = ?').get(row.staff_id);
     if (isPerSessionStaff(staff)) {
       perSession = true;
-      sessionBalance = await countSessionBalance('staff', row.staff_id, range);
-      unclaimedSessions = await listUnclaimedSessions('staff', row.staff_id, 50, range);
+      sessionBalance = await countSessionBalance('staff', row.staff_id);
+      unclaimedSessions = await listUnclaimedSessions('staff', row.staff_id, 500);
     }
   }
 
@@ -1326,10 +1327,10 @@ router.post('/payroll/:id/sessions-pay', async function (req, res) {
   const personType = row.person_type;
   const personId = personType === 'trainer' ? row.coach_id : row.staff_id;
   if (!personId) return res.json({ ok: false, error: 'لا يوجد شخص مرتبط بالكشف' });
-  const range = parsePeriod(row.period, row.from_date, row.to_date);
 
-  const unclaimed = await listUnclaimedSessions(personType, personId, 1000, range);
-  if (sessionsCount > unclaimed.length) return res.json({ ok: false, error: 'الحصص المطلوبة (' + sessionsCount + ') أكبر من غير المستحقة (' + unclaimed.length + ')' });
+  /* كل الحصص غير المقبوضة (كل الفترات) — أي حصة جديدة تُضاف تلقائياً حتى يتم قبضها */
+  const unclaimed = await listUnclaimedSessions(personType, personId, 1000);
+  if (sessionsCount > unclaimed.length) return res.json({ ok: false, error: 'الحصص المطلوبة (' + sessionsCount + ') أكبر من غير المقبوضة (' + unclaimed.length + ')' });
 
   const selected = unclaimed.slice(0, sessionsCount);
   const totalAmount = Math.round(selected.reduce((s, it) => s + Number(it.amount || 0), 0) * 100) / 100;
@@ -1583,9 +1584,18 @@ async function reportData(range, type, filterCoach, sid) {
   const coachesList = coaches;
   const rows = [];
   const pol = (await getPolicy()).pol;
+  const payable = coachPayableStatuses();
   for (const c of coachesList) {
     const atts = await db.prepare(`SELECT * FROM trainer_session_attendance WHERE coach_id=? AND date >= ? AND date <= ?`).all(c.id, range.from, range.to);
-    let present = 0, absent = 0, late = 0, cancelled = 0, substitute = 0, excused = 0, total = 0, cost = 0;
+    /* الحصص التي تم قبضها/استحقاقها لهذا المدرب (مرتبطة ببنود الكشوف) */
+    const claimedRows = await db.prepare(`SELECT pi.source_id AS id, pi.amount AS amount
+      FROM payroll_items pi
+      JOIN trainer_session_attendance a ON a.id = pi.source_id
+      WHERE pi.source_type = 'trainer' AND a.coach_id = ? AND a.date >= ? AND a.date <= ?`).all(c.id, range.from, range.to);
+    const claimedMap = {};
+    let claimedAmount = 0;
+    claimedRows.forEach(function (x) { claimedMap[x.id] = 1; claimedAmount += Number(x.amount || 0); });
+    let present = 0, absent = 0, late = 0, cancelled = 0, substitute = 0, excused = 0, total = 0, cost = 0, payableCount = 0, claimed = 0;
     atts.forEach(a => {
       total++;
       if (a.status === 'حاضر') present++;
@@ -1594,13 +1604,25 @@ async function reportData(range, type, filterCoach, sid) {
       else if (a.status === 'ملغاة') cancelled++;
       else if (a.status === 'بديل') substitute++;
       else if (a.status === 'معتذر') excused++;
+      if (payable.indexOf(a.status) >= 0) {
+        payableCount++;
+        if (claimedMap[a.id]) claimed++;
+      }
       cost += amountForAttendance(a, pol);
     });
-    rows.push({ id: c.id, coach: c.full_name, total, present, absent, late, cancelled, substitute, excused, cost: Math.round(cost * 100) / 100 });
+    rows.push({
+      id: c.id, coach: c.full_name, total, payable: payableCount,
+      claimed: claimed, unclaimed: Math.max(0, payableCount - claimed),
+      claimedAmount: Math.round(claimedAmount * 100) / 100,
+      present, absent, late, cancelled, substitute, excused, cost: Math.round(cost * 100) / 100
+    });
   }
-  let presentTotal = 0, absentTotal = 0, lateTotal = 0, costTotal = 0, totalSessions = 0;
-  rows.forEach(r => { presentTotal += r.present; absentTotal += r.absent; lateTotal += r.late; costTotal += r.cost; totalSessions += r.total; });
-  return { rows, range, summary: { presentTotal, absentTotal, lateTotal, costTotal, totalSessions } };
+  let presentTotal = 0, absentTotal = 0, lateTotal = 0, costTotal = 0, totalSessions = 0, claimedTotal = 0, unclaimedTotal = 0, claimedAmountTotal = 0;
+  rows.forEach(r => {
+    presentTotal += r.present; absentTotal += r.absent; lateTotal += r.late; costTotal += r.cost; totalSessions += r.total;
+    claimedTotal += r.claimed; unclaimedTotal += r.unclaimed; claimedAmountTotal += r.claimedAmount;
+  });
+  return { rows, range, summary: { presentTotal, absentTotal, lateTotal, costTotal, totalSessions, claimedTotal, unclaimedTotal, claimedAmountTotal: Math.round(claimedAmountTotal * 100) / 100 } };
 }
 
 router.get('/attendance-reports', async function (req, res) {
@@ -1623,10 +1645,10 @@ router.get('/attendance-reports/export', async function (req, res) {
   const range = rangeFromQuery(req.query);
   const type = String(req.query.type || 'trainers');
   const data = await reportData(range, type, 0, activeSport(req));
-  const head = ['المدرب', 'إجمالي الحصص', 'حاضر', 'غائب', 'متأخر', 'ملغاة', 'بديل', 'معتذر', 'قيمة الحصص'];
+  const head = ['المدرب', 'إجمالي الحصص', 'تم قبضها', 'لم تُقبض', 'حاضر', 'غائب', 'متأخر', 'ملغاة', 'بديل', 'معتذر', 'قيمة الحصص', 'قيمة تم قبضها'];
   const lines = [head.join(',')];
-  data.rows.forEach(r => lines.push([r.coach, r.total, r.present, r.absent, r.late, r.cancelled, r.substitute, r.excused, r.cost.toFixed(2)].join(',')));
-  lines.push(['الإجمالي', data.summary.totalSessions, data.summary.presentTotal, data.summary.absentTotal, data.summary.lateTotal, '', '', '', data.summary.costTotal.toFixed(2)].join(','));
+  data.rows.forEach(r => lines.push([r.coach, r.total, r.claimed, r.unclaimed, r.present, r.absent, r.late, r.cancelled, r.substitute, r.excused, r.cost.toFixed(2), r.claimedAmount.toFixed(2)].join(',')));
+  lines.push(['الإجمالي', data.summary.totalSessions, data.summary.claimedTotal, data.summary.unclaimedTotal, data.summary.presentTotal, data.summary.absentTotal, data.summary.lateTotal, '', '', '', data.summary.costTotal.toFixed(2), data.summary.claimedAmountTotal.toFixed(2)].join(','));
   const csv = '\uFEFF' + lines.join('\r\n');
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="attendance_' + range.from + '_' + range.to + '.csv"');
