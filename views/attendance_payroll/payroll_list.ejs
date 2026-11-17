@@ -61,7 +61,7 @@
         <button type="button" class="btn btn-primary btn-lg" id="previewBtn"><i class="fas fa-list-check"></i> عرض عدد الحصص</button>
         <button type="submit" class="btn btn-outline btn-lg"><i class="fas fa-calculator"></i> توليد الكشوف للفترة</button>
       </div>
-      <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> اختر الفترة ثم «عرض عدد الحصص» لتظهر الحصص غير المستحقة؛ حدد جزءاً أو كل الحصص ثم اضغط «تم الاستحقاق». الحصة المستحقة لا تظهر مرة أخرى حتى يتم تسجيل حضور جديد لها.</div>
+      <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> اختر الفترة ثم «عرض عدد الحصص» لتظهر الحصص التي لم يتم قبضها؛ حدد جزءاً أو كل الحصص ثم اضغط «تم الاستحقاق». الحصة التي تُقبض لا تظهر مرة أخرى حتى يتم تسجيل حضور جديد لها.</div>
     </form>
   </div>
 </div>
@@ -93,10 +93,11 @@
 </div>
 
 <div class="kpi-row">
-  <% var tg = rows.reduce(function (s, r) { return s + (Number(r.gross) || 0); }, 0); %>
-  <% var te = rows.reduce(function (s, r) { return s + (Number(r.extras) || 0); }, 0); %>
-  <% var td = rows.reduce(function (s, r) { return s + (Number(r.deductions) || 0); }, 0); %>
-  <% var tn = rows.reduce(function (s, r) { return s + (Number(r.net) || 0); }, 0); %>
+  <% function pv(r, key, fb) { return r.is_per_session && r['display' + key] != null ? r['display' + key] : r[fb]; } %>
+  <% var tg = rows.reduce(function (s, r) { return s + Number(pv(r, 'Gross', 'gross') || 0); }, 0); %>
+  <% var te = rows.reduce(function (s, r) { return s + Number(pv(r, 'Extras', 'extras') || 0); }, 0); %>
+  <% var td = rows.reduce(function (s, r) { return s + Number(pv(r, 'Deductions', 'deductions') || 0); }, 0); %>
+  <% var tn = rows.reduce(function (s, r) { return s + Number(pv(r, 'Net', 'net') || 0); }, 0); %>
   <div class="kpi"><div class="k-val text-primary"><%= rows.length %></div><div class="k-lbl">كشوف</div></div>
   <div class="kpi"><div class="k-val"><%= money(tg) %></div><div class="k-lbl">إجمالي الاستحقاق</div></div>
   <div class="kpi"><div class="k-val text-success"><%= money(te) %></div><div class="k-lbl">الإضافات</div></div>
@@ -128,29 +129,37 @@
             <tr>
               <td data-label="الشخص"><b><%= r.coach_name || r.staff_name || '—' %></b><br><span class="font-11 text-muted"><%= periodLabel(r) %></span><% if (r.branch_name) { %><br><span class="font-11 text-muted"><%= r.branch_name %></span><% } %></td>
               <td data-label="الفئة"><% if (r.person_type === 'trainer') { %><span class="badge badge-info"><i class="fas fa-user-tie"></i> مدرب</span><% } else { %><span class="badge badge-purple"><i class="fas fa-user-gear"></i> موظف</span><% } %></td>
-              <td data-label="الاستحقاق"><%= money(r.gross) %></td>
-              <td data-label="الإضافات" class="text-success"><%= money(r.extras) %></td>
-              <td data-label="الخصومات" class="text-danger"><%= money(r.deductions) %></td>
-              <td data-label="الصافي" class="fw-700"><%= money(r.net) %></td>
-              <td data-label="المدفوع" class="text-success"><%= money(r.paid_amount) %></td>
-              <td data-label="المتبقي" class="<%= Number(r.remaining) > 0 ? 'text-danger fw-700' : 'text-success fw-700' %>"><%= money(r.remaining) %></td>
+              <td data-label="الاستحقاق"><%= money(pv(r, 'Gross', 'gross')) %></td>
+              <td data-label="الإضافات" class="text-success"><%= money(pv(r, 'Extras', 'extras')) %></td>
+              <td data-label="الخصومات" class="text-danger"><%= money(pv(r, 'Deductions', 'deductions')) %></td>
+              <td data-label="الصافي" class="fw-700"><%= money(pv(r, 'Net', 'net')) %></td>
+              <td data-label="المدفوع" class="text-success"><%= money(pv(r, 'Paid', 'paid_amount')) %></td>
+              <td data-label="المتبقي" class="<%= Number(pv(r, 'Remaining', 'remaining')) > 0 ? 'text-danger fw-700' : 'text-success fw-700' %>"><%= money(pv(r, 'Remaining', 'remaining')) %></td>
               <td data-label="الحالة">
-                <% if (r.status === 'مسدد') { %><span class="badge badge-success"><i class="fas fa-check-circle"></i> مسدد</span>
-                <% } else if (r.status === 'مدفوع جزئياً') { %><span class="badge badge-warning"><i class="fas fa-hourglass-half"></i> جزئي</span>
-                <% } else { %><span class="badge badge-danger"><i class="fas fa-hourglass"></i> مستحق</span><% } %>
+                <% if (r.is_per_session) { %>
+                  <% if (r.displayStatus === 'تم القبض') { %><span class="badge badge-success"><i class="fas fa-check-circle"></i> تم القبض</span>
+                  <% } else { %><span class="badge badge-danger"><i class="fas fa-hourglass"></i> لم يتم القبض</span><% } %>
+                <% } else if (r.status === 'مسدد') { %><span class="badge badge-success"><i class="fas fa-check-circle"></i> تم القبض</span>
+                <% } else if (r.status === 'مدفوع جزئياً') { %><span class="badge badge-warning"><i class="fas fa-hourglass-half"></i> تم قبض جزء</span>
+                <% } else { %><span class="badge badge-danger"><i class="fas fa-hourglass"></i> لم يتم القبض</span><% } %>
               </td>
               <td data-label="الحصص">
                 <% if (r.is_per_session && r.session_balance) { %>
                   <span class="badge badge-info"><%= r.session_balance.attended %> حضور</span><br>
-                  <span class="badge badge-success"><%= r.session_balance.claimed %> تم قبضها</span><br>
-                  <span class="badge badge-danger"><%= r.session_balance.unclaimed %> لم تُقبض</span>
-                  <div class="font-11 text-muted" style="margin-top:4px">قيمة لم تُقبض: <b class="text-danger"><%= money(r.session_balance.unclaimedAmount) %></b></div>
+                  <span class="badge badge-success"><%= r.session_balance.claimed %> تم القبض</span><br>
+                  <span class="badge badge-danger"><%= r.session_balance.unclaimed %> لم يتم القبض</span>
+                  <div class="font-11 text-muted" style="margin-top:4px">قيمة لم يتم القبض: <b class="text-danger"><%= money(r.session_balance.unclaimedAmount) %></b></div>
                   <% if (canEdit && r.session_balance.unclaimed > 0) { %>
-                  <form class="quick-claim-form" data-id="<%= r.id %>" style="margin-top:5px">
+                  <% var qPhone = r.person_type === 'trainer' ? (r.coach_phone || '') : (r.staff_phone || ''); %>
+                  <form class="quick-claim-form" data-id="<%= r.id %>" data-phone="<%= qPhone %>" data-amounts="<%= JSON.stringify(r.session_balance.unclaimedAmounts || []) %>" style="margin-top:5px">
                     <div class="flex gap-1" style="align-items:center">
-                      <input type="number" class="form-control" min="1" max="<%= r.session_balance.unclaimed %>" value="<%= r.session_balance.unclaimed %>" style="width:64px;padding:3px 6px" aria-label="عدد الحصص المطلوب قبضها">
-                      <button type="submit" class="btn btn-success btn-sm" title="تحويل الحصص المحددة إلى «تم قبضها» — استحقاق بدون تسجيل دفعة">قبض المحدد</button>
+                      <input type="number" class="form-control quick-count" min="1" max="<%= r.session_balance.unclaimed %>" value="<%= r.session_balance.unclaimed %>" style="width:62px;padding:3px 6px" aria-label="عدد الحصص المطلوب قبضها">
+                      <select class="form-control quick-method" style="width:110px;padding:3px 4px" aria-label="طريقة الدفع">
+                        <% PAY_METHODS.forEach(function (m) { %><option value="<%= m %>"><%= m %></option><% }); %>
+                      </select>
+                      <button type="submit" class="btn btn-success btn-sm" title="قبض الحصص المحددة وتسجيل المبلغ المحوّل">قبض المحدد</button>
                     </div>
+                    <div class="font-11 text-muted" style="margin-top:4px">المبلغ المحدد: <b class="text-success quick-amount"><%= money(r.session_balance.unclaimedAmount) %></b> — <a class="quick-code" href="#" title="كود تحويل المبلغ المحدد">كود التحويل</a></div>
                   </form>
                   <% } %>
                 <% } else { %>—<% } %>
@@ -159,14 +168,15 @@
                 <div class="table-actions">
                   <a href="/payroll/<%= r.id %>" class="btn btn-ghost btn-sm" title="التفاصيل"><i class="fas fa-eye"></i></a>
                   <% var phone = r.person_type === 'trainer' ? (r.coach_phone || '') : (r.staff_phone || ''); var telHref = 'tel:' + String(phone).replace(/[^\d+]/g, ''); %>
-                  <% var transferCode = (phone && Number(r.remaining) > 0) ? buildTransferCode(settings && settings.pay_ussd_tpl, phone, r.remaining) : ''; %>
+                  <% var rRemaining = pv(r, 'Remaining', 'remaining'); %>
+                  <% var transferCode = (phone && Number(rRemaining) > 0) ? buildTransferCode(settings && settings.pay_ussd_tpl, phone, rRemaining) : ''; %>
                   <% if (phone) { %>
                     <a href="<%= telHref %>" class="btn btn-ghost btn-sm text-success" title="اتصال هاتفي: <%= phone %>"><i class="fas fa-phone"></i></a>
                   <% } else { %>
                     <button type="button" class="btn btn-ghost btn-sm" disabled title="لا يوجد رقم هاتف مسجل"><i class="fas fa-phone-slash"></i></button>
                   <% } %>
                   <% if (transferCode) { %>
-                    <a href="<%= transferTelHref(transferCode) %>" class="btn btn-ghost btn-sm text-primary" title="تحويل الراتب (المتبقي): <%= money(r.remaining) %> — الكود: <%= transferCode %>"><i class="fas fa-money-bill-transfer"></i></a>
+                    <a href="<%= transferTelHref(transferCode) %>" class="btn btn-ghost btn-sm text-primary" title="تحويل الراتب (المتبقي): <%= money(rRemaining) %> — الكود: <%= transferCode %>"><i class="fas fa-money-bill-transfer"></i></a>
                   <% } %>
                   <% if (canDel && Number(r.paid_amount) <= 0 && Number(r.approved) !== 1) { %>
                     <form method="POST" action="/payroll/<%= r.id %>/delete" style="display:inline;margin:0"><button type="submit" class="btn btn-ghost btn-sm text-danger" data-confirm="حذف هذا الكشف؟" title="حذف"><i class="fas fa-trash"></i></button></form>
@@ -287,7 +297,7 @@
         previewBtn.disabled = false;
         if (!res.ok) { App.showToast(res.error || 'تعذر تحميل الحصص', 'error'); return; }
         renderSessions(res.items);
-        if (!res.items.length) App.showToast('لا توجد حصص غير مستحقة في هذه الفترة', 'info');
+        if (!res.items.length) App.showToast('لا توجد حصص لم يتم قبضها في هذه الفترة', 'info');
       })
       .catch(function () { previewBtn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
   });
@@ -325,23 +335,56 @@
     }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
   });
 
-  /* القبض السريع من البطاقة الخارجية: تحديد عدد الحصص غير المقبوضة وتحويلها إلى «تم قبضها» */
+  /* القبض السريع من البطاقة الخارجية: المبلغ وكود التحويل يتبعان العدد المحدد */
+  var payTpl = <%- JSON.stringify((settings && settings.pay_ussd_tpl) || '*9*7*{phone}*{amount}#') %>;
+  function payCode(phone, amount) {
+    var a = Number(amount || 0);
+    var s = (Math.round(a * 100) % 100 === 0) ? String(Math.round(a)) : a.toFixed(2);
+    return String(payTpl || '*9*7*{phone}*{amount}#')
+      .replace(/\{phone\}/g, String(phone || '').replace(/[^\d+]/g, ''))
+      .replace(/\{amount\}/g, s);
+  }
   Array.prototype.forEach.call(document.querySelectorAll('.quick-claim-form'), function (form) {
+    var countEl = form.querySelector('.quick-count');
+    var amountEl = form.querySelector('.quick-amount');
+    var codeEl = form.querySelector('.quick-code');
+    var amounts;
+    try { amounts = JSON.parse(form.getAttribute('data-amounts') || '[]'); } catch (err) { amounts = []; }
+    var phone = form.getAttribute('data-phone') || '';
+    function selected() {
+      var n = Math.max(0, Math.round(Number((countEl && countEl.value) || 0)));
+      var total = 0;
+      for (var i = 0; i < n && i < amounts.length; i++) total += Number(amounts[i] || 0);
+      return { count: n, amount: Math.round(total * 100) / 100 };
+    }
+    function refresh() {
+      var s = selected();
+      if (amountEl) amountEl.textContent = cash(s.amount);
+      if (codeEl) {
+        var code = s.amount > 0 ? payCode(phone, s.amount) : '';
+        codeEl.textContent = code || 'كود التحويل';
+        codeEl.href = code ? ('tel:' + code.replace(/#/g, '%23')) : '#';
+        codeEl.title = code ? ('كود تحويل ' + cash(s.amount) + ': ' + code) : 'كود التحويل';
+      }
+    }
+    if (countEl) countEl.addEventListener('input', refresh);
+    refresh();
     form.addEventListener('submit', function (e) {
       e.preventDefault();
-      var id = form.getAttribute('data-id');
-      var countEl = form.querySelector('input');
-      var count = Number((countEl && countEl.value) || 0);
-      if (!count || count <= 0) { App.showToast('أدخل عدد الحصص المطلوب قبضها', 'warning'); return; }
-      App.showConfirm('تحويل ' + count + ' حصة من «لم تُقبض» إلى «تم قبضها»؟ سيُضاف مبلغها إلى الكشف كاستحقاق بدون تسجيل دفعة.', function () {
+      var s = selected();
+      if (!s.count || s.count <= 0 || s.amount <= 0) { App.showToast('أدخل عدد الحصص المطلوب قبضها', 'warning'); return; }
+      var code = payCode(phone, s.amount);
+      var methodEl = form.querySelector('.quick-method');
+      var method = methodEl ? methodEl.value : 'نقدي';
+      App.showConfirm('قبض ' + s.count + ' حصة وتحويل ' + cash(s.amount) + ' (' + code + ')؟ سيُسجَّل المبلغ كدفعة وتُصبح الحصص «تم القبض».', function () {
         var btn = form.querySelector('button[type="submit"]');
         if (btn) btn.disabled = true;
-        fetch('/payroll/' + id + '/sessions-pay', {
+        fetch('/payroll/' + form.getAttribute('data-id') + '/sessions-pay', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'claim', sessions_count: count, note: 'قبض من البطاقة الخارجية' })
+          body: JSON.stringify({ action: 'pay', sessions_count: s.count, method: method, transfer_code: code, note: 'قبض من البطاقة الخارجية' })
         }).then(function (r) { return r.json(); }).then(function (res) {
           if (res.ok) {
-            App.showToast('تم قبض ' + (res.sessionsCount || count) + ' حصة بقيمة ' + cash(res.totalAmount), 'success');
+            App.showToast('تم قبض ' + (res.sessionsCount || s.count) + ' حصة وتحويل ' + cash(res.totalAmount), 'success');
             setTimeout(function () { location.reload(); }, 700);
           } else {
             if (btn) btn.disabled = false;

@@ -164,6 +164,43 @@ function rangeWhere(range) {
 
 function round2(n) { return Math.round(Number(n || 0) * 100) / 100; }
 
+/* إجمالي قيمة الحصص التي تم قبضها (المثبتة في بنود الكشوف) لكل الفترات */
+async function claimedSessionAmount(personType, personId) {
+  const id = Number(personId) || 0;
+  if (!id) return 0;
+  let row;
+  if (personType === 'trainer') {
+    row = await db.prepare(`SELECT COALESCE(SUM(pi.amount),0) AS s
+      FROM payroll_items pi
+      JOIN trainer_session_attendance a ON a.id = pi.source_id
+      WHERE ((pi.source_type = 'trainer' AND a.coach_id = ?) OR (pi.source_type = 'substitute' AND a.substitute_coach_id = ?))`).get(id, id);
+  } else {
+    row = await db.prepare(`SELECT COALESCE(SUM(pi.amount),0) AS s
+      FROM payroll_items pi
+      JOIN staff_attendance a ON a.id = pi.source_id
+      WHERE pi.source_type = 'staff' AND a.staff_id = ?`).get(id);
+  }
+  return round2(row && row.s);
+}
+
+/* قيم عرض كشف التعاقد بالحصة: الصافي = قيمة الحصص التي لم يتم قبضها (المبلغ المطلوب دفعه) */
+function applyPerSessionDisplay(row, balance, unclaimedAmount) {
+  const unclaimed = round2(unclaimedAmount);
+  const claimedAmount = round2(balance && balance.claimedAmount);
+  const extras = round2(row.extras);
+  const deductions = round2(row.deductions);
+  let net = unclaimed > 0 ? round2(unclaimed + extras - deductions) : 0;
+  if (net < 0) net = 0;
+  row.displayGross = round2(claimedAmount + unclaimed);
+  row.displayExtras = extras;
+  row.displayDeductions = deductions;
+  row.displayPaid = claimedAmount;
+  row.displayNet = net;
+  row.displayRemaining = net;
+  row.displayStatus = Number(balance && balance.unclaimed) > 0 ? 'لم يتم القبض' : 'تم القبض';
+  row.displayUnclaimedAmount = unclaimed;
+}
+
 /* مزامنة إجماليات كشف التعاقد بالحصة مع بنوده الفعلية (إصلاح الكشوف التي بقيت بقيمة صفر) */
 async function syncPerSessionTotals(row) {
   if (!row || !row.id || row.settled_at) return row;
@@ -208,7 +245,8 @@ async function countSessionBalance(personType, personId, range) {
       WHERE a.substitute_coach_id = ? AND a.status IN (${coachPayableStatuses().map(() => '?').join(',')})` + rw.sql).get(id, ...coachPayableStatuses(), ...rw.args);
     const attended = Number(attendedRow && attendedRow.c || 0) + Number(subAttended && subAttended.c || 0);
     const claimed = Number(claimedRow && claimedRow.c || 0) + Number(subClaimed && subClaimed.c || 0);
-    return { attended, claimed, unclaimed: Math.max(0, attended - claimed), rate, amountDue: Math.max(0, attended - claimed) * rate };
+    const claimedAmount = await claimedSessionAmount('trainer', id);
+    return { attended, claimed, unclaimed: Math.max(0, attended - claimed), rate, claimedAmount, amountDue: Math.max(0, attended - claimed) * rate };
   }
   // staff
   rate = await perSessionRateForStaff(id);
@@ -219,7 +257,8 @@ async function countSessionBalance(personType, personId, range) {
     WHERE a.staff_id = ? AND a.status IN (${staffPayableStatuses().map(() => '?').join(',')})` + rw.sql).get(id, ...staffPayableStatuses(), ...rw.args);
   const attended = Number(attendedRow && attendedRow.c || 0);
   const claimed = Number(claimedRow && claimedRow.c || 0);
-  return { attended, claimed, unclaimed: Math.max(0, attended - claimed), rate, amountDue: Math.max(0, attended - claimed) * rate };
+  const claimedAmount = await claimedSessionAmount('staff', id);
+  return { attended, claimed, unclaimed: Math.max(0, attended - claimed), rate, claimedAmount, amountDue: Math.max(0, attended - claimed) * rate };
 }
 
 async function listUnclaimedSessions(personType, personId, limit, range) {
@@ -822,7 +861,10 @@ router.get('/payroll', async function (req, res) {
     if (r.session_balance) {
       const personId = r.person_type === 'trainer' ? r.coach_id : r.staff_id;
       const pending = await listUnclaimedSessions(r.person_type, personId, 500);
-      r.session_balance.unclaimedAmount = Math.round(pending.reduce(function (s, it) { return s + Number(it.amount || 0); }, 0) * 100) / 100;
+      const unclaimedAmount = round2(pending.reduce(function (s, it) { return s + Number(it.amount || 0); }, 0));
+      r.session_balance.unclaimedAmount = unclaimedAmount;
+      r.session_balance.unclaimedAmounts = pending.map(function (it) { return round2(it.amount); });
+      applyPerSessionDisplay(r, r.session_balance, unclaimedAmount);
     }
   }
 
@@ -830,7 +872,7 @@ router.get('/payroll', async function (req, res) {
   const staff = await db.prepare('SELECT * FROM staff ORDER BY full_name').all();
   res.render('attendance_payroll/payroll_list', {
     title: 'مستحقات ورواتب', active: 'payroll', rows, range, from: range.from, to: range.to,
-    periodLabel: periodLabel, ptype, coaches, staff,
+    periodLabel: periodLabel, ptype, coaches, staff, PAY_METHODS,
     canAdd: canAdd(req.currentUser, 'payroll'), canEdit: canEdit(req.currentUser, 'payroll'), canExport: canExport(req.currentUser, 'payroll')
   });
 });
@@ -1210,7 +1252,12 @@ router.get('/payroll/:id', async function (req, res) {
     }
   }
   /* إصلاح إجماليات الكشف للتعاقد بالحصة لتطابق بنود الحصص المسجلة */
-  if (perSession) await syncPerSessionTotals(row);
+  if (perSession) {
+    await syncPerSessionTotals(row);
+    const unclaimedAmount = round2(unclaimedSessions.reduce(function (s, it) { return s + Number(it.amount || 0); }, 0));
+    sessionBalance.unclaimedAmount = unclaimedAmount;
+    applyPerSessionDisplay(row, sessionBalance, unclaimedAmount);
+  }
 
   let statementRows = [];
   if (row.person_type === 'trainer' && row.coach_id) {
