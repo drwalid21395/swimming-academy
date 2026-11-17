@@ -126,8 +126,8 @@ async function currentUser(req) {
         const planPerms = await academyPlanPerms(u.academy_id);
         if (planPerms) {
           Object.keys(perms).forEach(function (m) {
-            /* تفضيل صوت الإشعارات شخصي ولا يخضع لمزايا خطة الأكاديمية */
-            if (m === 'notifSound') return;
+            /* تفضيل صوت الإشعارات ولوحة التحكم لا يخضعان لمزايا خطة الأكاديمية */
+            if (m === 'notifSound' || m === 'dashboard') return;
             const planActions = planPerms[m] || {};
             ACTIONS.forEach(function (a) {
               if (perms[m] && typeof perms[m][a] !== 'undefined') {

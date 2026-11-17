@@ -1,7 +1,7 @@
 /** لوحة التحكم + بوابة ولي الأمر واللاعب */
 const express = require('express');
 const { db } = require('../lib/db');
-const { money, fmtDate, fmtDateTime, dayAr, calcAge, pct, daysAhead, daysAgo, today } = require('../lib/helpers');
+const { money, fmtDate, fmtDateTime, dayAr, calcAge, pct, daysAhead, daysAgo, today, canView } = require('../lib/helpers');
 const { maybeNotifyAcademySubscription } = require('../lib/tenant');
 const { activeSport, sportClause, progClause, swimmerClause, groupClause, sessionClause } = require('../lib/sport-context');
 const router = express.Router();
@@ -20,6 +20,7 @@ async function swimmerSummary(sid) {
 router.get('/', async function (req, res) {
   const user = req.currentUser;
   if (user.user_type === 'guardian' || user.user_type === 'swimmer') return res.redirect('/my-portal');
+  if (!canView(user, 'dashboard')) return res.status(403).render('errors/403', { layout: false, user: user });
 
   /* إشعار نظام تلقائي عند اقتراب/انتهاء مدة اشتراك الأكاديمية نفسها */
   try { await maybeNotifyAcademySubscription(user.impersonatingAcademyId || user.academy_id); } catch (e) { console.error('خطأ في إشعار اشتراك الأكاديمية:', e.message); }

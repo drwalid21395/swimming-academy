@@ -35,6 +35,7 @@ const MODULE_LABELS = {
   notifSound: 'استقبال صوت إشعارات النشاط'
 };
 const MODULE_GROUPS = [
+  ['عام', ['dashboard']],
   ['الأعضاء والتسجيل', ['swimmers', 'guardians', 'coaches', 'staff']],
   ['البرامج التدريبية', ['programs', 'levels', 'groups']],
   ['الجداول والحضور', ['sessions', 'attendance', 'membershipCards', 'waterRentals']],
