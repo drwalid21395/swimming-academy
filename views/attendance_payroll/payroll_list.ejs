@@ -2,7 +2,7 @@
 <div class="page-head">
   <div>
     <div class="page-title"><i class="fas fa-sack-dollar"></i> مستحقات ورواتب</div>
-    <div class="page-sub">كشوف مستحقات المدربين والموظفين · الفترة: <b><%= from %></b> ← <b><%= to %></b></div>
+    <div class="page-sub">كشوف مستحقات المدربين والاداريين · الفترة: <b><%= from %></b> ← <b><%= to %></b></div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
@@ -18,9 +18,9 @@
       <div class="form-group" style="margin:0">
         <label class="font-11 text-muted">الفئة</label>
         <select name="type" class="form-control">
-          <option value="all">الكل</option>
+          <option value="all" <%= ptype === 'all' ? 'selected' : '' %>>المدربون والاداريين</option>
           <option value="trainer" <%= ptype === 'trainer' ? 'selected' : '' %>>المدربون</option>
-          <option value="staff" <%= ptype === 'staff' ? 'selected' : '' %>>الموظفون</option>
+          <option value="staff" <%= ptype === 'staff' ? 'selected' : '' %>>الاداريين بس</option>
         </select>
       </div>
       <button class="btn btn-outline" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
@@ -47,7 +47,8 @@
           <label class="font-11 text-muted">الفئة</label>
           <select name="type" class="form-control" id="genType">
             <option value="trainer">المدربون</option>
-            <option value="staff">الموظفون</option>
+            <option value="all">المدربون والاداريين</option>
+            <option value="staff">الاداريين بس</option>
           </select>
         </div>
         <div class="form-group" style="margin:0;min-width:230px" id="genPersonWrap">
@@ -80,7 +81,7 @@
       <span class="spacer"></span>
       <button type="button" class="btn btn-success" id="accrueBtn"><i class="fas fa-check-circle"></i> تم الاستحقاق</button>
     </div>
-    <div class="form-hint" id="staffNote" hidden><i class="fas fa-circle-info"></i> للموظفين يُولَّد الكشف للفترة كاملة من زر «توليد كشوف الجميع».</div>
+    <div class="form-hint" id="staffNote" hidden><i class="fas fa-circle-info"></i> للاداريين يُولَّد الكشف للفترة كاملة من زر «توليد الكشوف للفترة».</div>
   </div>
   <div class="table-wrap">
     <table class="data-table rtable" id="sessionsTable">
@@ -128,7 +129,7 @@
           <% rows.forEach(function (r) { %>
             <tr>
               <td data-label="الشخص"><b><%= r.coach_name || r.staff_name || '—' %></b><br><span class="font-11 text-muted"><%= periodLabel(r) %></span><% if (r.branch_name) { %><br><span class="font-11 text-muted"><%= r.branch_name %></span><% } %></td>
-              <td data-label="الفئة"><% if (r.person_type === 'trainer') { %><span class="badge badge-info"><i class="fas fa-user-tie"></i> مدرب</span><% } else { %><span class="badge badge-purple"><i class="fas fa-user-gear"></i> موظف</span><% } %></td>
+              <td data-label="الفئة"><% if (r.person_type === 'trainer') { %><span class="badge badge-info"><i class="fas fa-user-tie"></i> مدرب</span><% } else { %><span class="badge badge-purple"><i class="fas fa-user-gear"></i> اداري</span><% } %></td>
               <td data-label="الاستحقاق"><%= money(pv(r, 'Gross', 'gross')) %></td>
               <td data-label="الإضافات" class="text-success"><%= money(pv(r, 'Extras', 'extras')) %></td>
               <td data-label="الخصومات" class="text-danger"><%= money(pv(r, 'Deductions', 'deductions')) %></td>
@@ -227,11 +228,14 @@
     Array.prototype.slice.call(genPerson.options).forEach(function (o) {
       var g = o.getAttribute('data-gtype');
       if (!g) { o.style.display = ''; return; }
-      o.style.display = g === t ? '' : 'none';
+      o.style.display = (t === 'all' || g === t) ? '' : 'none';
     });
     var placeholder = genPerson.options[0];
-    if (placeholder) placeholder.textContent = t === 'staff' ? '— جميع الموظفين —' : '— جميع المدربين —';
-    var sel = Array.prototype.slice.call(genPerson.selectedOptions).filter(function (o) { var g = o.getAttribute('data-gtype'); return g && g !== t; });
+    if (placeholder) placeholder.textContent = t === 'all' ? '— الجميع —' : t === 'staff' ? '— جميع الاداريين —' : '— جميع المدربين —';
+    var sel = Array.prototype.slice.call(genPerson.selectedOptions).filter(function (o) {
+      var g = o.getAttribute('data-gtype');
+      return g && t !== 'all' && g !== t;
+    });
     sel.forEach(function (o) { o.selected = false; });
     previewBtn.style.display = t === 'trainer' ? '' : 'none';
     if (t !== 'trainer') { sessionsCard.hidden = true; }
@@ -282,7 +286,7 @@
 
   previewBtn.addEventListener('click', function () {
     if (genType.value !== 'trainer') {
-      App.showToast('الموظفون يُولَّد كشفهم للفترة كاملة من زر «توليد كشوف الجميع»', 'info');
+      App.showToast('الاداريين يُولَّد كشفهم للفترة كاملة من زر «توليد الكشوف للفترة»', 'info');
       return;
     }
     var params = rangePayload();
@@ -321,7 +325,11 @@
     e.preventDefault();
     var data = rangePayload();
     data.type = genType.value;
-    if (genPerson.value) data.ids = [genPerson.value];
+    if (genPerson.value) {
+      data.ids = [genPerson.value];
+      var chosen = genPerson.options[genPerson.selectedIndex];
+      data.person_type = chosen ? (chosen.getAttribute('data-gtype') || '') : '';
+    }
     if (!data.from || !data.to) { App.showToast('حدد بداية ونهاية الفترة', 'warning'); return; }
     if (data.from > data.to) { App.showToast('تاريخ البداية يجب أن يسبق تاريخ النهاية', 'warning'); return; }
     var btn = e.target.querySelector('button[type="submit"]');

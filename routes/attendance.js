@@ -1112,35 +1112,49 @@ router.get('/payroll/pending', async function (req, res) {
   res.json({ ok: true, items, count: items.length, total: Math.round(total * 100) / 100, range });
 });
 
-/* إنشاء/تحديث كشف لفترة لمجموعة أشخاص (مدربين أو موظفين) */
+/* إنشاء/تحديث كشف لفترة لمجموعة أشخاص (مدربين و/أو اداريين) */
 router.post('/payroll/generate', async function (req, res) {
   if (!canAdd(req.currentUser, 'payroll')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
-  const range = rangeFromQuery(req.body);
-  const ptype = req.body.type === 'staff' ? 'staff' : 'trainer';
-  const ids = (Array.isArray(req.body.ids) ? req.body.ids : []).map(Number).filter(n => Number.isFinite(n) && n > 0);
-  const results = [];
-  if (ptype === 'trainer') {
-    const list = ids.length ? ids : (await db.prepare('SELECT id FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), '') + '').all()).map(r => r.id);
-    for (const id of list) {
-      const existing = await findPayroll('trainer', id, range);
-      const p = await computeTrainerPayroll(id, range, { payrollId: existing && existing.id, includeNew: true });
-      if (!p) continue;
-      if (!p.items.length && !existing && !p.extras && !p.deductions) continue;
-      await upsertPayroll(p, range, req, { payrollId: existing && existing.id });
-      results.push(p);
+  try {
+    const range = rangeFromQuery(req.body);
+    let ptype = req.body.type === 'staff' ? 'staff' : req.body.type === 'all' ? 'all' : 'trainer';
+    const ids = (Array.isArray(req.body.ids) ? req.body.ids : []).map(Number).filter(n => Number.isFinite(n) && n > 0);
+    /* عند اختيار شخص بعينه نعرف فئته من القائمة حتى لا يتعارض رقم مدرب مع رقم اداري */
+    const personType = req.body.person_type;
+    if (ids.length && (personType === 'trainer' || personType === 'staff')) ptype = personType;
+    const results = [];
+    const idsFor = async function (table, fallbackSql) {
+      if (ids.length) return (await db.prepare(`SELECT id FROM ${table} WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids)).map(r => r.id);
+      return (await db.prepare(fallbackSql).all()).map(r => r.id);
+    };
+    if (ptype === 'trainer' || ptype === 'all') {
+      const list = await idsFor('coaches', 'SELECT id FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), ''));
+      for (const id of list) {
+        const existing = await findPayroll('trainer', id, range);
+        const p = await computeTrainerPayroll(id, range, { payrollId: existing && existing.id, includeNew: true });
+        if (!p) continue;
+        if (!(p.items && p.items.length) && !existing && !p.extras && !p.deductions) continue;
+        await upsertPayroll(p, range, req, { payrollId: existing && existing.id });
+        results.push(p);
+      }
     }
-  } else {
-    const list = ids.length ? ids : (await db.prepare('SELECT id FROM staff').all()).map(r => r.id);
-    for (const id of list) {
-      const existing = await findPayroll('staff', id, range);
-      const p = await computeStaffPayroll(id, range, { payrollId: existing && existing.id });
-      if (!p) continue;
-      await upsertPayroll(p, range, req, { payrollId: existing && existing.id });
-      results.push(p);
+    if (ptype === 'staff' || ptype === 'all') {
+      const list = await idsFor('staff', 'SELECT id FROM staff');
+      for (const id of list) {
+        const existing = await findPayroll('staff', id, range);
+        const p = await computeStaffPayroll(id, range, { payrollId: existing && existing.id });
+        if (!p) continue;
+        await upsertPayroll(p, range, req, { payrollId: existing && existing.id });
+        results.push(p);
+      }
     }
+    const label = ptype === 'trainer' ? 'المدربين' : ptype === 'staff' ? 'الاداريين' : 'المدربين والاداريين';
+    audit(req.currentUser.id, req.currentUser.full_name, 'add', 'payroll', 0, 'توليد كشوف مستحقات ' + label + ' للفترة ' + range.from + ' ← ' + range.to + ' (' + results.length + ' كشف)', req);
+    res.json({ ok: true, count: results.length });
+  } catch (err) {
+    console.error('payroll/generate:', err);
+    if (!res.headersSent) res.status(500).json({ ok: false, error: 'تعذر توليد الكشوف: ' + (err && err.message ? err.message : 'خطأ غير متوقع') });
   }
-  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'payroll', 0, 'توليد كشوف مستحقات ' + (ptype === 'trainer' ? 'مدربين' : 'موظفين') + ' للفترة ' + range.from + ' ← ' + range.to + ' (' + results.length + ' كشف)', req);
-  res.json({ ok: true, count: results.length });
 });
 
 /* استحقاق حصص محددة (جزء أو كل الحصص) — تظهر مرة واحدة فقط حتى تُسجَّل حصص جديدة */

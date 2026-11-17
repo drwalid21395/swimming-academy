@@ -2,7 +2,7 @@
 <div class="page-head no-print">
   <div>
     <div class="page-title"><i class="fas fa-file-invoice-dollar"></i> كشف حساب: <b><%= row.coach_name || row.staff_name %></b></div>
-    <div class="page-sub">الفترة: <b><%= periodLabel %></b> · <%= row.person_type === 'trainer' ? 'مدرب' : 'موظف' %><% if (row.branch_name) { %> · <%= row.branch_name %><% } %><% if (perSession) { %> · <span class="badge <%= row.displayStatus === 'تم القبض' ? 'badge-success' : 'badge-danger' %>"><%= row.displayStatus %></span><% } %></div>
+    <div class="page-sub">الفترة: <b><%= periodLabel %></b> · <%= row.person_type === 'trainer' ? 'مدرب' : 'اداري' %><% if (row.branch_name) { %> · <%= row.branch_name %><% } %><% if (perSession) { %> · <span class="badge <%= row.displayStatus === 'تم القبض' ? 'badge-success' : 'badge-danger' %>"><%= row.displayStatus %></span><% } %></div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
@@ -53,7 +53,7 @@
     <div class="phone-dial-info">
       <span class="phone-dial-icon"><i class="fas fa-mobile-screen-button"></i></span>
       <div>
-        <div class="phone-dial-title">هاتف <%= row.person_type === 'trainer' ? 'المدرب' : 'الموظف' %></div>
+        <div class="phone-dial-title">هاتف <%= row.person_type === 'trainer' ? 'المدرب' : 'الاداري' %></div>
         <div class="phone-dial-number" dir="ltr"><%= personPhone %></div>
       </div>
     </div>
@@ -68,7 +68,7 @@
 
 <% if (perSession && sessionBalance && canEdit) { %>
 <div class="card no-print" id="sessionCard">
-  <div class="card-header"><i class="fas fa-list-check"></i> عداد حصص <%= row.person_type === 'trainer' ? 'المدرب' : 'الموظف' %> — القبض والاستحقاق</div>
+  <div class="card-header"><i class="fas fa-list-check"></i> عداد حصص <%= row.person_type === 'trainer' ? 'المدرب' : 'الاداري' %> — القبض والاستحقاق</div>
   <div class="card-body">
     <div class="kpi-row">
       <div class="kpi"><div class="k-val text-primary"><%= sessionBalance.attended %></div><div class="k-lbl">إجمالي الحضور</div></div>
@@ -178,7 +178,7 @@
         <% if (!Number(row.approved)) { %><button type="button" class="btn btn-outline btn-lg" id="approveBtn"><i class="fas fa-check"></i> اعتماد الكشف</button><% } %>
       </div>
     </form>
-    <div class="form-hint" style="margin-top:8px"><i class="fas fa-mobile-screen-button"></i> هاتف الفودافون كاش المدرب/الموظف (من الملف): <% if (personPhone) { %><b dir="ltr"><%= personPhone %></b><% } else { %><span class="text-danger">غير مسجَّل بالملف</span><% } %></div>
+    <div class="form-hint" style="margin-top:8px"><i class="fas fa-mobile-screen-button"></i> هاتف الفودافون كاش المدرب/الاداري (من الملف): <% if (personPhone) { %><b dir="ltr"><%= personPhone %></b><% } else { %><span class="text-danger">غير مسجَّل بالملف</span><% } %></div>
     <div class="form-hint" style="margin-top:4px"><i class="fas fa-circle-info"></i> عند الصرف يتم تسجيل دفعة و إنشاء مصروف تلقائياً في سجل المصروفات (فئة: رواتب وأجور).</div>
   </div>
 </div>
@@ -198,7 +198,7 @@
   <div class="card-body">
     <div class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
       <div class="form-group" style="margin:0">
-        <label class="font-11 text-muted">هاتف المدرب/الموظف (من الملف)</label>
+        <label class="font-11 text-muted">هاتف المدرب/الاداري (من الملف)</label>
         <input type="text" id="waPhone" class="form-control" dir="ltr" value="<%= personPhone %>" placeholder="غير مسجل بالملف" style="width:185px">
       </div>
       <div class="form-group" style="margin:0">
