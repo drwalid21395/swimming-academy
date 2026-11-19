@@ -14,7 +14,7 @@ const { db } = require('../lib/db');
 const { getAcademyId } = require('../lib/tenant-context');
 const { canView, canAdd, canEdit, canDel, canExport, money, fmtMoney, today, fmtDate, fmtDateTime, audit, parseJSON } = require('../lib/helpers');
 const { activeSport, sportClause, groupClause, sessionClause } = require('../lib/sport-context');
-const { overlaps, validateRange, toMinutes } = require('../lib/attendance-time');
+const { overlaps, validateRange, normalizeTime, toMinutes } = require('../lib/attendance-time');
 
 /* ---------- حالات الحضور ---------- */
 const TRAINER_STATUS = [
@@ -523,10 +523,14 @@ router.get('/trainer-attendance', async function (req, res) {
   if (!canView(req.currentUser, 'trainerAttendance')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const month = (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) ? req.query.month : today().slice(0, 7);
   const date = (req.query.date && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)) ? req.query.date : today();
+  const from = normalizeTime(req.query.from), to = normalizeTime(req.query.to);
+  /* لا تظهر قائمة المدربين إلا بعد تحديد التاريخ والوقت صراحةً */
+  const slotMode = !!(from && to && toMinutes(to) > toMinutes(from));
+  const coachFilter = Number(req.query.coach) || 0;
+  const canAddAtt = canAdd(req.currentUser, 'trainerAttendance');
   const fBranch = (req.query.branch && /^\d+$/.test(req.query.branch)) ? Number(req.query.branch) : null;
   const fPool = (req.query.pool && /^\d+$/.test(req.query.pool)) ? Number(req.query.pool) : null;
   const placeFilter = fPool ? ' AND a.pool_id = ' + fPool : (fBranch ? ' AND a.branch_id = ' + fBranch : '');
-  const placeFilterU = fPool ? ' AND pool_id = ' + fPool : (fBranch ? ' AND branch_id = ' + fBranch : '');
   const rows = await db.prepare(`SELECT a.*, g.name AS group_name, b.name AS branch_name, c.full_name AS coach_name,
       COALESCE(sc.full_name, a.substitute_name) AS substitute_name, p.name AS pool_name
     FROM trainer_session_attendance a
@@ -538,42 +542,54 @@ router.get('/trainer-attendance', async function (req, res) {
     WHERE substr(a.date,1,7) = ?` + tacScope(activeSport(req)) + placeFilter + `
     ORDER BY a.date DESC, a.start_time`).all(month);
   const pol = (await getPolicy()).pol;
-  rows.forEach(r => {
-    r.amount = amountForAttendance(r, pol);
-  });
-
-  const dayAtt = {}, dayAtts = {};
-  const dayRows = await db.prepare('SELECT * FROM trainer_session_attendance WHERE 1=1' + tacScope(activeSport(req)) + placeFilterU + ' AND date = ? ORDER BY start_time, id').all(date);
-  dayRows.forEach(a => { if (!dayAtt[a.coach_id]) dayAtt[a.coach_id] = a; if (!dayAtts[a.coach_id]) dayAtts[a.coach_id] = []; dayAtts[a.coach_id].push(a); });
-
-  const sessionsToday = await db.prepare(`SELECT se.group_id, se.coach_id, se.start_time, g.name AS group_name FROM sessions se LEFT JOIN groups g ON g.id = se.group_id WHERE se.date = ? AND se.deleted_at IS NULL` + sessionClause(activeSport(req), 'se')).all(date);
-  const timeMap = {};
-  const grpMap = {};
-  sessionsToday.forEach(s => { if (s.coach_id) { if (!timeMap[s.coach_id]) timeMap[s.coach_id] = s.start_time; if (!grpMap[s.coach_id]) grpMap[s.coach_id] = s.group_name; } });
-  const wd = weekdayName(date);
-  if (wd) {
-    const groups = await db.prepare(`SELECT g.* FROM groups g WHERE (g.status IS NULL OR g.status = '' OR g.status = 'نشطة') AND g.deleted_at IS NULL` + groupClause(activeSport(req)) + ``).all();
-    groups.forEach(g => {
-      const sch = parseJSON(g.schedule, []);
-      const slot = (sch || []).find(s => s.day === wd);
-      if (slot && g.coach_id && !timeMap[g.coach_id]) { timeMap[g.coach_id] = slot.start || '16:00'; grpMap[g.coach_id] = g.name; }
-    });
-  }
+  rows.forEach(r => { r.amount = amountForAttendance(r, pol); });
 
   const coaches = await db.prepare(`SELECT c.* FROM coaches c WHERE c.deleted_at IS NULL AND (c.status IS NULL OR c.status = '' OR c.status = 'active' OR c.status = 'نشط' OR c.status = 'نشطة')` + sportClause(activeSport(req), 'c') + ` ORDER BY c.full_name`).all();
-  const sheet = coaches.map(c => Object.assign({}, c, {
-    time: timeMap[c.id] || null,
-    group_name: grpMap[c.id] || null,
-    att: dayAtt[c.id] || null,
-    atts: dayAtts[c.id] || []
-  }));
+  const targetCoaches = slotMode
+    ? coaches.filter(c => (!coachFilter || c.id === coachFilter) && (!fBranch || c.branch_id === fBranch))
+    : [];
+  const sheet = [];
+  if (slotMode) {
+    for (const c of targetCoaches) {
+      /* حصة مسجّلة بالفعل في هذا المدى؟ تُعرض حالتها المحفوظة كما هي */
+      const dayAtts = await db.prepare(`SELECT a.* FROM trainer_session_attendance a
+        WHERE a.coach_id = ? AND a.date = ? ORDER BY a.id`).all(c.id, date);
+      let att = dayAtts.find(function (a) { return overlaps(from, to, a.start_time, a.end_time); }) || null;
+      let createdNow = false;
+      if (!att && canAddAtt) {
+        const info = await db.prepare(`INSERT INTO sessions (group_id, title, date, start_time, end_time, coach_id, status, note, created_by)
+          VALUES (?,?,?,?,?,?,?,?,?)`)
+          .run(null, (c.full_name || ('مدرب #' + c.id)) + ' - ' + date + ' (' + from + ')', date, from, to, c.id,
+            'scheduled', 'أُنشئت من شاشة حضور المدربين', req.currentUser.id);
+        const sid = Number(info.lastInsertRowid || 0);
+        const rate = await effectiveTrainerRate(c.id, c.branch_id || null);
+        const rec = await db.prepare(`INSERT INTO trainer_session_attendance
+          (session_id, coach_id, branch_id, date, start_time, end_time, duration_min, status, session_rate, base_rate, created_by)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(sid, c.id, c.branch_id || null, date, from, to, toMinutes(to) - toMinutes(from), '', rate.effective, rate.effective, req.currentUser.id);
+        att = await db.prepare('SELECT * FROM trainer_session_attendance WHERE id = ?').get(Number(rec.lastInsertRowid || 0));
+        createdNow = true;
+        audit(req.currentUser.id, req.currentUser.full_name, 'add', 'trainerAttendance', att && att.id,
+          'حصة جديدة بالوقت: ' + (c.full_name || c.id) + ' — ' + date + ' (' + from + ' - ' + to + ')', req);
+      }
+      if (!att) continue;
+      const grp = att.group_id ? await db.prepare('SELECT name FROM groups WHERE id = ?').get(att.group_id) : null;
+      sheet.push(Object.assign({}, c, {
+        time: att.start_time, group_name: grp ? grp.name : null,
+        att, atts: [att], att_id: att.id, createdNow
+      }));
+    }
+  }
 
   let present = 0, absent = 0, excused = 0, late = 0;
-  dayRows.forEach(a => { const st = a.status; if (st === 'حاضر') present++; else if (st === 'غائب') absent++; else if (st === 'معتذر') excused++; else if (st === 'متأخر') late++; });
+  sheet.forEach(s => {
+    const st = s.att && s.att.status;
+    if (st === 'حاضر') present++; else if (st === 'غائب') absent++; else if (st === 'معتذر') excused++; else if (st === 'متأخر') late++;
+  });
   const yday = (new Date(Date.now() - 86400000)).toISOString().slice(0, 10);
   const branches = await db.prepare(`SELECT id, name FROM branches ORDER BY name`).all();
   const pools = await db.prepare(`SELECT p.id, p.name, p.branch_id FROM pools p ORDER BY p.name`).all();
-  res.render('attendance_payroll/trainer_attendance', { title: 'حضور المدربين', active: 'trainerAttendance', sheet, rows, month, date, yday, kpi: { present, absent, excused, late }, coaches, STATUS: TRAINER_STATUS, canAdd: canAdd(req.currentUser, 'trainerAttendance'), branches, pools, fBranch, fPool });
+  res.render('attendance_payroll/trainer_attendance', { title: 'حضور المدربين', active: 'trainerAttendance', sheet, rows, month, date, from, to, slotMode, coachFilter, yday, kpi: { present, absent, excused, late }, coaches, STATUS: TRAINER_STATUS, canAdd: canAddAtt, branches, pools, fBranch, fPool });
 });
 
 router.post('/trainer-attendance/bulk-delete', async function (req, res) {
@@ -622,7 +638,14 @@ router.post('/trainer-attendance/save-day', async function (req, res) {
     const status = String(v.status || 'حاضر');
     const coach = await db.prepare('SELECT * FROM coaches WHERE id = ?').get(coachId);
     if (!coach) continue;
-    let session = await db.prepare(`SELECT * FROM sessions WHERE date = ? AND coach_id = ? AND deleted_at IS NULL ORDER BY id LIMIT 1`).get(date, coachId);
+    /* عند الحفظ من شاشة الموعد المحدد نستخدم الحصة المرتبطة بالسجل نفسه */
+    const attById = v.att_id
+      ? await db.prepare('SELECT * FROM trainer_session_attendance WHERE id = ?').get(Number(v.att_id))
+      : null;
+    let session = attById && attById.session_id
+      ? await db.prepare('SELECT * FROM sessions WHERE id = ?').get(attById.session_id)
+      : null;
+    if (!session) session = await db.prepare(`SELECT * FROM sessions WHERE date = ? AND coach_id = ? AND deleted_at IS NULL ORDER BY id LIMIT 1`).get(date, coachId);
     if (!session) {
       let group = null;
       const groups = await db.prepare(`SELECT * FROM groups WHERE coach_id = ? AND (status IS NULL OR status = '' OR status = 'نشطة') AND deleted_at IS NULL`).all(coachId);
@@ -646,9 +669,9 @@ router.post('/trainer-attendance/save-day', async function (req, res) {
     const substitute_name = status === 'بديل' && !substitute_coach_id ? String(v.substitute_name || '').trim().slice(0, 120) : null;
     const cancel_reason = status === 'ملغاة' ? String(v.cancel_reason || '') : '';
     const payment_policy = status === 'ملغاة' ? String(v.payment_policy || '') : '';
-    const existing = await db.prepare('SELECT * FROM trainer_session_attendance WHERE session_id = ? AND coach_id = ?').get(session.id, coachId);
-    let pool_id = Number(v.pool_id) || session.pool_id || (groupRow ? groupRow.pool_id : null) || null;
-    let branch_id = groupRow ? groupRow.branch_id : null;
+    const existing = attById || await db.prepare('SELECT * FROM trainer_session_attendance WHERE session_id = ? AND coach_id = ?').get(session.id, coachId);
+    let pool_id = Number(v.pool_id) || (existing && existing.pool_id) || session.pool_id || (groupRow ? groupRow.pool_id : null) || null;
+    let branch_id = (existing && existing.branch_id) || (groupRow ? groupRow.branch_id : null);
     if (pool_id) {
       const poolRow = await db.prepare('SELECT * FROM pools WHERE id = ?').get(pool_id);
       if (poolRow) { branch_id = poolRow.branch_id || branch_id; } else { pool_id = null; }

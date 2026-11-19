@@ -2,47 +2,36 @@
 <div class="page-head">
   <div>
     <div class="page-title"><i class="fas fa-user-check"></i> حضور المدربين</div>
-    <div class="page-sub">تسجيل ومتابعة حضور المدربين حسب اليوم — <b><%= fmtDate(date) %></b></div>
+    <div class="page-sub">حدد التاريخ والوقت أولاً ثم اضغط «عرض الجميع» — تظهر الحالة المحفوظة للحصة إن كانت مسجّلة، أو قائمة المدربين للبدء في التسجيل.</div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
-    <a href="/trainer-attendance?date=<%= yday %><% if (fBranch) { %>&branch=<%= fBranch %><% } %><% if (fPool) { %>&pool=<%= fPool %><% } %>" class="btn btn-ghost btn-sm" title="أمس">أمس</a>
-    <a href="/trainer-attendance?date=<%= today() %><% if (fBranch) { %>&branch=<%= fBranch %><% } %><% if (fPool) { %>&pool=<%= fPool %><% } %>" class="btn btn-ghost btn-sm" title="اليوم">اليوم</a>
-    <form method="get" action="/trainer-attendance" class="flex gap-1">
-      <input type="date" name="date" class="form-control" value="<%= date %>">
-      <% if (fBranch) { %><input type="hidden" name="branch" value="<%= fBranch %>"><% } %>
-      <% if (fPool) { %><input type="hidden" name="pool" value="<%= fPool %>"><% } %>
-      <button class="btn btn-outline btn-sm" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
-    </form>
-    <a href="/staff-hours?date=<%= date %>" class="btn btn-primary btn-sm"><i class="fas fa-bolt"></i> الحضور السريع</a>
+    <a href="/trainer-attendance?date=<%= yday %><% if (fBranch) { %>&branch=<%= fBranch %><% } %><% if (fPool) { %>&pool=<%= fPool %><% } %>" class="btn btn-ghost btn-sm">أمس</a>
+    <a href="/trainer-attendance?date=<%= today() %><% if (fBranch) { %>&branch=<%= fBranch %><% } %><% if (fPool) { %>&pool=<%= fPool %><% } %>" class="btn btn-ghost btn-sm">اليوم</a>
     <a href="/attendance-reports?month=<%= date.slice(0,7) %>" class="btn btn-ghost btn-sm"><i class="fas fa-chart-column"></i> تقارير</a>
   </div>
 </div>
 
-<div class="card" style="margin-bottom:14px" id="trainerQuickCard">
-  <div class="card-header"><h3><i class="fas fa-bolt text-primary"></i> حصة جديدة بوقت محدد</h3></div>
+<div class="card" style="margin-bottom:14px" id="trainerSlotCard">
+  <div class="card-header"><h3><i class="fas fa-clock text-primary"></i> اختر موعد الحصة</h3></div>
   <div class="card-body">
-    <% if (canAdd && coaches.length) { %>
-      <form id="trainerQuickForm" class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
-        <div class="form-group" style="margin:0"><label class="font-11 text-muted">التاريخ</label><input type="date" name="date" class="form-control" value="<%= date %>"></div>
-        <div class="form-group" style="margin:0;min-width:180px"><label class="font-11 text-muted">المدرب</label>
-          <select name="coach_id" class="form-control">
-            <% coaches.forEach(function (c) { %><option value="<%= c.id %>"><%= c.full_name %></option><% }); %>
-          </select>
-        </div>
-        <div class="form-group" style="margin:0"><label class="font-11 text-muted">من</label><input type="time" name="time_from" class="form-control" value="16:00" required></div>
-        <div class="form-group" style="margin:0"><label class="font-11 text-muted">إلى</label><input type="time" name="time_to" class="form-control" value="17:00" required></div>
-        <div class="form-group" style="margin:0;min-width:120px"><label class="font-11 text-muted">الحالة</label>
-          <select name="status" class="form-control">
-            <% STATUS.forEach(function (st) { %><option value="<%= st.value %>" <%= st.value === 'حاضر' ? 'selected' : '' %>><%= st.label %></option><% }); %>
-          </select>
-        </div>
-        <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> تسجيل الحصة</button>
-      </form>
-      <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> لا يمكن تسجيل المدرب أكثر من مرة في وقت متداخل في اليوم نفسه.</div>
-    <% } else { %>
-      <div class="empty-state"><i class="fas fa-user-slash"></i><p><%= coaches.length ? 'ليست لديك صلاحية إضافة حضور' : 'لا يوجد مدربون نشطون' %></p></div>
-    <% } %>
+    <form method="get" action="/trainer-attendance" class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="margin:0"><label class="font-11 text-muted">التاريخ <span class="req">*</span></label><input type="date" name="date" class="form-control" value="<%= date %>" required></div>
+      <div class="form-group" style="margin:0;min-width:180px"><label class="font-11 text-muted">المدرب</label>
+        <select name="coach" class="form-control">
+          <option value="0">جميع المدربين</option>
+          <% coaches.forEach(function (c) { %><option value="<%= c.id %>" <%= Number(coachFilter) === Number(c.id) ? 'selected' : '' %>><%= c.full_name %></option><% }); %>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0"><label class="font-11 text-muted">من <span class="req">*</span></label><input type="time" name="from" class="form-control" value="<%= from || '16:00' %>" required></div>
+      <div class="form-group" style="margin:0"><label class="font-11 text-muted">إلى <span class="req">*</span></label><input type="time" name="to" class="form-control" value="<%= to || '17:00' %>" required></div>
+      <% if (fBranch) { %><input type="hidden" name="branch" value="<%= fBranch %>"><% } %>
+      <% if (fPool) { %><input type="hidden" name="pool" value="<%= fPool %>"><% } %>
+      <button type="submit" class="btn btn-primary"><i class="fas fa-users"></i> عرض الجميع</button>
+    </form>
+    <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i>
+      <% if (slotMode) { %>الموعد المحدد: <b dir="ltr"><%= from %> — <%= to %></b> · <%= date %> — يتم عرض الحالة المحفوظة للحصة إن وُجدت.<% } else { %>يجب تحديد التاريخ ووقت البداية ووقت النهاية قبل عرض أي قائمة حضور.<% } %>
+    </div>
   </div>
 </div>
 
@@ -60,12 +49,18 @@
       </select>
       <input type="hidden" name="month" value="<%= month %>">
       <input type="hidden" name="date" value="<%= date %>">
+      <% if (slotMode) { %><input type="hidden" name="from" value="<%= from %>"><input type="hidden" name="to" value="<%= to %>"><input type="hidden" name="coach" value="<%= coachFilter %>"><% } %>
       <button class="btn btn-outline btn-sm" type="submit"><i class="fas fa-filter"></i> تطبيق</button>
       <% if (fBranch || fPool) { %><a href="/trainer-attendance?month=<%= month %>&date=<%= date %>" class="btn btn-ghost btn-sm"><i class="fas fa-xmark"></i> إلغاء التصفية</a><% } %>
     </form>
   </div>
 </div>
 
+<% if (!slotMode) { %>
+  <div class="card"><div class="card-body">
+    <div class="empty-state"><i class="fas fa-calendar-day"></i><p>اختر التاريخ والوقت من الأعلى ثم اضغط «عرض الجميع» لبدء تسجيل حضور المدربين.</p></div>
+  </div></div>
+<% } else { %>
 <div class="kpi-row">
   <div class="kpi"><div class="k-val text-success"><%= kpi.present %></div><div class="k-lbl">حاضر</div></div>
   <div class="kpi"><div class="k-val text-danger"><%= kpi.absent %></div><div class="k-lbl">غائب</div></div>
@@ -105,10 +100,12 @@
                 <div class="avatar-sm"><%= (s.full_name || 'م').trim().charAt(0) %></div>
                 <div>
                   <b><%= s.full_name %></b>
+                  <span class="badge <%= s.createdNow ? 'badge-success' : 'badge-info' %>" style="margin-right:6px"><%= s.createdNow ? 'حصة جديدة — جاهزة للتسجيل' : 'حالة محفوظة سابقاً' %></span>
+                  <% if (s.att_id) { %><input type="hidden" class="t-att-id" value="<%= s.att_id %>"><% } %>
                   <div class="font-11 text-muted">
                     <% if (s.branch_name) { %><i class="fas fa-building"></i> <%= s.branch_name %><% } %>
                     <% if (s.group_name) { %> · <i class="fas fa-people-group"></i> <%= s.group_name %><% } %>
-                    <% if (s.time) { %> · <i class="fas fa-clock"></i> <b dir="ltr"><%= s.time %></b><% } %>
+                    <% if (s.time) { %> · <i class="fas fa-clock"></i> <b dir="ltr"><%= s.att && s.att.start_time ? s.att.start_time : s.time %><% if (s.att && s.att.end_time) { %> — <%= s.att.end_time %><% } %></b><% } %>
                   </div>
                 </div>
               </div>
@@ -147,10 +144,11 @@
         </div>
       <% }); %>
     <% } else { %>
-      <div class="empty-state"><i class="fas fa-user-slash"></i><p>لا يوجد مدربون نشطون</p></div>
+      <div class="empty-state"><i class="fas fa-user-slash"></i><p><%= canAdd ? 'لا يوجد مدربون مطابقون للاختيار' : 'ليست لديك صلاحية إضافة حضور، ولا توجد حصة مسجّلة في هذا الموعد' %></p></div>
     <% } %>
   </div>
 </div>
+<% } %>
 
 <div class="card">
   <div class="card-header"><i class="fas fa-list"></i> سجل حضور شهر <b><%= month %></b></div>
@@ -212,29 +210,6 @@
 
 <script>
 (function () {
-  var quick = document.getElementById('trainerQuickForm');
-  if (quick) {
-    quick.addEventListener('submit', function (e) {
-      e.preventDefault();
-      var btn = quick.querySelector('button[type="submit"]');
-      var payload = {
-        date: quick.elements.date.value,
-        coach_id: quick.elements.coach_id.value,
-        time_from: quick.elements.time_from.value,
-        time_to: quick.elements.time_to.value,
-        status: quick.elements.status.value
-      };
-      btn.disabled = true;
-      fetch('/trainer-attendance/quick-session', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-      }).then(function (r) { return r.json(); }).then(function (res) {
-        btn.disabled = false;
-        if (res.ok) { App.showToast('تم تسجيل الحصة', 'success'); setTimeout(function () { location.reload(); }, 400); }
-        else { App.showToast(res.error || 'تعذر تسجيل الحصة', 'error'); }
-      }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
-    });
-  }
-
   var card = document.getElementById('trainerAttCard');
   if (!card) return;
 
@@ -383,7 +358,9 @@
         var lateEl = row.querySelector('.t-late');
         var noteEl = row.querySelector('.t-note');
         var poolEl = row.querySelector('.t-pool');
+        var attIdEl = row.querySelector('.t-att-id');
         var rec = { status: status };
+        if (attIdEl && attIdEl.value) rec.att_id = attIdEl.value;
         if (rateEl) rec.session_rate = rateEl.value;
         if (lateEl) rec.late_minutes = lateEl.value || 0;
         if (noteEl) rec.note = noteEl.value;

@@ -5,7 +5,7 @@ const { audit, money, fmtDate, fmtDateTime, dayAr, today, pct, parseJSON, canVie
 const { setFlash } = require('../lib/auth-cookie');
 const { activeSport, sportClause, groupClause, sessionClause } = require('../lib/sport-context');
 const { ensureGroupSession, swimmerTimeClash } = require('../lib/attendance');
-const { overlaps, validateRange } = require('../lib/attendance-time');
+const { overlaps, validateRange, normalizeTime, toMinutes } = require('../lib/attendance-time');
 
 function attendanceCounts(status) {
   return status === 'present' || status === 'late';
@@ -342,18 +342,23 @@ router.get('/attendance', async function (req, res) {
     const d = new Date(dateStr + 'T12:00:00'); d.setDate(d.getDate() + n);
     return d.toISOString().slice(0, 10);
   }
-  const date = req.query.date || today();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? String(req.query.date) : today();
+  const from = normalizeTime(req.query.from), to = normalizeTime(req.query.to);
+  /* لا تُعرض قوائم الحضور إلا بعد اختيار التاريخ والوقت صراحةً */
+  const slotMode = !!(from && to && toMinutes(to) > toMinutes(from));
+  const groupFilter = Number(req.query.group) || 0;
   const canSave = canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance');
   const groupRows = await db.prepare(`SELECT g.*, c.full_name AS coach_name, p.name AS pool_name FROM groups g
     LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools p ON p.id = g.pool_id WHERE g.deleted_at IS NULL` + groupClause(activeSport(req)) + ` ORDER BY g.name`).all();
+  const targetGroups = slotMode ? groupRows.filter(g => !groupFilter || g.id === groupFilter) : [];
   const groups = [];
-  for (const g of groupRows) {
+  for (const g of targetGroups) {
     await syncGroup(g.id);
     const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no,
         (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status = 'نشط') DESC, sub.id DESC LIMIT 1) AS sub_end
       FROM swimmer_group sg JOIN swimmers s ON s.id = sg.swimmer_id WHERE sg.group_id = ? ORDER BY s.full_name`).all(g.id);
     members.forEach(m => { m.sub = subBadge(m.sub_end); });
-    /* كل حصص اليوم لهذه المجموعة (يمكن أن تكون أكثر من حصة بأوقات مختلفة) */
+    /* حصة موجودة في هذا المدى الزمني؟ تُعرض حالتها المحفوظة كما هي */
     let sessions = await db.prepare(`SELECT se.*, g2.name AS group_name, c.full_name AS coach_name, p.name AS pool_name
       FROM sessions se
       LEFT JOIN groups g2 ON g2.id = se.group_id
@@ -362,26 +367,40 @@ router.get('/attendance', async function (req, res) {
       WHERE se.date = ? AND se.deleted_at IS NULL
         AND (se.group_id = ? OR EXISTS (SELECT 1 FROM session_groups sg WHERE sg.session_id = se.id AND sg.group_id = ?))
       ORDER BY se.start_time, se.id`).all(date, g.id, g.id);
-    /* إنشاء الحصة تلقائياً لحضور اليوم بدون الحاجة لاختيار "حصة جديدة" */
-    if (!sessions.length && date === today() && canSave) {
-      const auto = await ensureGroupSession(g, date, req.currentUser.id);
-      if (auto) sessions = [auto];
+    sessions = sessions.filter(function (s) { return overlaps(from, to, s.start_time, s.end_time); });
+    let created = false;
+    if (!sessions.length && canSave) {
+      const info = await db.prepare(`INSERT INTO sessions
+        (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, note, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(g.id, g.name + ' - ' + date + ' (' + from + ')', date, from, to, g.coach_id || null, g.pool_id || null,
+          'scheduled', 0, 'أُنشئت من شاشة الحضور والغياب', req.currentUser.id);
+      const sid = Number(info.lastInsertRowid || 0);
+      await db.prepare('INSERT OR IGNORE INTO session_groups (session_id, group_id) VALUES (?,?)').run(sid, g.id);
+      for (const m of members) await db.prepare("INSERT OR IGNORE INTO attendance (session_id, swimmer_id, status) VALUES (?,?,'absent')").run(sid, m.id);
+      sessions = [await db.prepare(`SELECT se.*, g2.name AS group_name, c.full_name AS coach_name, p.name AS pool_name
+        FROM sessions se LEFT JOIN groups g2 ON g2.id = se.group_id LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id WHERE se.id = ?`).get(sid)];
+      created = true;
+      audit(req.currentUser.id, req.currentUser.full_name, 'add', 'sessions', sid,
+        'حصة جديدة بالوقت: ' + g.name + ' — ' + date + ' (' + from + ' - ' + to + ')', req);
     }
     for (const s of sessions) {
       s.attMap = {};
       (await db.prepare('SELECT swimmer_id, status FROM attendance WHERE session_id = ?').all(s.id)).forEach(function (a) { s.attMap[a.swimmer_id] = a.status; });
       s.marked = Object.keys(s.attMap).length;
+      s.createdNow = created;
     }
     const session = sessions[0] || null;
     groups.push({ ...g, members, sessions, session, attMap: session ? session.attMap : {} });
   }
-  const daySessions = await db.prepare(`SELECT se.id, se.date, se.start_time, se.end_time, se.title, se.coach_id,
+  const daySessions = await db.prepare(`SELECT se.id, se.date, se.start_time, se.end_time, se.title, se.coach_id, se.group_id,
       c.full_name AS coach_name, g.name AS group_name,
       (SELECT COUNT(*) FROM attendance a WHERE a.session_id = se.id) AS marked
     FROM sessions se
     LEFT JOIN groups g ON g.id = se.group_id
     LEFT JOIN coaches c ON c.id = se.coach_id
-    WHERE se.date = ? AND se.deleted_at IS NULL` + groupClause(activeSport(req), 'g') + `
+    WHERE se.date = ? AND se.deleted_at IS NULL
+      AND se.group_id IS NOT NULL` + groupClause(activeSport(req), 'g') + `
     ORDER BY se.start_time, se.id`).all(date);
   const gScope = sessionClause(activeSport(req), 's');
   const daily = {
@@ -390,7 +409,7 @@ router.get('/attendance', async function (req, res) {
     excused: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='excused'` + gScope).get(date)).c,
     late: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='late'` + gScope).get(date)).c
   };
-  res.render('attendance', { title: 'الحضور والغياب', active: 'attendance', groups, daySessions, daily, date, today: today(), canSave: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance'),
+  res.render('attendance', { title: 'الحضور والغياب', active: 'attendance', groups, allGroups: groupRows, daySessions, daily, date, from, to, groupFilter, slotMode, today: today(), canSave,
     canAddSession: canAdd(req.currentUser, 'sessions'),
     canScan: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance') || canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards'),
     yday: addDays(today(), -1), dyday: addDays(today(), -2), tomorrow: addDays(today(), 1), isPast: date < today() });
