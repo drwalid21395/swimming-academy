@@ -11,6 +11,7 @@ const { readSport, setSport } = require('./lib/sport-context');
 const { enabledSportsForAcademy } = require('./lib/sports');
 const { syncExpiredSubscriptions } = require('./lib/expiry');
 const { NAV_ITEMS } = require('./lib/navigation');
+const barcode39 = require('./lib/barcode39');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -192,6 +193,7 @@ app.use(async function (req, res, next) {
     res.locals.pct = pct;
     res.locals.today = today;
     res.locals.parseJSON = parseJSON;
+  res.locals.barcode39 = barcode39.svg;
     res.locals.statusBadge = function (st) {
       const map = { 'نشط': ['badge-success', 'fa-user-check'], 'متوقف مؤقتاً': ['badge-warning', 'fa-pause'], 'مجمد': ['badge-info', 'fa-snowflake'], 'منسحب': ['badge-danger', 'fa-user-minus'], 'خريج': ['badge-purple', 'fa-graduation-cap'], 'منتهي': ['badge-danger', 'fa-calendar-xmark'] };
       const m = map[st] || ['badge-gray', 'fa-circle'];

@@ -104,19 +104,32 @@
   .mc-roster-group .att-row { padding:8px 0; }
   .mc-row-hit { background:rgba(22,163,74,.12); border-radius:10px; transition:background .3s; }
   .mc-empty-roster { text-align:center; color:var(--text-muted); padding:18px; font-size:13px; }
+  .mc-barcode { margin-top:4px; line-height:0; overflow:hidden; max-width:230px; }
 </style>
 
 <div class="page-head">
   <div>
-    <div class="page-title"><i class="fas fa-qrcode"></i> مسح الباركود</div>
-    <div class="page-sub">تسجيل الحضور والغياب بمسح باركود بطاقة العضوية</div>
+    <div class="page-title"><i class="fas fa-qrcode"></i> <%= scanScope === 'trainer' ? 'مسح باركود المدربين' : 'مسح الباركود' %></div>
+    <div class="page-sub"><%= scanScope === 'trainer' ? 'تسجيل حضور المدربين بمسح باركود المدرب داخل الموعد المحدد' : 'تسجيل الحضور والغياب بمسح باركود بطاقة العضوية داخل الموعد المحدد' %></div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
-    <a href="/attendance" class="btn btn-outline"><i class="fas fa-clipboard-user"></i> الحضور والغياب</a>
-    <a href="/attendance" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> رجوع</a>
+    <a href="<%= backUrl %>" class="btn btn-outline"><i class="fas fa-clipboard-user"></i> <%= scanScope === 'trainer' ? 'حضور المدربين' : 'الحضور والغياب' %></a>
+    <a href="<%= backUrl %>" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> رجوع</a>
   </div>
 </div>
+
+<% if (slot) { %>
+  <div class="card" style="margin-bottom:14px;border-color:var(--primary)">
+    <div class="card-body flex gap-1 items-center" style="flex-wrap:wrap;padding:12px 14px">
+      <span class="badge badge-primary"><i class="fas fa-calendar-day"></i> <%= fmtDate(slot.date) %></span>
+      <b dir="ltr" class="text-primary"><%= slot.from %> — <%= slot.to %></b>
+      <span class="badge badge-info"><i class="fas fa-users"></i> <%= slot.label %></span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="font-12 text-muted"><i class="fas fa-lock"></i> الموعد مثبّت لجميع عمليات المسح في هذه الشاشة</span>
+    </div>
+  </div>
+<% } %>
 
 <div class="mc-scan-wrap">
   <div class="card mc-cam-card">
@@ -178,6 +191,7 @@
       </div>
     </div>
 
+    <% if (scanScope !== 'trainer') { %>
     <div class="card mc-recent">
       <div class="card-body">
         <h4><i class="fas fa-clock-rotate-left"></i> أحدث عمليات المسح <span class="badge" id="recentCount"><%= (recent || []).length %></span></h4>
@@ -199,14 +213,16 @@
         </div>
       </div>
     </div>
+    <% } %>
   </div>
 </div>
 
 <div class="card mc-roster-card" id="rosterCard">
   <div class="card-header mc-roster-head">
-    <h3 style="margin:0"><i class="fas fa-users"></i> قائمة الحضور التلقائي
+    <h3 style="margin:0"><i class="fas fa-users"></i> <%= scanScope === 'trainer' ? 'قائمة المدربين — باركود جاهز للمسح' : 'قائمة الحضور التلقائي' %>
       <span class="badge badge-primary"><%= attDate %></span>
       <% if (sessionId) { %><span class="badge badge-warning">حصة محددة</span><% } %>
+      <% if (slot) { %><span class="badge badge-info" dir="ltr"><%= slot.from %> — <%= slot.to %></span><% } %>
     </h3>
     <div class="spacer" style="flex:1"></div>
     <input type="search" id="rosterSearch" class="form-control mc-roster-search" placeholder="ابحث باسم اللاعب أو رقم العضوية..." autocomplete="off">
@@ -214,8 +230,12 @@
   </div>
   <div class="card-body">
     <p class="text-muted font-12" style="margin:0 0 12px">
-      كل أسماء اللاعبين ظاهرة تلقائياً. المسح يسجّل اللاعب <b>حاضراً</b>، وباقي اللاعبين يُسجّلون <b>غائبين تلقائياً</b> عند أول مسح.
-      يمكنك أيضاً تغيير حالة أي لاعب بالضغط على الزر المناسب — يُحفظ فوراً.
+      <% if (scanScope === 'trainer') { %>
+        كل المدربين في الموعد المحدد ظاهرون ومعهم <b>باركود جاهز للمسح</b>. امسح كود المدرب لتسجيل <b>حضوره</b> في التاريخ والوقت المثبّتين أعلاه، أو اختر «غياب» من أعلى الشاشة قبل المسح.
+      <% } else { %>
+        كل أسماء اللاعبين ظاهرة تلقائياً في الموعد المحدد. المسح يسجّل اللاعب <b>حاضراً</b>، وباقي اللاعبين يُسجّلون <b>غائبين تلقائياً</b> عند أول مسح.
+      <% } %>
+      يمكنك أيضاً تغيير حالة أي شخص بالضغط على الزر المناسب — يُحفظ فوراً.
     </p>
     <% if (!groups || !groups.length) { %>
       <div class="mc-empty-roster"><i class="fas fa-people-group"></i> لا توجد مجموعات أو لاعبون لعرضهم.</div>
@@ -254,13 +274,17 @@
             </div>
             <% g.members.forEach(function (m) { %>
               <% var st = g.attMap[m.id] || 'absent'; %>
-              <div class="att-row" data-swimmer-row="<%= m.id %>" data-search="<%= (m.full_name + ' ' + (m.membership_no || '')).toLowerCase() %>">
+              <div class="att-row" data-swimmer-row="<%= m.id %>" data-search="<%= (m.full_name + ' ' + (m.membership_no || '') + ' ' + (m.barcode || '')).toLowerCase() %>">
                 <div class="att-name">
                   <div class="flex items-center gap-1">
                     <div class="avatar-sm"><%= (m.full_name || 'س').trim().charAt(0) %></div>
                     <div>
                       <b><%= m.full_name %></b>
-                      <div class="font-11 text-muted"><%= m.membership_no || '' %></div>
+                      <% if (m.barcode) { %>
+                        <div class="mc-barcode"><%- barcode39(m.barcode, { height: 24, unit: 2, font: 9 }) %></div>
+                      <% } else { %>
+                        <div class="font-11 text-muted"><%= m.membership_no || '' %></div>
+                      <% } %>
                     </div>
                   </div>
                 </div>
@@ -284,6 +308,8 @@
   'use strict';
   var canScan = <%- canScan ? 'true' : 'false' %>;
   var pageSessionId = <%- sessionId || 0 %>;
+  var scanEndpoint = <%- JSON.stringify(scanEndpoint || '/membership-cards/scan').replace(/</g, '\\u003c') %>;
+  var pageSlot = <%- JSON.stringify(slot || null).replace(/</g, '\\u003c') %>;
   var video = document.getElementById('cam');
   var overlay = document.getElementById('overlay');
   var camIdle = document.getElementById('camIdle');
@@ -440,6 +466,7 @@
   }
 
   function prependRecent(data, ok) {
+    if (!recentList || !recentCount) return;
     var empty = document.getElementById('recentEmpty');
     if (empty) empty.remove();
     var stateClass = data.status === 'duplicate' ? 'duplicate' : (data.mode === 'absent' ? 'absent' : 'present');
@@ -562,7 +589,14 @@
 
     var payload = { code: code, mode: mode };
     if (pageSessionId) payload.session_id = pageSessionId;
-    fetch('/membership-cards/scan', {
+    if (pageSlot) {
+      payload.date = pageSlot.date;
+      payload.from = pageSlot.from;
+      payload.to = pageSlot.to;
+      if (pageSlot.group) payload.group = pageSlot.group;
+      if (pageSlot.filter) payload.coach = pageSlot.filter;
+    }
+    fetch(scanEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)

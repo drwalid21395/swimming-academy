@@ -516,6 +516,31 @@ router.post('/trainer-attendance/quick-session', async function (req, res) {
   res.json({ ok: true, id: Number(rec.lastInsertRowid || 0) });
 });
 
+/* إيجاد حصة المدرب في الموعد المحدد، أو إنشاؤها عند عدم وجودها */
+async function findOrCreateTrainerSlot(req, coach, date, from, to) {
+  const dayAtts = await db.prepare(`SELECT a.* FROM trainer_session_attendance a
+    WHERE a.coach_id = ? AND a.date = ? ORDER BY a.id`).all(coach.id, date);
+  let att = dayAtts.find(function (a) { return overlaps(from, to, a.start_time, a.end_time); }) || null;
+  let createdNow = false;
+  if (!att && canAdd(req.currentUser, 'trainerAttendance')) {
+    const info = await db.prepare(`INSERT INTO sessions (group_id, title, date, start_time, end_time, coach_id, status, note, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?)`)
+      .run(null, (coach.full_name || ('مدرب #' + coach.id)) + ' - ' + date + ' (' + from + ')', date, from, to, coach.id,
+        'scheduled', 'أُنشئت من شاشة حضور المدربين', req.currentUser.id);
+    const sid = Number(info.lastInsertRowid || 0);
+    const rate = await effectiveTrainerRate(coach.id, coach.branch_id || null);
+    const rec = await db.prepare(`INSERT INTO trainer_session_attendance
+      (session_id, coach_id, branch_id, date, start_time, end_time, duration_min, status, session_rate, base_rate, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(sid, coach.id, coach.branch_id || null, date, from, to, toMinutes(to) - toMinutes(from), '', rate.effective, rate.effective, req.currentUser.id);
+    att = await db.prepare('SELECT * FROM trainer_session_attendance WHERE id = ?').get(Number(rec.lastInsertRowid || 0));
+    createdNow = true;
+    audit(req.currentUser.id, req.currentUser.full_name, 'add', 'trainerAttendance', att && att.id,
+      'حصة جديدة بالوقت: ' + (coach.full_name || coach.id) + ' — ' + date + ' (' + from + ' - ' + to + ')', req);
+  }
+  return att ? { att: att, createdNow: createdNow } : null;
+}
+
 /* ================================================================
    حضور المدربين (سجل + ترشيح بالشهر)
 ================================================================ */
@@ -552,27 +577,10 @@ router.get('/trainer-attendance', async function (req, res) {
   if (slotMode) {
     for (const c of targetCoaches) {
       /* حصة مسجّلة بالفعل في هذا المدى؟ تُعرض حالتها المحفوظة كما هي */
-      const dayAtts = await db.prepare(`SELECT a.* FROM trainer_session_attendance a
-        WHERE a.coach_id = ? AND a.date = ? ORDER BY a.id`).all(c.id, date);
-      let att = dayAtts.find(function (a) { return overlaps(from, to, a.start_time, a.end_time); }) || null;
-      let createdNow = false;
-      if (!att && canAddAtt) {
-        const info = await db.prepare(`INSERT INTO sessions (group_id, title, date, start_time, end_time, coach_id, status, note, created_by)
-          VALUES (?,?,?,?,?,?,?,?,?)`)
-          .run(null, (c.full_name || ('مدرب #' + c.id)) + ' - ' + date + ' (' + from + ')', date, from, to, c.id,
-            'scheduled', 'أُنشئت من شاشة حضور المدربين', req.currentUser.id);
-        const sid = Number(info.lastInsertRowid || 0);
-        const rate = await effectiveTrainerRate(c.id, c.branch_id || null);
-        const rec = await db.prepare(`INSERT INTO trainer_session_attendance
-          (session_id, coach_id, branch_id, date, start_time, end_time, duration_min, status, session_rate, base_rate, created_by)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-          .run(sid, c.id, c.branch_id || null, date, from, to, toMinutes(to) - toMinutes(from), '', rate.effective, rate.effective, req.currentUser.id);
-        att = await db.prepare('SELECT * FROM trainer_session_attendance WHERE id = ?').get(Number(rec.lastInsertRowid || 0));
-        createdNow = true;
-        audit(req.currentUser.id, req.currentUser.full_name, 'add', 'trainerAttendance', att && att.id,
-          'حصة جديدة بالوقت: ' + (c.full_name || c.id) + ' — ' + date + ' (' + from + ' - ' + to + ')', req);
-      }
-      if (!att) continue;
+      const slot = await findOrCreateTrainerSlot(req, c, date, from, to);
+      if (!slot) continue;
+      const att = slot.att;
+      const createdNow = slot.createdNow;
       const grp = att.group_id ? await db.prepare('SELECT name FROM groups WHERE id = ?').get(att.group_id) : null;
       sheet.push(Object.assign({}, c, {
         time: att.start_time, group_name: grp ? grp.name : null,
@@ -590,6 +598,110 @@ router.get('/trainer-attendance', async function (req, res) {
   const branches = await db.prepare(`SELECT id, name FROM branches ORDER BY name`).all();
   const pools = await db.prepare(`SELECT p.id, p.name, p.branch_id FROM pools p ORDER BY p.name`).all();
   res.render('attendance_payroll/trainer_attendance', { title: 'حضور المدربين', active: 'trainerAttendance', sheet, rows, month, date, from, to, slotMode, coachFilter, yday, kpi: { present, absent, excused, late }, coaches, STATUS: TRAINER_STATUS, canAdd: canAddAtt, branches, pools, fBranch, fPool });
+});
+
+/* شاشة مسح باركود المدربين داخل الموعد المحدد */
+router.get('/trainer-attendance/scan', async function (req, res) {
+  if (!canView(req.currentUser, 'trainerAttendance')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? String(req.query.date) : today();
+  const from = normalizeTime(req.query.from), to = normalizeTime(req.query.to);
+  if (!(from && to && toMinutes(to) > toMinutes(from))) return res.redirect('/trainer-attendance?date=' + date);
+  const coachFilter = Number(req.query.coach) || 0;
+  const coaches = await db.prepare(`SELECT c.* FROM coaches c WHERE c.deleted_at IS NULL AND (c.status IS NULL OR c.status = '' OR c.status = 'active' OR c.status = 'نشط' OR c.status = 'نشطة')` + sportClause(activeSport(req), 'c') + ` ORDER BY c.full_name`).all();
+  const targets = coaches.filter(c => !coachFilter || c.id === coachFilter);
+  const groups = [];
+  let present = 0, absent = 0;
+  for (const c of targets) {
+    const slot = await findOrCreateTrainerSlot(req, c, date, from, to);
+    if (!slot) continue;
+    const att = slot.att;
+    const status = att.status || '';
+    if (status === 'حاضر' || status === 'متأخر') present++;
+    else if (status === 'غائب') absent++;
+    groups.push({
+      id: c.id,
+      name: c.full_name,
+      coach_name: '',
+      pool_name: '',
+      session: { id: att.session_id, start_time: att.start_time, end_time: att.end_time },
+      session_id: att.session_id,
+      members: [{ id: c.id, full_name: c.full_name, membership_no: 'TR-' + c.id, barcode: 'TR-' + c.id, att_status: status }],
+      attMap: { [c.id]: status }
+    });
+  }
+  const back = '/trainer-attendance?date=' + date + '&from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to) + '&coach=' + coachFilter;
+  res.render('membership_card_scan', {
+    title: 'مسح باركود المدربين', active: 'trainerAttendance',
+    canScan: canAdd(req.currentUser, 'trainerAttendance') || canEdit(req.currentUser, 'trainerAttendance'),
+    groups: groups, sessionId: 0, sessionTitle: '',
+    scanScope: 'trainer', scanEndpoint: '/trainer-attendance/scan-mark', backUrl: back,
+    slot: { date: date, from: from, to: to, filter: coachFilter, label: coachFilter ? ((coaches.find(c => c.id === coachFilter) || {}).full_name || 'مدرب محدد') : 'جميع المدربين' },
+    attDate: date, stats: { present: present, absent: absent }, recent: [], todayDate: date,
+    pageScripts: ['/vendor/zxing.min.js']
+  });
+});
+
+/* تسجيل حضور مدرب بمسح الباركود داخل الموعد المحدد */
+router.post('/trainer-attendance/scan-mark', async function (req, res) {
+  if (!canAdd(req.currentUser, 'trainerAttendance') && !canEdit(req.currentUser, 'trainerAttendance')) {
+    return res.status(403).json({ ok: false, status: 'forbidden', message: 'غير مصرح بتسجيل حضور المدربين' });
+  }
+  const date = String(req.body && req.body.date || '');
+  const from = normalizeTime(req.body && req.body.from), to = normalizeTime(req.body && req.body.to);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !from || !to || toMinutes(to) <= toMinutes(from)) {
+    return res.status(400).json({ ok: false, status: 'invalid', message: 'الموعد المحدد غير صالح' });
+  }
+  const raw = String(req.body && req.body.code || '').trim().toUpperCase();
+  const m = raw.match(/^\*?TR-?0*(\d+)\*?$/) || (/^\d+$/.test(raw) ? raw.match(/^0*(\d+)$/) : null);
+  const coachId = m ? Number(m[1]) : 0;
+  if (!coachId) return res.json({ ok: false, status: 'not_found', message: 'باركود مدرب غير صالح — الصيغة المتوقعة TR-رقم المدرب', code: raw });
+  const coach = await db.prepare('SELECT * FROM coaches WHERE id = ? AND deleted_at IS NULL').get(coachId);
+  if (!coach) return res.json({ ok: false, status: 'not_found', message: 'مدرب غير معروف — تأكد من الباركود', code: raw });
+  const coachFilter = Number(req.body && req.body.coach) || 0;
+  if (coachFilter && coachFilter !== coachId) {
+    return res.json({ ok: false, status: 'not_found', message: 'هذا الباركود ليس للمدرب المحدد في هذا الموعد', code: raw });
+  }
+  try {
+    const slot = await findOrCreateTrainerSlot(req, coach, date, from, to);
+    if (!slot) return res.json({ ok: false, status: 'error', message: 'لا توجد حصة في هذا الموعد وليست لديك صلاحية إنشائها' });
+    const att = slot.att;
+    const mode = req.body.mode === 'absent' ? 'absent' : 'present';
+    const next = mode === 'absent' ? 'غائب' : 'حاضر';
+    const current = att.status || '';
+    const time = new Date().toLocaleString('sv-SE').slice(11, 16);
+    const person = { id: coach.id, name: coach.full_name, membership_no: 'TR-' + coach.id, program_name: 'مدرب' };
+    if (current === next || (mode === 'present' && (current === 'متأخر' || current === 'بديل'))) {
+      return res.json({ ok: false, status: 'duplicate', message: 'المدرب مسجّل بالفعل في هذه الحصة', swimmer: person, time: time, session_id: att.session_id });
+    }
+    if (mode === 'present') {
+      const others = await db.prepare(`SELECT id, status, start_time, end_time FROM trainer_session_attendance
+        WHERE coach_id = ? AND date = ? AND id <> ?`).all(coachId, date, att.id);
+      const clash = others.find(a => overlaps(from, to, a.start_time, a.end_time) && ['حاضر', 'متأخر', 'بديل'].indexOf(a.status) > -1);
+      if (clash) return res.json({ ok: false, status: 'time_clash', message: 'المدرب مسجّل حاضراً بالفعل في حصة متداخلة في هذا التوقيت', swimmer: person, time: time, session_id: att.session_id });
+    }
+    await db.prepare('UPDATE trainer_session_attendance SET status=?, updated_by=?, updated_at=? WHERE id=?')
+      .run(next, req.currentUser.id, new Date().toLocaleString('sv-SE').replace('T', ' '), att.id);
+    audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'trainerAttendance', att.id,
+      (mode === 'absent' ? 'تسجيل غياب' : 'تسجيل حضور') + ' بمسح الباركود: ' + coach.full_name, req);
+
+    const dayRows = await db.prepare('SELECT * FROM trainer_session_attendance WHERE date = ?').all(date);
+    const statuses = {};
+    let present = 0, absent = 0;
+    for (const row of dayRows) {
+      if (!overlaps(from, to, row.start_time, row.end_time)) continue;
+      statuses[row.coach_id] = row.status;
+      if (row.status === 'حاضر' || row.status === 'متأخر' || row.status === 'بديل') present++;
+      else if (row.status === 'غائب') absent++;
+    }
+    res.json({
+      ok: true, status: next, message: mode === 'absent' ? 'تم تسجيل غياب المدرب' : 'تم تسجيل حضور المدرب',
+      swimmer: person, person: person, time: time, session_id: att.session_id,
+      statuses: statuses, stats: { present: present, absent: absent }
+    });
+  } catch (e) {
+    console.error('خطأ في مسح باركود المدربين:', e.message);
+    res.status(500).json({ ok: false, status: 'error', message: 'تعذر تسجيل العملية، حاول مرة أخرى' });
+  }
 });
 
 router.post('/trainer-attendance/bulk-delete', async function (req, res) {

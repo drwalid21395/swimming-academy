@@ -12,6 +12,7 @@ const { audit, canView, canAdd, canEdit, canExport, today } = require('../lib/he
 const { setFlash } = require('../lib/auth-cookie');
 const { nextMembership, isUniqueViolation } = require('../lib/membership');
 const { effectiveSport, activeSport, sportClause, groupClause } = require('../lib/sport-context');
+const { normalizeTime, toMinutes, overlaps } = require('../lib/attendance-time');
 const { ensureGroupSession, findGroupSession, groupRoster, sessionRoster, sessionGroupIds, attendanceStatuses, seedAbsentForSession, syncGroupMembers, groupStartTime, swimmerTimeClash } = require('../lib/attendance');
 const { cardSvg, cardPdfDoc, cardsPdfDoc, barcodePng, normalizeBarcode, isoDate } = require('../lib/membership-card');
 const { buildZip } = require('../lib/zip');
@@ -437,7 +438,42 @@ router.get('/attendance/scan', async function (req, res) {
   const sessionId = Number(req.query.session) || 0;
   const groups = [];
 
-  if (sessionId) {
+  const slotFrom = normalizeTime(req.query.from), slotTo = normalizeTime(req.query.to);
+  const slotGroup = Number(req.query.group) || 0;
+  const hasSlot = !!(slotFrom && slotTo && toMinutes(slotTo) > toMinutes(slotFrom));
+
+  if (hasSlot) {
+    /* مسح داخل الموعد المختار من شاشة الحضور — نفس التاريخ والوقت لكل اللاعبين */
+    const groupRows = await db.prepare(`SELECT g.*, c.full_name AS coach_name, p.name AS pool_name FROM groups g
+      LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools p ON p.id = g.pool_id
+      WHERE g.deleted_at IS NULL` + groupClause(activeSport(req)) + ` ORDER BY g.name`).all();
+    const targets = slotGroup ? groupRows.filter(g => g.id === slotGroup) : groupRows;
+    for (const g of targets) {
+      await syncGroupMembers(g.id);
+      const sessions = await db.prepare(`SELECT se.* FROM sessions se
+        WHERE se.date = ? AND se.deleted_at IS NULL
+          AND (se.group_id = ? OR EXISTS (SELECT 1 FROM session_groups sg WHERE sg.session_id = se.id AND sg.group_id = ?))
+        ORDER BY se.start_time, se.id`).all(d, g.id, g.id);
+      let session = sessions.find(function (s) { return overlaps(slotFrom, slotTo, s.start_time, s.end_time); }) || null;
+      if (!session && canSave) {
+        const info = await db.prepare(`INSERT INTO sessions
+          (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, note, created_by)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(g.id, g.name + ' - ' + d + ' (' + slotFrom + ')', d, slotFrom, slotTo,
+            g.coach_id || null, g.pool_id || null, 'scheduled', 0, 'أُنشئت من شاشة مسح الباركود', req.currentUser.id);
+        session = await db.prepare('SELECT * FROM sessions WHERE id = ?').get(Number(info.lastInsertRowid || 0));
+        await db.prepare('INSERT OR IGNORE INTO session_groups (session_id, group_id) VALUES (?,?)').run(session.id, g.id);
+        for (const m of await groupRoster(g.id, true)) {
+          await db.prepare("INSERT OR IGNORE INTO attendance (session_id, swimmer_id, status) VALUES (?,?,'absent')").run(session.id, m.id);
+        }
+        audit(req.currentUser.id, req.currentUser.full_name, 'add', 'sessions', session.id,
+          'حصة جديدة بالوقت من المسح: ' + g.name + ' — ' + d + ' (' + slotFrom + ' - ' + slotTo + ')', req);
+      }
+      const members = await groupRoster(g.id, true);
+      const attMap = session ? await attendanceStatuses(session.id) : {};
+      groups.push({ ...g, session: session, session_id: session ? session.id : null, members: members, attMap: attMap });
+    }
+  } else if (sessionId) {
     /* مسح داخل حصة محددة (حصة قديمة/مختارة من الجدول) */
     const session = await db.prepare(`SELECT se.*, c.full_name AS coach_name, p.name AS pool_name
       FROM sessions se LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id
@@ -483,11 +519,17 @@ router.get('/attendance/scan', async function (req, res) {
     FROM attendance a JOIN sessions s ON s.id = a.session_id
     WHERE s.date = ? AND s.deleted_at IS NULL`).get(d);
 
+  const backUrl = hasSlot
+    ? '/attendance?date=' + d + '&from=' + encodeURIComponent(slotFrom) + '&to=' + encodeURIComponent(slotTo) + '&group=' + slotGroup
+    : '/attendance?date=' + d;
   res.render('membership_card_scan', {
     title: sessionId ? 'مسح وتعديل حضور الحصة' : 'مسح الباركود — الحضور والغياب', active: 'attendance',
     canScan: canSave,
     groups: groups,
     sessionId: sessionId || 0,
+    sessionTitle: '',
+    scanScope: 'swimmer', scanEndpoint: '/membership-cards/scan', backUrl: backUrl,
+    slot: hasSlot ? { date: d, from: slotFrom, to: slotTo, group: slotGroup, label: slotGroup ? ((groups[0] || {}).name || 'مجموعة محددة') : 'جميع المجموعات' } : null,
     attDate: d,
     stats: stats || { present: 0, absent: 0 },
     recent: await recentScans(d), todayDate: d,
@@ -586,6 +628,45 @@ async function findOrCreateSession(swimmer, date, req) {
   return { sessionId: Number(session.id), groupId: groupId };
 }
 
+/* إيجاد حصة اللاعب داخل الموعد المختار (أو إنشاؤها) — يربط المسح بالتاريخ والوقت المحددين */
+async function findSlotSessionForSwimmer(swimmer, date, from, to, groupFilter, req) {
+  let groupIds = [];
+  if (groupFilter) groupIds = [Number(groupFilter)];
+  else {
+    if (swimmer.group_id) groupIds.push(Number(swimmer.group_id));
+    const rows = await db.prepare('SELECT group_id FROM swimmer_group WHERE swimmer_id = ? ORDER BY group_id').all(swimmer.id);
+    rows.forEach(r => groupIds.push(Number(r.group_id)));
+  }
+  groupIds = Array.from(new Set(groupIds.filter(Boolean)));
+  if (!groupIds.length) return null;
+  const ph = groupIds.map(() => '?').join(',');
+  const sessions = await db.prepare(`SELECT DISTINCT se.* FROM sessions se
+    LEFT JOIN session_groups sg ON sg.session_id = se.id
+    WHERE se.date = ? AND se.deleted_at IS NULL AND (se.group_id IN (${ph}) OR sg.group_id IN (${ph}))
+    ORDER BY se.start_time, se.id`).all(date, ...groupIds, ...groupIds);
+  let session = sessions.find(function (s) { return overlaps(from, to, s.start_time, s.end_time); }) || null;
+  if (!session && (canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance') ||
+      canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards'))) {
+    const gid = groupFilter || groupIds[0];
+    const group = await db.prepare('SELECT * FROM groups WHERE id = ?').get(gid);
+    const info = await db.prepare(`INSERT INTO sessions
+      (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, note, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(gid, (group && group.name ? group.name : 'حصة') + ' - ' + date + ' (' + from + ')', date, from, to,
+        group ? group.coach_id || null : null, group ? group.pool_id || null : null,
+        'scheduled', 0, 'أُنشئت من شاشة مسح الباركود', req.currentUser.id);
+    session = { id: info.lastInsertRowid };
+    await db.prepare('INSERT OR IGNORE INTO session_groups (session_id, group_id) VALUES (?,?)').run(session.id, gid);
+    for (const m of await groupRoster(gid, true)) {
+      await db.prepare("INSERT OR IGNORE INTO attendance (session_id, swimmer_id, status) VALUES (?,?,'absent')").run(session.id, m.id);
+    }
+    audit(req.currentUser.id, req.currentUser.full_name, 'add', 'sessions', Number(session.id),
+      'حصة جديدة بالوقت من المسح: ' + date + ' (' + from + ' - ' + to + ')', req);
+  }
+  if (!session) return null;
+  return { sessionId: Number(session.id), groupId: groupFilter || groupIds[0] };
+}
+
 /* المجموعة المناسبة للاعب داخل حصة معيّنة (لخصم الاشتراك) */
 async function groupForSwimmerInSession(sessionId, swimmerId) {
   const row = await db.prepare(`SELECT sg.group_id FROM session_groups sg
@@ -603,7 +684,10 @@ router.post('/membership-cards/scan', async function (req, res) {
   const mode = req.body && req.body.mode === 'absent' ? 'absent' : 'present';
   const rawCode = req.body && req.body.code;
   const code = normalizeBarcode(rawCode);
-  let d = today();
+  let d = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body && req.body.date || '')) ? String(req.body.date) : today();
+  const slotFrom = normalizeTime(req.body && req.body.from), slotTo = normalizeTime(req.body && req.body.to);
+  const slotGroup = Number(req.body && req.body.group) || 0;
+  const hasSlot = !!(slotFrom && slotTo && toMinutes(slotTo) > toMinutes(slotFrom));
   const time = nowTime();
   if (!code) return res.status(400).json({ ok: false, status: 'invalid', message: 'باركود غير صالح' });
 
@@ -630,6 +714,16 @@ router.post('/membership-cards/scan', async function (req, res) {
     let groupId;
     if (targetSession) {
       groupId = await groupForSwimmerInSession(sessionId, swimmer.id);
+    } else if (hasSlot) {
+      if (slotGroup && Number(swimmer.group_id) !== slotGroup &&
+          !(await db.prepare('SELECT 1 FROM swimmer_group WHERE swimmer_id = ? AND group_id = ?').get(swimmer.id, slotGroup))) {
+        return res.json({ ok: false, status: 'not_found', message: 'اللاعب ليس في المجموعة المختارة في هذا الموعد', swimmer: base });
+      }
+      const found = await findSlotSessionForSwimmer(swimmer, d, slotFrom, slotTo, slotGroup, req);
+      if (!found) return res.json({ ok: false, status: 'invalid_session', message: 'لا توجد حصة في هذا الموعد للمجموعة المختارة' });
+      sessionId = found.sessionId;
+      groupId = found.groupId;
+      targetSession = await db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
     } else {
       const found = await findOrCreateSession(swimmer, d, req);
       sessionId = found.sessionId;
