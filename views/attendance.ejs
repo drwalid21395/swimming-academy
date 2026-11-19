@@ -1,8 +1,8 @@
 <%- include('partials/layout_top', { title: 'الحضور والغياب', active: 'attendance' }) %>
 <div class="page-head">
   <div>
-    <div class="page-title"><i class="fas fa-clipboard-user"></i> الحضور والغياب</div>
-    <div class="page-sub">تسجيل ومتابعة حضور اللاعبين في جميع المجموعات</div>
+    <div class="page-title"><i class="fas fa-clipboard-user"></i> الحصص والحضور</div>
+    <div class="page-sub">حدد التاريخ والوقت، اضغط «عرض الجميع»، ثم سجّل الحضور والغياب عادياً أو بالباركود — وتُحفظ كحصة جديدة.</div>
   </div>
   <div class="spacer"></div>
   <div class="flex gap-1" style="flex-wrap:wrap">
@@ -14,7 +14,7 @@
       <input type="date" name="date" class="form-control" value="<%= date %>">
       <button class="btn btn-outline" type="submit"><i class="fas fa-magnifying-glass"></i> عرض</button>
     </form>
-    <% if (canScan) { %><a href="/attendance/scan" class="btn btn-success"><i class="fas fa-qrcode"></i> مسح الباركود</a><% } %>
+    <% if (canScan) { %><a href="/attendance/scan?date=<%= date %>" class="btn btn-success"><i class="fas fa-qrcode"></i> مسح الباركود</a><% } %>
     <% if (canAddSession) { %><a href="/sessions/bulk-new?date=<%= date %>" class="btn btn-outline" title="إضافة حصة ثم تسجيل حضورها"><i class="fas fa-plus"></i> حصة جديدة</a><% } %>
     <a href="/reports/attendance/daily?date=<%= date %>" class="btn btn-primary" title="طباعة / تحميل PDF لهذا اليوم"><i class="fas fa-file-pdf"></i> طباعة PDF</a>
   </div>
@@ -22,11 +22,56 @@
 
 <%- include('partials/schedule_tabs', { activeTab: 'attendance' }) %>
 
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;margin-bottom:14px">
+  <div class="card" id="quickSessionCard">
+    <div class="card-header"><h3><i class="fas fa-bolt text-primary"></i> حصة جديدة بوقت محدد</h3></div>
+    <div class="card-body">
+      <% if (canSave && groups.length) { %>
+        <form id="quickSessionForm" class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="margin:0"><label class="font-11 text-muted">التاريخ</label><input type="date" name="date" class="form-control" value="<%= date %>"></div>
+          <div class="form-group" style="margin:0;min-width:180px"><label class="font-11 text-muted">المجموعة</label>
+            <select name="group_id" class="form-control">
+              <% groups.forEach(function (g) { %><option value="<%= g.id %>"><%= g.name %></option><% }); %>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0"><label class="font-11 text-muted">من</label><input type="time" name="time_from" class="form-control" value="16:00" required></div>
+          <div class="form-group" style="margin:0"><label class="font-11 text-muted">إلى</label><input type="time" name="time_to" class="form-control" value="17:00" required></div>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-users"></i> عرض الجميع وتسجيل الحضور</button>
+        </form>
+        <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> لا يمكن تكرار الحصة لنفس المجموعة ولا حضور نفس اللاعب في وقت متداخل في اليوم نفسه.</div>
+      <% } else { %>
+        <div class="empty-state"><i class="fas fa-user-slash"></i><p><%= groups.length ? 'ليست لديك صلاحية إنشاء حصة' : 'لا توجد مجموعات تدريبية بعد' %></p></div>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="card" id="daySessionsCard">
+    <div class="card-header"><h3><i class="fas fa-clock-rotate-left"></i> حصص يوم <%= fmtDate(date) %> <span class="badge badge-gray"><%= daySessions.length %></span></h3></div>
+    <div class="card-body" style="max-height:260px;overflow:auto">
+      <% if (daySessions.length) { %>
+        <% daySessions.forEach(function (ses) { %>
+          <div class="flex gap-1 items-center" style="justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--card-border);flex-wrap:wrap">
+            <div>
+              <b dir="ltr"><%= ses.start_time %> — <%= ses.end_time || '—' %></b>
+              <div class="font-11 text-muted"><%= ses.group_name || 'بدون مجموعة' %><% if (ses.coach_name) { %> · <%= ses.coach_name %><% } %> · <%= ses.marked %> لاعب</div>
+            </div>
+            <div class="flex gap-1">
+              <a href="/attendance/session/<%= ses.id %>" class="btn btn-outline btn-sm"><i class="fas fa-clipboard-user"></i> الحضور</a>
+              <% if (canScan) { %><a href="/attendance/scan?session=<%= ses.id %>" class="btn btn-success btn-sm"><i class="fas fa-qrcode"></i> مسح</a><% } %>
+            </div>
+          </div>
+        <% }); %>
+      <% } else { %>
+        <div class="empty-state"><i class="fas fa-calendar-xmark"></i><p>لا توجد حصص في هذا اليوم</p></div>
+      <% } %>
+    </div>
+  </div>
+</div>
+
 <div class="card" style="margin-bottom:14px">
   <div class="card-body" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
     <span class="badge badge-success"><i class="fas fa-bolt"></i> حفظ تلقائي</span>
-    <span class="text-muted font-12">أي تغيير في الحضور يُحفظ فوراً، والحصة تُنشأ تلقائياً لحضور اليوم بدون خطوة إضافية.</span>
-    <% if (canScan) { %><a href="/attendance/scan?date=<%= date %>" class="btn btn-success btn-sm" style="margin-inline-start:auto"><i class="fas fa-qrcode"></i> مسح الباركود وتسجيل الحضور</a><% } %>
+    <span class="text-muted font-12">أي تغيير في الحضور يُحفظ فوراً. كل حصة بوقتها تُسجَّل بشكل مستقل.</span>
   </div>
 </div>
 
@@ -40,59 +85,68 @@
 
 <% if (groups.length) { %>
   <% groups.forEach(function (g, gi) { %>
-    <div class="card att-group-card" data-gi="<%= gi %>">
+    <div class="card att-group-card" data-gi="<%= gi %>" style="margin-bottom:14px">
       <div class="card-header att-group-head">
         <h3><i class="fas fa-people-group"></i> <%= g.name %>
-          <% if (g.session) { %><span class="badge badge-success"><i class="fas fa-clock"></i> <%= g.session.start_time %></span><% } else { %><span class="badge badge-gray">لا توجد حصة في هذا اليوم</span><% } %>
+          <span class="badge badge-gray"><%= g.sessions.length %> حصة</span>
         </h3>
         <span class="text-muted font-12"><i class="fas fa-user-tie"></i> <%= g.coach_name || '—' %> · <i class="fas fa-water"></i> <%= g.pool_name || '—' %> · <b><%= g.members.length %></b> لاعب</span>
       </div>
       <div class="card-body att-card">
-        <% if (g.members.length) { %>
-          <div class="flex gap-1" style="margin-bottom:12px;flex-wrap:wrap">
-            <% if (canSave) { %>
-              <button class="btn btn-success btn-sm" data-mark-all="present" data-session="<%= g.session ? g.session.id : '' %>"><i class="fas fa-check"></i> الكل حاضر</button>
-              <button class="btn btn-outline-danger btn-sm" data-mark-all="absent" data-session="<%= g.session ? g.session.id : '' %>"><i class="fas fa-xmark"></i> الكل غائب</button>
-              <button class="btn btn-outline-warning btn-sm" data-mark-all="excused" data-session="<%= g.session ? g.session.id : '' %>"><i class="fas fa-book"></i> الكل معتذر</button>
-              <button class="btn btn-outline btn-sm att-save-btn" data-group="<%= g.id %>" data-date="<%= date %>"><i class="fas fa-floppy-disk"></i> حفظ احتياطي</button>
-            <% } %>
-            <% if (g.session) { %><a href="/attendance/session/<%= g.session.id %>" class="btn btn-outline btn-sm"><i class="fas fa-clipboard-user"></i> صفحة تسجيل الحضور</a><a href="/attendance/scan?session=<%= g.session.id %>" class="btn btn-success btn-sm"><i class="fas fa-qrcode"></i> مسح</a><% } %>
-          </div>
-          <div class="att-row" style="border-bottom-width:2px">
-            <div class="att-name"><b>اللاعب</b></div>
-            <div class="att-btns">
-              <span class="att-btn att-head" title="حاضر" style="cursor:default"><i class="fas fa-check"></i> <span>حاضر</span></span>
-              <span class="att-btn att-head" title="غائب" style="cursor:default"><i class="fas fa-xmark"></i> <span>غائب</span></span>
-              <span class="att-btn att-head" title="معتذر" style="cursor:default"><i class="fas fa-book"></i> <span>معتذر</span></span>
-              <span class="att-btn att-head" title="متأخر" style="cursor:default"><i class="fas fa-clock"></i> <span>متأخر</span></span>
-            </div>
-          </div>
-          <% g.members.forEach(function (m) { %>
-            <div class="att-row">
-              <div class="att-name">
-                <div class="flex items-center gap-1">
-                  <div class="avatar-sm"><%= (m.full_name || 'س').trim().charAt(0) %></div>
-                  <div>
-                    <b><%= m.full_name %></b>
-                    <div class="font-11 text-muted"><%= m.membership_no || '' %></div>
-                    <% if (m.sub) { %>
-                      <span class="badge <%= m.sub.state === 'expired' ? 'badge-danger' : (m.sub.state === 'soon' ? 'badge-warning' : 'badge-success') %>" style="margin-top:2px" title="<%= m.sub.state === 'expired' ? 'الاشتراك منتهٍ' : 'ينتهي الاشتراك في ' + fmtDate(m.sub.date) %>">
-                        <i class="fas fa-calendar-check"></i> ينتهي: <%= fmtDate(m.sub.date) %>
-                      </span>
-                    <% } %>
-                  </div>
+        <% if (!g.members.length) { %>
+          <div class="empty-state"><i class="fas fa-user-slash"></i><p>لا يوجد لاعبون في هذه المجموعة</p></div>
+        <% } else if (!g.sessions.length) { %>
+          <div class="empty-state"><i class="fas fa-calendar-xmark"></i><p>لا توجد حصص لهذه المجموعة في هذا اليوم</p></div>
+        <% } else { %>
+          <% g.sessions.forEach(function (ses) { %>
+            <div class="att-session" style="border:1px solid var(--card-border);border-radius:10px;padding:10px;margin-bottom:12px">
+              <div class="flex gap-1 items-center" style="flex-wrap:wrap;margin-bottom:10px">
+                <b><i class="fas fa-clock text-primary"></i> <span dir="ltr"><%= ses.start_time %> — <%= ses.end_time || '—' %></span></b>
+                <span class="badge badge-gray"><%= ses.marked || 0 %> لاعب مسجّل</span>
+                <span class="spacer"></span>
+                <% if (canSave) { %>
+                  <button class="btn btn-success btn-sm" data-mark-all="present" data-session="<%= ses.id %>"><i class="fas fa-check"></i> الكل حاضر</button>
+                  <button class="btn btn-outline-danger btn-sm" data-mark-all="absent" data-session="<%= ses.id %>"><i class="fas fa-xmark"></i> الكل غائب</button>
+                  <button class="btn btn-outline-warning btn-sm" data-mark-all="excused" data-session="<%= ses.id %>"><i class="fas fa-book"></i> الكل معتذر</button>
+                <% } %>
+                <a href="/attendance/session/<%= ses.id %>" class="btn btn-outline btn-sm"><i class="fas fa-clipboard-user"></i> صفحة الحضور</a>
+                <% if (canScan) { %><a href="/attendance/scan?session=<%= ses.id %>" class="btn btn-success btn-sm"><i class="fas fa-qrcode"></i> مسح</a><% } %>
+              </div>
+              <div class="att-row" style="border-bottom-width:2px">
+                <div class="att-name"><b>اللاعب</b></div>
+                <div class="att-btns">
+                  <span class="att-btn att-head" title="حاضر" style="cursor:default"><i class="fas fa-check"></i> <span>حاضر</span></span>
+                  <span class="att-btn att-head" title="غائب" style="cursor:default"><i class="fas fa-xmark"></i> <span>غائب</span></span>
+                  <span class="att-btn att-head" title="معتذر" style="cursor:default"><i class="fas fa-book"></i> <span>معتذر</span></span>
+                  <span class="att-btn att-head" title="متأخر" style="cursor:default"><i class="fas fa-clock"></i> <span>متأخر</span></span>
                 </div>
               </div>
-              <div class="att-btns">
-                <button class="att-btn <%= (g.attMap[m.id] || 'absent') === 'present' ? 'active-present' : '' %>" data-status="present" data-swimmer="<%= m.id %>" <%= g.session ? 'data-session="' + g.session.id + '"' : '' %> title="حاضر"><i class="fas fa-check"></i> <span>حاضر</span></button>
-                <button class="att-btn <%= (g.attMap[m.id] || 'absent') === 'absent' ? 'active-absent' : '' %>" data-status="absent" data-swimmer="<%= m.id %>" <%= g.session ? 'data-session="' + g.session.id + '"' : '' %> title="غائب"><i class="fas fa-xmark"></i> <span>غائب</span></button>
-                <button class="att-btn <%= (g.attMap[m.id] || 'absent') === 'excused' ? 'active-excused' : '' %>" data-status="excused" data-swimmer="<%= m.id %>" <%= g.session ? 'data-session="' + g.session.id + '"' : '' %> title="معتذر"><i class="fas fa-book"></i> <span>معتذر</span></button>
-                <button class="att-btn <%= (g.attMap[m.id] || 'absent') === 'late' ? 'active-late' : '' %>" data-status="late" data-swimmer="<%= m.id %>" <%= g.session ? 'data-session="' + g.session.id + '"' : '' %> title="متأخر"><i class="fas fa-clock"></i> <span>متأخر</span></button>
-              </div>
+              <% g.members.forEach(function (m) { %>
+                <div class="att-row">
+                  <div class="att-name">
+                    <div class="flex items-center gap-1">
+                      <div class="avatar-sm"><%= (m.full_name || 'س').trim().charAt(0) %></div>
+                      <div>
+                        <b><%= m.full_name %></b>
+                        <div class="font-11 text-muted"><%= m.membership_no || '' %></div>
+                        <% if (m.sub) { %>
+                          <span class="badge <%= m.sub.state === 'expired' ? 'badge-danger' : (m.sub.state === 'soon' ? 'badge-warning' : 'badge-success') %>" style="margin-top:2px" title="<%= m.sub.state === 'expired' ? 'الاشتراك منتهٍ' : 'ينتهي الاشتراك في ' + fmtDate(m.sub.date) %>">
+                            <i class="fas fa-calendar-check"></i> ينتهي: <%= fmtDate(m.sub.date) %>
+                          </span>
+                        <% } %>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="att-btns">
+                    <button class="att-btn <%= (ses.attMap[m.id] || 'absent') === 'present' ? 'active-present' : '' %>" data-status="present" data-swimmer="<%= m.id %>" data-session="<%= ses.id %>" title="حاضر"><i class="fas fa-check"></i> <span>حاضر</span></button>
+                    <button class="att-btn <%= (ses.attMap[m.id] || 'absent') === 'absent' ? 'active-absent' : '' %>" data-status="absent" data-swimmer="<%= m.id %>" data-session="<%= ses.id %>" title="غائب"><i class="fas fa-xmark"></i> <span>غائب</span></button>
+                    <button class="att-btn <%= (ses.attMap[m.id] || 'absent') === 'excused' ? 'active-excused' : '' %>" data-status="excused" data-swimmer="<%= m.id %>" data-session="<%= ses.id %>" title="معتذر"><i class="fas fa-book"></i> <span>معتذر</span></button>
+                    <button class="att-btn <%= (ses.attMap[m.id] || 'absent') === 'late' ? 'active-late' : '' %>" data-status="late" data-swimmer="<%= m.id %>" data-session="<%= ses.id %>" title="متأخر"><i class="fas fa-clock"></i> <span>متأخر</span></button>
+                  </div>
+                </div>
+              <% }); %>
             </div>
           <% }); %>
-        <% } else { %>
-          <div class="empty-state"><i class="fas fa-user-slash"></i><p>لا يوجد لاعبون في هذه المجموعة</p></div>
         <% } %>
       </div>
     </div>
@@ -105,29 +159,27 @@
 
 <script>
 (function () {
-  document.querySelectorAll('.att-save-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var card = btn.closest('.att-group-card');
-      var statuses = {};
-      card.querySelectorAll('.att-row').forEach(function (row) {
-        var swimmerBtn = row.querySelector('.att-btn[data-swimmer]');
-        if (!swimmerBtn) return;
-        var id = swimmerBtn.getAttribute('data-swimmer');
-        var active = row.querySelector('.att-btn.active-present, .att-btn.active-absent, .att-btn.active-excused, .att-btn.active-late');
-        statuses[id] = active ? active.getAttribute('data-status') : 'present';
-      });
+  var form = document.getElementById('quickSessionForm');
+  if (form) {
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var btn = form.querySelector('button[type="submit"]');
+      var payload = {
+        date: form.elements.date.value,
+        group_id: form.elements.group_id.value,
+        time_from: form.elements.time_from.value,
+        time_to: form.elements.time_to.value
+      };
       btn.disabled = true;
-      fetch('/attendance/group-save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ group_id: btn.dataset.group, date: btn.dataset.date, statuses: statuses })
+      fetch('/attendance/quick-session', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       }).then(function (r) { return r.json(); }).then(function (res) {
         btn.disabled = false;
-        if (res.ok) { App.showToast('تم حفظ حضور المجموعة (' + (res.count || 0) + ' لاعب)', 'success'); }
-        else { App.showToast(res.error || 'فشل الحفظ', 'danger'); }
-      }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'danger'); });
+        if (res.ok) { location.href = res.url; }
+        else { App.showToast(res.error || 'تعذر إنشاء الحصة', 'error'); }
+      }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
     });
-  });
+  }
 })();
 </script>
 <%- include('partials/layout_bottom') %>

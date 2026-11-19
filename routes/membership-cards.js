@@ -12,7 +12,7 @@ const { audit, canView, canAdd, canEdit, canExport, today } = require('../lib/he
 const { setFlash } = require('../lib/auth-cookie');
 const { nextMembership, isUniqueViolation } = require('../lib/membership');
 const { effectiveSport, activeSport, sportClause, groupClause } = require('../lib/sport-context');
-const { ensureGroupSession, findGroupSession, groupRoster, sessionRoster, sessionGroupIds, attendanceStatuses, seedAbsentForSession, syncGroupMembers, groupStartTime } = require('../lib/attendance');
+const { ensureGroupSession, findGroupSession, groupRoster, sessionRoster, sessionGroupIds, attendanceStatuses, seedAbsentForSession, syncGroupMembers, groupStartTime, swimmerTimeClash } = require('../lib/attendance');
 const { cardSvg, cardPdfDoc, cardsPdfDoc, barcodePng, normalizeBarcode, isoDate } = require('../lib/membership-card');
 const { buildZip } = require('../lib/zip');
 const { buildCardMessage, waLinkFor, logMessage, sendCardImageViaApi } = require('../lib/whatsapp');
@@ -665,6 +665,22 @@ router.post('/membership-cards/scan', async function (req, res) {
         ok: false, status: 'duplicate', message: 'مسجّل غائب بالفعل في هذه الحصة',
         swimmer: base, time: time, session_id: sessionId, statuses: statuses, stats: stats
       });
+    }
+
+    /* منع تسجيل حضور اللاعب أكثر من مرة في نفس التوقيت (حتى لو كانت الحصة أنشئت من مسار آخر) */
+    if (mode === 'present' && targetSession) {
+      const clash = await swimmerTimeClash(swimmer.id, d, targetSession.start_time, targetSession.end_time, sessionId);
+      if (clash) {
+        await db.prepare(`INSERT INTO membership_card_scans
+          (swimmer_id, membership_no, mode, result, scan_date, scan_time, created_by)
+          VALUES (?,?,?,?,?,?,?)`)
+          .run(swimmer.id, swimmer.membership_no, 'present', 'time_clash', d, time, req.currentUser.id);
+        return res.json({
+          ok: false, status: 'time_clash',
+          message: 'اللاعب مسجّل حاضراً بالفعل في حصة متداخلة في هذا التوقيت' + (clash.title ? ': ' + clash.title : ''),
+          swimmer: base, time: time, session_id: sessionId, statuses: statuses, stats: stats
+        });
+      }
     }
 
     /* عند المسح: تسجيل باقي اللاعبين غياباً تلقائياً (لا يغيّر أي حالة محفوظة مسبقاً) */

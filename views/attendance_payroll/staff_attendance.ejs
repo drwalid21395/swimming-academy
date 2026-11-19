@@ -16,6 +16,33 @@
   </div>
 </div>
 
+<div class="card" style="margin-bottom:14px" id="staffQuickCard">
+  <div class="card-header"><h3><i class="fas fa-bolt text-primary"></i> فترة جديدة بوقت محدد</h3></div>
+  <div class="card-body">
+    <% if (canAdd && staff.length) { %>
+      <form id="staffQuickForm" class="flex gap-1" style="flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">التاريخ</label><input type="date" name="date" class="form-control" value="<%= date %>"></div>
+        <div class="form-group" style="margin:0;min-width:180px"><label class="font-11 text-muted">الموظف</label>
+          <select name="staff_id" class="form-control">
+            <% staff.forEach(function (s) { %><option value="<%= s.id %>"><%= s.full_name %></option><% }); %>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">من</label><input type="time" name="time_from" class="form-control" value="16:00" required></div>
+        <div class="form-group" style="margin:0"><label class="font-11 text-muted">إلى</label><input type="time" name="time_to" class="form-control" value="17:00" required></div>
+        <div class="form-group" style="margin:0;min-width:120px"><label class="font-11 text-muted">الحالة</label>
+          <select name="status" class="form-control">
+            <% STATUS.forEach(function (st) { %><option value="<%= st.value %>" <%= st.value === 'حاضر' ? 'selected' : '' %>><%= st.label %></option><% }); %>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> تسجيل الفترة</button>
+      </form>
+      <div class="form-hint" style="margin-top:8px"><i class="fas fa-circle-info"></i> يمكن للموظف أكثر من فترة في اليوم، بشرط ألا تتداخل الأوقات.</div>
+    <% } else { %>
+      <div class="empty-state"><i class="fas fa-user-slash"></i><p><%= staff.length ? 'ليست لديك صلاحية إضافة حضور' : 'لا يوجد موظفون نشطون' %></p></div>
+    <% } %>
+  </div>
+</div>
+
 <div class="kpi-row">
   <div class="kpi"><div class="k-val text-success"><%= kpi.present %></div><div class="k-lbl">حاضر</div></div>
   <div class="kpi"><div class="k-val text-danger"><%= kpi.absent %></div><div class="k-lbl">غائب</div></div>
@@ -55,6 +82,9 @@
               <div>
                 <b><%= s.full_name %></b>
                 <div class="font-11 text-muted"><%= s.job_title || '' %><% if (s.branch_name) { %> · <%= s.branch_name %><% } %></div>
+                <% if (s.atts && s.atts.length) { %>
+                  <div class="font-11 text-primary" dir="ltr"><%= s.atts.map(function (a) { return (a.check_in || '—') + ' — ' + (a.check_out || '—'); }).join(' , ') %></div>
+                <% } %>
               </div>
             </div>
           </div>
@@ -98,6 +128,29 @@
 
 <script>
 (function () {
+  var quick = document.getElementById('staffQuickForm');
+  if (quick) {
+    quick.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var btn = quick.querySelector('button[type="submit"]');
+      var payload = {
+        date: quick.elements.date.value,
+        staff_id: quick.elements.staff_id.value,
+        time_from: quick.elements.time_from.value,
+        time_to: quick.elements.time_to.value,
+        status: quick.elements.status.value
+      };
+      btn.disabled = true;
+      fetch('/staff-attendance/quick-session', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      }).then(function (r) { return r.json(); }).then(function (res) {
+        btn.disabled = false;
+        if (res.ok) { App.showToast('تم تسجيل الفترة', 'success'); setTimeout(function () { location.reload(); }, 400); }
+        else { App.showToast(res.error || 'تعذر تسجيل الفترة', 'error'); }
+      }).catch(function () { btn.disabled = false; App.showToast('تعذر الاتصال بالخادم', 'error'); });
+    });
+  }
+
   var card = document.getElementById('staffAttCard');
   if (!card) return;
 

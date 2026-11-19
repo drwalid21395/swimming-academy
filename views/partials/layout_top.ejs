@@ -132,6 +132,8 @@
       <% const curPath = (typeof currentPath !== 'undefined') ? currentPath : ''; %>
       <% const activeMap = { trainerAttendance: '/trainer-attendance', staffAttendance: '/staff-attendance', payroll: '/payroll', coachPayments: '/coach-payments', dashboard: '/', swimmers: '/swimmers', guardians: '/guardians', coaches: '/coaches', staff: '/staff', programs: '/programs', levels: '/levels', groups: '/groups', sessions: '/sessions', attendance: '/sessions', membershipCards: '/membership-cards', privateTraining: '/private-training', waterRentals: '/water-rentals', assessments: '/assessments', tests: '/tests', teams: '/teams', competitions: '/competitions', subscriptions: '/subscriptions', payments: '/payments', revenues: '/revenues', expenses: '/expenses', incoming: '/incoming', outgoing: '/outgoing', documents: '/documents', notifications: '/notifications', complaints: '/complaints', reservations: '/reservations', sports: '/sports', reports: '/reports', branches: '/branches', pools: '/pools', schools: '/schools', users: '/users', settings: '/settings', auditLog: '/audit-log', ai_replies: '/ai-replies' }; %>
       <% function isNavActive(url) { if (url === '/') return curPath === '/'; return curPath === url || curPath.indexOf(url + '/') === 0; } %>
+      <% /* قسم الحصص والحضور يفتح شاشة الحضور أولاً لمن يملك صلاحيتها */ %>
+      <% function itemHref(item) { return (item.altUrl && typeof canView === 'function' && canView(user, item.altModule)) ? item.altUrl : item.url; } %>
       <% let bestUrl = ''; nav.forEach(function (it) { if (it.url && isNavActive(it.url) && it.url.length > bestUrl.length) bestUrl = it.url; }); %>
       <% const inNav = bestUrl !== ''; %>
       <% const activeUrl = activeMap[active] || ''; %>
@@ -147,7 +149,7 @@
         </button>
         <div class="nav-group" id="<%= groupId %>" hidden>
           <% visible.forEach(function (item) { %>
-            <a href="<%= item.url %>" class="nav-item <%= (inNav ? item.url === bestUrl : (activeUrl && item.url === activeUrl)) ? 'active' : '' %>">
+            <a href="<%= itemHref(item) %>" class="nav-item <%= (inNav ? item.url === bestUrl : (activeUrl && item.url === activeUrl)) ? 'active' : '' %>">
               <i class="fas <%= item.icon %>"></i><span><%= item.label %></span>
               <% if (item.module === 'notifications' && typeof unreadCount !== 'undefined' && unreadCount > 0) { %><span class="nav-badge"><%= unreadCount %></span><% } %>
             </a>

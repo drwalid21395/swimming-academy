@@ -14,6 +14,7 @@ const { db } = require('../lib/db');
 const { getAcademyId } = require('../lib/tenant-context');
 const { canView, canAdd, canEdit, canDel, canExport, money, fmtMoney, today, fmtDate, fmtDateTime, audit, parseJSON } = require('../lib/helpers');
 const { activeSport, sportClause, groupClause, sessionClause } = require('../lib/sport-context');
+const { overlaps, validateRange, toMinutes } = require('../lib/attendance-time');
 
 /* ---------- حالات الحضور ---------- */
 const TRAINER_STATUS = [
@@ -485,6 +486,36 @@ router.get('/api/trainer-rates/:coachId', async function (req, res) {
   res.json({ ok: true, rate: r });
 });
 
+/* حصة جديدة للمدرب بوقت محدد — مع منع تكرار نفس المدرب في وقت متداخل */
+router.post('/trainer-attendance/quick-session', async function (req, res) {
+  if (!canAdd(req.currentUser, 'trainerAttendance')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
+  const date = String(req.body.date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ ok: false, error: 'تاريخ غير صحيح' });
+  const range = validateRange(req.body.time_from, req.body.time_to);
+  if (range.error) return res.status(400).json({ ok: false, error: range.error });
+  const coachId = Number(req.body.coach_id || 0);
+  const coach = await db.prepare('SELECT * FROM coaches WHERE id = ?').get(coachId);
+  if (!coach) return res.status(400).json({ ok: false, error: 'اختر المدرب أولاً' });
+  const existing = await db.prepare("SELECT start_time, end_time FROM trainer_session_attendance WHERE coach_id = ? AND date = ? AND status IN ('حاضر','متأخر','بديل')").all(coachId, date);
+  for (const a of existing) {
+    if (overlaps(range.from, range.to, a.start_time, a.end_time)) return res.json({ ok: false, error: 'المدرب مسجّل بالفعل في حصة متداخلة في هذا التوقيت' });
+  }
+  const rate = await effectiveTrainerRate(coachId, coach.branch_id || null);
+  const durationMin = toMinutes(range.to) - toMinutes(range.from);
+  const info = await db.prepare(`INSERT INTO sessions (group_id, title, date, start_time, end_time, coach_id, status, note, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?)`)
+    .run(null, (coach.full_name || ('مدرب #' + coachId)) + ' - ' + date + ' (' + range.from + ')',
+      date, range.from, range.to, coachId, 'scheduled', 'أُنشئت من شاشة حضور المدربين', req.currentUser.id);
+  const sessionId = Number(info.lastInsertRowid || 0);
+  const rec = await db.prepare(`INSERT INTO trainer_session_attendance
+    (session_id, coach_id, date, start_time, end_time, duration_min, status, session_rate, base_rate, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(sessionId, coachId, date, range.from, range.to, durationMin, String(req.body.status || 'حاضر'), rate.effective, rate.effective, req.currentUser.id);
+  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'trainerAttendance', Number(rec.lastInsertRowid || 0),
+    'حصة جديدة بالوقت: ' + (coach.full_name || coachId) + ' — ' + date + ' (' + range.from + ' - ' + range.to + ')', req);
+  res.json({ ok: true, id: Number(rec.lastInsertRowid || 0) });
+});
+
 /* ================================================================
    حضور المدربين (سجل + ترشيح بالشهر)
 ================================================================ */
@@ -511,8 +542,9 @@ router.get('/trainer-attendance', async function (req, res) {
     r.amount = amountForAttendance(r, pol);
   });
 
-  const dayAtt = {};
-  (await db.prepare('SELECT * FROM trainer_session_attendance WHERE 1=1' + tacScope(activeSport(req)) + placeFilterU + ' AND date = ?').all(date)).forEach(a => { if (!dayAtt[a.coach_id]) dayAtt[a.coach_id] = a; });
+  const dayAtt = {}, dayAtts = {};
+  const dayRows = await db.prepare('SELECT * FROM trainer_session_attendance WHERE 1=1' + tacScope(activeSport(req)) + placeFilterU + ' AND date = ? ORDER BY start_time, id').all(date);
+  dayRows.forEach(a => { if (!dayAtt[a.coach_id]) dayAtt[a.coach_id] = a; if (!dayAtts[a.coach_id]) dayAtts[a.coach_id] = []; dayAtts[a.coach_id].push(a); });
 
   const sessionsToday = await db.prepare(`SELECT se.group_id, se.coach_id, se.start_time, g.name AS group_name FROM sessions se LEFT JOIN groups g ON g.id = se.group_id WHERE se.date = ? AND se.deleted_at IS NULL` + sessionClause(activeSport(req), 'se')).all(date);
   const timeMap = {};
@@ -532,11 +564,12 @@ router.get('/trainer-attendance', async function (req, res) {
   const sheet = coaches.map(c => Object.assign({}, c, {
     time: timeMap[c.id] || null,
     group_name: grpMap[c.id] || null,
-    att: dayAtt[c.id] || null
+    att: dayAtt[c.id] || null,
+    atts: dayAtts[c.id] || []
   }));
 
   let present = 0, absent = 0, excused = 0, late = 0;
-  Object.keys(dayAtt).forEach(k => { const st = dayAtt[k].status; if (st === 'حاضر') present++; else if (st === 'غائب') absent++; else if (st === 'معتذر') excused++; else if (st === 'متأخر') late++; });
+  dayRows.forEach(a => { const st = a.status; if (st === 'حاضر') present++; else if (st === 'غائب') absent++; else if (st === 'معتذر') excused++; else if (st === 'متأخر') late++; });
   const yday = (new Date(Date.now() - 86400000)).toISOString().slice(0, 10);
   const branches = await db.prepare(`SELECT id, name FROM branches ORDER BY name`).all();
   const pools = await db.prepare(`SELECT p.id, p.name, p.branch_id FROM pools p ORDER BY p.name`).all();
@@ -633,6 +666,30 @@ router.post('/trainer-attendance/save-day', async function (req, res) {
   res.json({ ok: true, count: n });
 });
 
+/* حصة/فترة جديدة للموظف بوقت محدد — مع منع تكرار نفس الموظف في وقت متداخل */
+router.post('/staff-attendance/quick-session', async function (req, res) {
+  if (!canAdd(req.currentUser, 'staffAttendance')) return res.status(403).json({ ok: false, error: 'غير مصرح' });
+  const date = String(req.body.date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ ok: false, error: 'تاريخ غير صحيح' });
+  const range = validateRange(req.body.time_from, req.body.time_to);
+  if (range.error) return res.status(400).json({ ok: false, error: range.error });
+  const staffId = Number(req.body.staff_id || 0);
+  const staffRow = await db.prepare('SELECT * FROM staff WHERE id = ?').get(staffId);
+  if (!staffRow) return res.status(400).json({ ok: false, error: 'اختر الموظف أولاً' });
+  const existing = await db.prepare("SELECT check_in, check_out FROM staff_attendance WHERE staff_id = ? AND date = ? AND status IN ('حاضر','متأخر')").all(staffId, date);
+  for (const a of existing) {
+    if (overlaps(range.from, range.to, a.check_in, a.check_out)) return res.json({ ok: false, error: 'الموظف مسجّل بالفعل في فترة متداخلة في هذا التوقيت' });
+  }
+  const rate = isPerSessionStaff(staffRow) ? Number(staffRow.salary || 0) : 0;
+  const rec = await db.prepare(`INSERT INTO staff_attendance
+    (staff_id, branch_id, date, check_in, check_out, status, shift_count, session_rate, base_rate, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(staffId, staffRow.branch_id || null, date, range.from, range.to, String(req.body.status || 'حاضر'), 1, rate, rate, req.currentUser.id);
+  audit(req.currentUser.id, req.currentUser.full_name, 'add', 'staffAttendance', Number(rec.lastInsertRowid || 0),
+    'فترة جديدة بالوقت: ' + (staffRow.full_name || staffId) + ' — ' + date + ' (' + range.from + ' - ' + range.to + ')', req);
+  res.json({ ok: true, id: Number(rec.lastInsertRowid || 0) });
+});
+
 router.get('/staff-attendance', async function (req, res) {
   if (!canView(req.currentUser, 'staffAttendance')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const month = (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) ? req.query.month : today().slice(0, 7);
@@ -647,14 +704,15 @@ router.get('/staff-attendance', async function (req, res) {
     LEFT JOIN branches b ON b.id = st.branch_id
     WHERE (st.status IS NULL OR st.status = '' OR st.status = 'active' OR st.status = 'نشط' OR st.status = 'نشطة')
     ORDER BY st.full_name`).all();
-  const dayAtt = {};
-  (await db.prepare('SELECT * FROM staff_attendance WHERE date = ?').all(date)).forEach(a => { dayAtt[a.staff_id] = a; });
-  const sheet = staff.map(s => Object.assign({}, s, { att: dayAtt[s.id] || null }));
+  const dayAtt = {}, dayAtts = {};
+  const dayRows = await db.prepare('SELECT * FROM staff_attendance WHERE date = ? ORDER BY check_in, id').all(date);
+  dayRows.forEach(a => { if (!dayAtt[a.staff_id]) dayAtt[a.staff_id] = a; if (!dayAtts[a.staff_id]) dayAtts[a.staff_id] = []; dayAtts[a.staff_id].push(a); });
+  const sheet = staff.map(s => Object.assign({}, s, { att: dayAtt[s.id] || null, atts: dayAtts[s.id] || [] }));
   const staffRates = {};
   (await db.prepare('SELECT * FROM staff_rates').all()).forEach(r => staffRates[r.staff_id] = r);
   let present = 0, absent = 0, excused = 0, late = 0;
-  Object.keys(dayAtt).forEach(k => {
-    const st = dayAtt[k].status;
+  dayRows.forEach(a => {
+    const st = a.status;
     if (st === 'حاضر') present++; else if (st === 'غائب') absent++; else if (st === 'معتذر') excused++; else if (st === 'متأخر') late++;
   });
   const yday = (new Date(Date.now() - 86400000)).toISOString().slice(0, 10);

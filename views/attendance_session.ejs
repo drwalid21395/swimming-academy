@@ -20,6 +20,20 @@
   </div>
 </div>
 
+<% if (otherSessions && otherSessions.length) { %>
+<div class="card" style="margin-bottom:14px">
+  <div class="card-header"><h3><i class="fas fa-clock-rotate-left"></i> حصص أخرى في <%= fmtDate(s.date) %></h3></div>
+  <div class="card-body" style="display:flex;gap:8px;flex-wrap:wrap">
+    <% otherSessions.forEach(function (o) { %>
+      <a href="/attendance/session/<%= o.id %>" class="btn btn-outline btn-sm">
+        <i class="fas fa-clock"></i> <span dir="ltr"><%= o.start_time %> — <%= o.end_time || '—' %></span>
+        · <%= o.group_name || 'بدون مجموعة' %> · <%= o.marked %> لاعب
+      </a>
+    <% }); %>
+  </div>
+</div>
+<% } %>
+
 <div class="att-card card">
   <div class="card-header">
     <h3><i class="fas fa-users"></i> اللاعبون (<%= members.length %>)</h3>
