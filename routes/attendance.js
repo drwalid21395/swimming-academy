@@ -203,9 +203,11 @@ function applyPerSessionDisplay(row, balance, unclaimedAmount) {
 }
 
 /* مزامنة إجماليات كشف التعاقد بالحصة مع بنوده الفعلية (إصلاح الكشوف التي بقيت بقيمة صفر) */
-async function syncPerSessionTotals(row) {
+async function syncPerSessionTotals(row, ctx) {
   if (!row || !row.id || row.settled_at) return row;
-  const sum = await db.prepare('SELECT COALESCE(SUM(amount),0) AS s FROM payroll_items WHERE payroll_id = ?').get(row.id);
+  let sum;
+  if (ctx && ctx.payrollSums && ctx.payrollSums.has(row.id)) sum = { s: ctx.payrollSums.get(row.id) };
+  else sum = await db.prepare('SELECT COALESCE(SUM(amount),0) AS s FROM payroll_items WHERE payroll_id = ?').get(row.id);
   const gross = round2(sum && sum.s);
   const extras = round2(row.extras);
   const deductions = round2(row.deductions);
@@ -226,14 +228,17 @@ async function syncPerSessionTotals(row) {
   return row;
 }
 
-async function countSessionBalance(personType, personId, range) {
+async function countSessionBalance(personType, personId, range, ctx) {
   const id = Number(personId) || 0;
   if (!id) return { attended: 0, claimed: 0, unclaimed: 0, rate: 0, amountDue: 0 };
   const rw = rangeWhere(range);
   let rate = 0;
   if (personType === 'trainer') {
-    const r = await effectiveTrainerRate(id, null);
-    rate = Number(r.effective || 0);
+    if (ctx && ctx.trainerEffectiveRates && ctx.trainerEffectiveRates.has(id)) rate = Number(ctx.trainerEffectiveRates.get(id) || 0);
+    else {
+      const r = await effectiveTrainerRate(id, null);
+      rate = Number(r.effective || 0);
+    }
     const attendedRow = await db.prepare(`SELECT COUNT(*) AS c FROM trainer_session_attendance a
       WHERE a.coach_id = ? AND a.status IN (${coachPayableStatuses().map(() => '?').join(',')})` + rw.sql).get(id, ...coachPayableStatuses(), ...rw.args);
     const claimedRow = await db.prepare(`SELECT COUNT(*) AS c FROM trainer_session_attendance a
@@ -250,7 +255,7 @@ async function countSessionBalance(personType, personId, range) {
     return { attended, claimed, unclaimed: Math.max(0, attended - claimed), rate, claimedAmount, amountDue: Math.max(0, attended - claimed) * rate };
   }
   // staff
-  rate = await perSessionRateForStaff(id);
+  rate = (ctx && ctx.staffRates && ctx.staffRates.has(id)) ? Number(ctx.staffRates.get(id) || 0) : await perSessionRateForStaff(id);
   const attendedRow = await db.prepare(`SELECT COUNT(*) AS c FROM staff_attendance a
     WHERE a.staff_id = ? AND a.status IN (${staffPayableStatuses().map(() => '?').join(',')})` + rw.sql).get(id, ...staffPayableStatuses(), ...rw.args);
   const claimedRow = await db.prepare(`SELECT COUNT(*) AS c FROM staff_attendance a
@@ -262,13 +267,13 @@ async function countSessionBalance(personType, personId, range) {
   return { attended, claimed, unclaimed: Math.max(0, attended - claimed), rate, claimedAmount, amountDue: Math.max(0, attended - claimed) * rate };
 }
 
-async function listUnclaimedSessions(personType, personId, limit, range) {
+async function listUnclaimedSessions(personType, personId, limit, range, ctx) {
   const id = Number(personId) || 0;
   if (!id) return [];
   limit = Math.max(1, Math.min(500, Number(limit) || 100));
   const rw = rangeWhere(range);
   if (personType === 'trainer') {
-    const pol = (await getPolicy()).pol;
+    const pol = (ctx && ctx.policy) ? ctx.policy : (await getPolicy()).pol;
     const statuses = coachPayableStatuses();
     const ph = statuses.map(() => '?').join(',');
     const rows = await db.prepare(`SELECT a.*, g.name AS group_name,
@@ -301,7 +306,7 @@ async function listUnclaimedSessions(personType, personId, limit, range) {
     return out.slice(0, limit);
   }
   // staff
-  const rate = await perSessionRateForStaff(id);
+  const rate = (ctx && ctx.staffRates && ctx.staffRates.has(id)) ? Number(ctx.staffRates.get(id) || 0) : await perSessionRateForStaff(id);
   const statuses = staffPayableStatuses();
   const ph = statuses.map(() => '?').join(',');
   return await db.prepare(`SELECT a.id, a.date, a.status, a.session_rate,
@@ -1009,6 +1014,22 @@ function periodLabel(row) {
   const r = parsePeriod(row && row.period, row && row.from_date, row && row.to_date);
   return fmtDate(r.from) + ' ← ' + fmtDate(r.to);
 }
+/* مساعدات قراءة آمنة لتجميع الاستعلامات المتكررة في نفس الطلب.
+   التقسيم إلى دفعات يحفظنا من تجاوز حد متغيرات SQLite عند كثرة الكشوف. */
+function chunkIds(ids, size) {
+  const out = [];
+  const clean = Array.from(new Set((ids || []).map(Number).filter(n => Number.isFinite(n) && n > 0)));
+  for (let i = 0; i < clean.length; i += size) out.push(clean.slice(i, i + size));
+  return out;
+}
+async function mapByIds(baseSql, ids, keyFn, valueFn) {
+  const map = new Map();
+  for (const chunk of chunkIds(ids, 500)) {
+    const rows = await db.prepare(baseSql + ` IN (${chunk.map(() => '?').join(',')})`).all(...chunk);
+    rows.forEach(r => map.set(keyFn(r), valueFn ? valueFn(r) : r));
+  }
+  return map;
+}
 function overlapsRange(row, range) {
   const r = parsePeriod(row.period, row.from_date, row.to_date);
   return r.to >= range.from && r.from <= range.to;
@@ -1036,24 +1057,69 @@ router.get('/payroll', async function (req, res) {
     WHERE 1=1` + (ptype === 'trainer' ? ' AND p.person_type=\'trainer\'' : ptype === 'staff' ? ' AND p.person_type=\'staff\'' : '') + tpersonScope(activeSport(req), 'p') + `
     ORDER BY p.person_type, c.full_name, s.full_name`).all();
   const rows = allRows.filter(function (r) { return overlapsRange(r, range); });
+  function personIdOf(r) {
+    if (r.person_type === 'trainer') return r.coach_id;
+    if (r.person_type === 'staff') return r.staff_id;
+    return 0;
+  }
+
+  /* هذه القراءات كانت تتكرر لكل كشف؛ نجمعها مرة واحدة لنفس الطلب.
+     الحسابات والتحديثات كما هي، تغيّر فقط عدد رحلات قاعدة البيانات. */
+  const coachIds = rows.filter(r => r.person_type === 'trainer' && r.coach_id).map(r => r.coach_id);
+  const staffIds = rows.filter(r => r.person_type === 'staff' && r.staff_id).map(r => r.staff_id);
+  const coachTypes = await mapByIds('SELECT id, salary_type, contract_type FROM coaches WHERE id', coachIds, r => r.id);
+  const staffTypes = await mapByIds('SELECT id, salary_type, contract_type FROM staff WHERE id', staffIds, r => r.id);
+
+  const perSessionRows = rows.filter(function (r) {
+    const id = personIdOf(r);
+    if (!id) return false;
+    return r.person_type === 'trainer' ? isPerSessionCoach(coachTypes.get(id)) : isPerSessionStaff(staffTypes.get(id));
+  });
+
+  const ctx = {};
+  if (perSessionRows.length) {
+    ctx.payrollSums = await mapByIds(
+      'SELECT payroll_id, COALESCE(SUM(amount),0) s FROM payroll_items WHERE payroll_id',
+      perSessionRows.filter(r => r.id && !r.settled_at).map(r => r.id),
+      r => r.payroll_id,
+      r => r.s
+    );
+    ctx.policy = (await getPolicy()).pol;
+
+    const psTrainerIds = perSessionRows.filter(r => r.person_type === 'trainer' && r.coach_id).map(r => r.coach_id);
+    const psStaffIds = perSessionRows.filter(r => r.person_type === 'staff' && r.staff_id).map(r => r.staff_id);
+
+    if (psStaffIds.length) {
+      ctx.staffRates = await mapByIds('SELECT id, salary FROM staff WHERE id', psStaffIds, r => r.id, r => Number(r.salary || 0));
+    }
+
+    if (psTrainerIds.length) {
+      const rateRows = await mapByIds('SELECT id, coach_id, default_rate FROM trainer_rates WHERE coach_id', psTrainerIds, r => r.id);
+      const latestRate = new Map();
+      rateRows.forEach(function (tr) {
+        const cur = latestRate.get(tr.coach_id);
+        if (!cur || Number(tr.id) > Number(cur.id)) latestRate.set(tr.coach_id, tr);
+      });
+      const coachSalaries = await mapByIds('SELECT id, salary_amount FROM coaches WHERE id', psTrainerIds, r => r.id);
+      ctx.trainerEffectiveRates = new Map(psTrainerIds.map(function (id) {
+        const tr = latestRate.get(id);
+        const base = tr ? Number(tr.default_rate || 0) : 0;
+        const effective = base || Number((coachSalaries.get(id) || {}).salary_amount || 0);
+        return [id, effective];
+      }));
+    }
+  }
 
   // حساب رصيد الحصص للتعاقدات بالحصة
   for (const r of rows) {
-    let ps = false;
-    if (r.person_type === 'trainer' && r.coach_id) {
-      const coach = await db.prepare('SELECT salary_type, contract_type FROM coaches WHERE id = ?').get(r.coach_id);
-      ps = isPerSessionCoach(coach);
-    } else if (r.person_type === 'staff' && r.staff_id) {
-      const staff = await db.prepare('SELECT salary_type, contract_type FROM staff WHERE id = ?').get(r.staff_id);
-      ps = isPerSessionStaff(staff);
-    }
+    const personId = personIdOf(r);
+    const ps = !!personId && (r.person_type === 'trainer' ? isPerSessionCoach(coachTypes.get(personId)) : isPerSessionStaff(staffTypes.get(personId)));
     r.is_per_session = ps;
-    if (ps) await syncPerSessionTotals(r);
-    r.session_balance = ps ? await countSessionBalance(r.person_type, r.person_type === 'trainer' ? r.coach_id : r.staff_id) : null;
+    if (ps) await syncPerSessionTotals(r, ctx);
+    r.session_balance = ps ? await countSessionBalance(r.person_type, personId, undefined, ctx) : null;
     /* قيمة الحصص غير المقبوضة (تظهر في البطاقة الخارجية حتى لو كان الكشف صفراً) */
     if (r.session_balance) {
-      const personId = r.person_type === 'trainer' ? r.coach_id : r.staff_id;
-      const pending = await listUnclaimedSessions(r.person_type, personId, 500);
+      const pending = await listUnclaimedSessions(r.person_type, personId, 500, undefined, ctx);
       const unclaimedAmount = round2(pending.reduce(function (s, it) { return s + Number(it.amount || 0); }, 0));
       r.session_balance.unclaimedAmount = unclaimedAmount;
       r.session_balance.unclaimedAmounts = pending.map(function (it) { return round2(it.amount); });
