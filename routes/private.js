@@ -87,6 +87,151 @@ function flashBack(res, type, message, coachId) {
 }
 
 /* ================================================================
+   التقييم الفني للتدريب الخاص
+   نفس نظام التقييمات العادية بالضبط: المستويات (levels)، المعايير
+   (assessment_criteria)، درجات 0-100 في scores، ونسبة overall_percent،
+   مع نفس النموذج والتنسيق. البيانات تُحفظ في private_assessments حتى
+   لا تؤثر على تقارير التقييمات العادية أو ملف اللاعب أو الكارت.
+================================================================ */
+function paView(req) { return canView(req.currentUser, 'assessments') || canView(req.currentUser, 'privateTraining'); }
+function paAdd(req) { return canAdd(req.currentUser, 'assessments') || canAdd(req.currentUser, 'privateTraining'); }
+function paEdit(req) { return canEdit(req.currentUser, 'assessments') || canEdit(req.currentUser, 'privateTraining'); }
+function paDel(req) { return canDel(req.currentUser, 'assessments') || canDel(req.currentUser, 'privateTraining'); }
+
+async function paLevelOptions() {
+  return (await db.prepare('SELECT * FROM levels ORDER BY order_no, id').all()).map(function (l) {
+    return { value: l.id, label: l.name };
+  });
+}
+async function paGeneralCriteria() {
+  return db.prepare('SELECT * FROM assessment_criteria WHERE level_id IS NULL ORDER BY order_no, id').all();
+}
+async function paCriteriaByLevel() {
+  const rows = await db.prepare('SELECT * FROM assessment_criteria WHERE level_id IS NOT NULL ORDER BY level_id, order_no, id').all();
+  const by = {};
+  rows.forEach(function (c) { const k = String(c.level_id); (by[k] = by[k] || []).push(c); });
+  return by;
+}
+async function paLevelGroups(currentLevelId) {
+  const levels = await paLevelOptions();
+  const by = await paCriteriaByLevel();
+  return levels.map(function (l) {
+    return {
+      level: { value: l.value, label: l.label, current: currentLevelId != null && String(l.value) === String(currentLevelId) },
+      criteria: by[String(l.value)] || []
+    };
+  });
+}
+/* نفس تقسيم coaching.js: score_<criterionId> → مستوى المعيار أو معايير عامة */
+async function paParseScores(b) {
+  const crit = await db.prepare('SELECT id, level_id FROM assessment_criteria').all();
+  const levelOf = {};
+  crit.forEach(function (c) { levelOf[c.id] = c.level_id == null ? null : String(c.level_id); });
+  const perLevel = {}, sharedScores = {};
+  Object.keys(b || {}).forEach(function (k) {
+    const m = /^score_(\d+)$/.exec(k);
+    if (!m || b[k] === undefined || b[k] === '') return;
+    const cid = Number(m[1]);
+    const v = Math.min(100, Math.max(0, Number(b[k]) || 0));
+    const lid = levelOf[cid];
+    if (lid == null) sharedScores[cid] = v;
+    else {
+      const g = (perLevel[lid] = perLevel[lid] || { scores: {}, n: 0, sum: 0 });
+      g.scores[cid] = v; g.n++; g.sum += v;
+    }
+  });
+  const keys = Object.keys(sharedScores);
+  const shared = { scores: sharedScores, n: keys.length, sum: keys.reduce(function (s, k) { return s + sharedScores[k]; }, 0) };
+  return { perLevel: perLevel, shared: shared };
+}
+function paHasScore(g) { return !!(g && g.scores && Object.keys(g.scores).some(function (k) { return Number(g.scores[k]) > 0; })); }
+async function paExists(swimmerId, levelId, date) {
+  const row = levelId == null
+    ? await db.prepare('SELECT 1 FROM private_assessments WHERE swimmer_id = ? AND level_id IS NULL AND date = ? LIMIT 1').get(swimmerId, date)
+    : await db.prepare('SELECT 1 FROM private_assessments WHERE swimmer_id = ? AND level_id = ? AND date = ? LIMIT 1').get(swimmerId, levelId, date);
+  return !!row;
+}
+async function paUpsert(swimmerId, levelId, date, g, b, ctx) {
+  if (!g || !g.n) return null;
+  const existing = levelId == null
+    ? await db.prepare('SELECT id FROM private_assessments WHERE swimmer_id = ? AND level_id IS NULL AND date = ? ORDER BY id DESC LIMIT 1').get(swimmerId, date)
+    : await db.prepare('SELECT id FROM private_assessments WHERE swimmer_id = ? AND level_id = ? AND date = ? ORDER BY id DESC LIMIT 1').get(swimmerId, levelId, date);
+  const overall = Math.round((g.sum / g.n) * 1000) / 1000;
+  const coachId = (b && b.coach_id) || (ctx && ctx.coachId) || null;
+  const programId = (b && b.program_id) || (ctx && ctx.programId) || null;
+  if (existing) {
+    await db.prepare('UPDATE private_assessments SET scores = ?, overall_percent = ?, coach_id = COALESCE(?, coach_id), program_id = COALESCE(?, program_id) WHERE id = ?')
+      .run(JSON.stringify(g.scores), overall, coachId, programId, existing.id);
+    return existing.id;
+  }
+  const info = await db.prepare(`INSERT INTO private_assessments
+    (swimmer_id, coach_id, program_id, level_id, date, scores, overall_percent, created_by, academy_id, sport_id, availability_id, session_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(swimmerId, coachId, programId, levelId == null ? null : Number(levelId), date,
+      JSON.stringify(g.scores), overall, (ctx && ctx.userId) || null,
+      (ctx && ctx.academyId) || 1, (ctx && ctx.sportId) || null,
+      (ctx && ctx.availabilityId) || null, (ctx && ctx.sessionId) || null);
+  return info.lastInsertRowid;
+}
+async function paSaveMeta(id, b) {
+  if (!id || !b) return;
+  await db.prepare(`UPDATE private_assessments SET strengths = ?, weaknesses = ?, recommendations = ?,
+      ready_to_advance = ?, next_assessment_date = ?, notes = ? WHERE id = ?`)
+    .run(b.strengths || '', b.weaknesses || '', b.recommendations || '',
+      b.ready_to_advance === '1' ? 1 : 0, b.next_assessment_date || null, b.notes || '', id);
+}
+async function paLatestScores(swimmerId) {
+  const rows = await db.prepare('SELECT * FROM private_assessments WHERE swimmer_id = ? ORDER BY date DESC, id DESC').all(swimmerId);
+  const seen = {}, values = {};
+  rows.forEach(function (a) {
+    const key = a.level_id == null ? 'g' : String(a.level_id);
+    if (seen[key]) return;
+    seen[key] = true;
+    let sc = {}; try { sc = JSON.parse(a.scores || '{}'); } catch (e) { sc = {}; }
+    Object.keys(sc).forEach(function (cid) { values['score_' + cid] = sc[cid]; });
+  });
+  return values;
+}
+/* أحدث نسبة تقييم خاص لكل لاعب — تُعرض بجانب المواعيد في صفحة المدرب */
+async function paLatestPercents(ids) {
+  const out = {};
+  if (!ids || !ids.length) return out;
+  const ph = ids.map(function () { return '?'; }).join(',');
+  const rows = await db.prepare('SELECT swimmer_id, overall_percent, date FROM private_assessments WHERE swimmer_id IN (' + ph + ') ORDER BY date DESC, id DESC')
+    .all(...ids);
+  rows.forEach(function (r) {
+    if (!out[r.swimmer_id]) out[r.swimmer_id] = { percent: Math.round(Number(r.overall_percent || 0)), date: r.date };
+  });
+  return out;
+}
+async function paSwimmerOptions() {
+  return (await db.prepare('SELECT id, full_name, membership_no, level_id FROM swimmers WHERE deleted_at IS NULL ORDER BY full_name').all())
+    .map(function (s) { return { value: s.id, label: s.full_name + ' (' + s.membership_no + ')', level: s.level_id || '' }; });
+}
+async function paCoachOptions() {
+  return (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all())
+    .map(function (c) { return { value: c.id, label: c.full_name }; });
+}
+async function paProgramOptions() {
+  return (await db.prepare('SELECT id, name FROM programs WHERE deleted_at IS NULL ORDER BY name').all())
+    .map(function (p) { return { value: p.id, label: p.name }; });
+}
+function paDate(b, fallback) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String((b && b.date) || '')) ? String(b.date) : (fallback || today());
+}
+function paCtx(req, b) {
+  return {
+    userId: req.currentUser.id,
+    academyId: Number(req.currentUser.academy_id) || 1,
+    sportId: effectiveSport(req) || null,
+    coachId: (b && b.coach_id) || null,
+    programId: (b && b.program_id) || null,
+    availabilityId: (b && b.availability_id) || null,
+    sessionId: (b && b.session_id) || null
+  };
+}
+
+/* ================================================================
    قائمة المدربين
 ================================================================ */
 router.get('/private-training', async function (req, res) {
@@ -117,51 +262,324 @@ router.get('/private-training', async function (req, res) {
 });
 
 /* ================================================================
-   تقييم التدريب الخاص — يظهر كفئة داخل التقييمات (الجوانب الفنية)
+   تقييم التدريب الخاص — فئة مستقلة داخل التقييمات، بنفس نظام التقييم الفني
+   (نفس المستويات والمعايير ونموذج التقييم الكامل والتنسيق وسجل التقييمات)
 ================================================================ */
 router.get('/private-training/ratings', async function (req, res) {
-  const canSee = canView(req.currentUser, 'assessments') || canView(req.currentUser, 'privateTraining');
-  if (!canSee) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const fixed = await db.prepare(`SELECT pa.*, c.full_name AS coach_name, sw.full_name AS swimmer_name, sw.membership_no
-    FROM private_availability pa
-    JOIN swimmers sw ON sw.id = pa.swimmer_id
-    LEFT JOIN coaches c ON c.id = pa.coach_id
-    WHERE pa.swimmer_id IS NOT NULL
-    ORDER BY pa.weekday, pa.start_time`).all();
-  const sessions = await db.prepare(`SELECT ps.*, c.full_name AS coach_name, sw.full_name AS swimmer_name, sw.membership_no
-    FROM private_sessions ps
-    JOIN swimmers sw ON sw.id = ps.swimmer_id
-    LEFT JOIN coaches c ON c.id = ps.coach_id
-    WHERE ps.swimmer_id IS NOT NULL
-    ORDER BY ps.date DESC, ps.start_time DESC LIMIT 200`).all();
-  const rated = fixed.filter(function (a) { return Number(a.rating) > 0; });
-  const avg = rated.length ? Math.round(rated.reduce(function (a, x) { return a + Number(x.rating); }, 0) / rated.length * 10) / 10 : 0;
-  res.render('private/ratings', {
+  if (!paView(req)) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const dateToday = today();
+  const coachFilter = Number(req.query.coach || 0) || 0;
+
+  /* اللاعبون الذين لهم تدريب خاص: موعد ثابت مُسكَّن أو حصة مسجلة */
+  let members = await db.prepare(`SELECT DISTINCT s.id, s.full_name, s.membership_no, s.level_id, l.name AS level_name,
+      (SELECT x.date FROM private_assessments x WHERE x.swimmer_id = s.id ORDER BY x.date DESC, x.id DESC LIMIT 1) AS last_date,
+      (SELECT x.overall_percent FROM private_assessments x WHERE x.swimmer_id = s.id ORDER BY x.date DESC, x.id DESC LIMIT 1) AS last_percent,
+      (SELECT COUNT(*) FROM private_assessments x WHERE x.swimmer_id = s.id AND x.date = ?) AS assessed_today
+    FROM swimmers s LEFT JOIN levels l ON l.id = s.level_id
+    WHERE s.deleted_at IS NULL
+      AND (EXISTS (SELECT 1 FROM private_availability pa WHERE pa.swimmer_id = s.id)
+        OR EXISTS (SELECT 1 FROM private_sessions ps WHERE ps.swimmer_id = s.id))
+    ORDER BY s.full_name`).all(dateToday);
+
+  const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all();
+  const coachName = {};
+  coaches.forEach(function (c) { coachName[c.id] = c.full_name; });
+  const coachesOf = {};
+  (await db.prepare('SELECT swimmer_id, coach_id FROM private_availability WHERE swimmer_id IS NOT NULL').all()).forEach(function (r) {
+    (coachesOf[r.swimmer_id] = coachesOf[r.swimmer_id] || {})[r.coach_id] = 1;
+  });
+  (await db.prepare('SELECT swimmer_id, coach_id FROM private_sessions WHERE swimmer_id IS NOT NULL').all()).forEach(function (r) {
+    (coachesOf[r.swimmer_id] = coachesOf[r.swimmer_id] || {})[r.coach_id] = 1;
+  });
+  members.forEach(function (m) {
+    const ids = Object.keys(coachesOf[m.id] || {}).filter(function (id) { return Number(id) && coachName[id]; });
+    m.coaches = ids.map(function (id) { return coachName[id]; }).join('، ');
+    /* المدرب المرتبط باللاعب: يُحفظ مع التقييم حتى في الحفظ السريع */
+    m.coach_id = coachFilter && ids.indexOf(String(coachFilter)) !== -1 ? coachFilter : (ids.length ? Number(ids[0]) : '');
+  });
+  if (coachFilter) members = members.filter(function (m) { return !!(coachesOf[m.id] || {})[coachFilter]; });
+
+  const general = await paGeneralCriteria();
+  const byLevel = await paCriteriaByLevel();
+  const levels = (await paLevelOptions()).filter(function (l) { return (byLevel[String(l.value)] || []).length; });
+
+  /* أحدث درجات كل لاعب (كما في صفحة المجموعة بالتقييمات العادية) */
+  const savedScores = {}, levelPercents = {};
+  if (members.length) {
+    const ph = members.map(function () { return '?'; }).join(',');
+    const rows = await db.prepare('SELECT * FROM private_assessments WHERE swimmer_id IN (' + ph + ') ORDER BY date DESC, id DESC')
+      .all(...members.map(function (m) { return m.id; }));
+    const latest = {};
+    rows.forEach(function (a) {
+      const key = a.level_id == null ? 'g' : String(a.level_id);
+      const box = (latest[a.swimmer_id] = latest[a.swimmer_id] || {});
+      if (!box[key]) box[key] = a;
+    });
+    Object.keys(latest).forEach(function (sid) {
+      savedScores[sid] = {}; levelPercents[sid] = {};
+      Object.keys(latest[sid]).forEach(function (key) {
+        const a = latest[sid][key];
+        let sc = {}; try { sc = JSON.parse(a.scores || '{}'); } catch (e) { sc = {}; }
+        Object.keys(sc).forEach(function (cid) { savedScores[sid][cid] = sc[cid]; });
+        if (a.overall_percent !== null && a.overall_percent !== undefined)
+          levelPercents[sid][key] = { percent: a.overall_percent, date: a.date };
+      });
+    });
+  }
+  const stats = await db.prepare('SELECT COUNT(DISTINCT swimmer_id) AS swimmers, ROUND(AVG(overall_percent),1) AS avg FROM private_assessments').get();
+  const group = {
+    id: 0,
+    name: coachFilter && coachName[coachFilter] ? ('تقييم التدريب الخاص — ' + coachName[coachFilter]) : 'تقييم التدريب الخاص',
+    program_name: 'التدريب الخاص',
+    coach_name: coachFilter && coachName[coachFilter] ? coachName[coachFilter] : ''
+  };
+  res.render('private/assessment_group', {
     title: 'تقييم التدريب الخاص', active: 'assessments',
-    fixed, sessions, dayFull: DAY_FULL,
-    kpi: { fixed: fixed.length, rated: rated.length, avg: avg, sessions: sessions.length },
-    canRate: canEdit(req.currentUser, 'assessments') || canEdit(req.currentUser, 'privateTraining'),
-    ratingStars: ratingStars, ratingValue: ratingValue,
-    backUrl: '/assessments'
+    group, members, coaches, coachFilter, generalCriteria: general, criteriaByLevel: byLevel,
+    savedScores, levelPercents, ungrouped: [], today: dateToday, levels,
+    criteriaJson: JSON.stringify(byLevel).replace(/</g, '\\u003c'),
+    kpi: { swimmers: (stats && stats.swimmers) || 0, avg: (stats && stats.avg) || 0, coaches: coaches.length }
   });
 });
 
-router.post('/private-training/rating', async function (req, res) {
-  if (!canEdit(req.currentUser, 'assessments') && !canEdit(req.currentUser, 'privateTraining')) {
-    return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+/* سجل تقييمات التدريب الخاص (نفس فكرة سجل التقييمات العادي) */
+router.get('/private-training/ratings/log', async function (req, res) {
+  if (!paView(req)) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const rows = await db.prepare(`SELECT pa.id, pa.date, pa.overall_percent, pa.swimmer_id, pa.coach_id,
+      s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name, l.name AS level_name
+    FROM private_assessments pa
+    LEFT JOIN swimmers s ON s.id = pa.swimmer_id
+    LEFT JOIN coaches c ON c.id = pa.coach_id
+    LEFT JOIN levels l ON l.id = pa.level_id
+    ORDER BY pa.date DESC, pa.id DESC LIMIT 600`).all();
+  const grouped = [], seen = {};
+  rows.forEach(function (a) {
+    const key = a.swimmer_id + '|' + a.date;
+    if (!seen[key]) {
+      seen[key] = { swimmer_id: a.swimmer_id, swimmer_name: a.swimmer_name, membership_no: a.membership_no,
+        date: a.date, coach_name: a.coach_name, id: a.id, levels: [], ids: [], sum: 0, n: 0 };
+      grouped.push(seen[key]);
+    }
+    const g = seen[key];
+    g.ids.push(a.id);
+    if (a.level_name) g.levels.push(a.level_name);
+    g.sum += Number(a.overall_percent || 0); g.n++;
+  });
+  grouped.forEach(function (g) {
+    g.avg = g.n ? Math.round((g.sum / g.n) * 10) / 10 : 0;
+    g.level_names = g.levels.join('، ');
+  });
+  res.render('private/assessment_log', { title: 'سجل تقييمات التدريب الخاص', active: 'assessments', rows: grouped });
+});
+
+/* النموذج الكامل — جديد */
+router.get('/private-training/ratings/new', async function (req, res) {
+  if (!paAdd(req)) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const values = { date: today() };
+  let currentLevelId = null;
+  if (req.query.swimmer) {
+    const sw = await db.prepare('SELECT id, level_id FROM swimmers WHERE id = ?').get(Number(req.query.swimmer));
+    if (sw) {
+      values.swimmer_id = sw.id;
+      currentLevelId = sw.level_id;
+      Object.assign(values, await paLatestScores(sw.id));
+    }
   }
-  const kind = String(req.body.kind || '') === 'session' ? 'session' : 'availability';
-  const id = Number(req.body.id) || 0;
-  const rating = ratingValue(req.body.rating);
-  if (!id) { setFlash(res, { type: 'error', message: 'التقييم غير صالح' }); return res.redirect('/private-training/ratings'); }
-  const table = kind === 'session' ? 'private_sessions' : 'private_availability';
-  await db.prepare('UPDATE ' + table + ' SET rating = ? WHERE id = ?').run(rating, id);
-  if (kind === 'availability') await db.prepare('UPDATE private_sessions SET rating = ? WHERE availability_id = ?').run(rating, id);
-  audit(req.currentUser.id, req.currentUser.full_name, 'edit', kind === 'session' ? 'privateTraining' : 'assessments', id,
-    'تقييم التدريب الخاص: ' + rating + '/5', req);
-  setFlash(res, { type: 'success', message: 'تم حفظ التقييم' });
-  const back = String(req.body.back || '/private-training/ratings');
-  res.redirect(back.startsWith('/') && !back.startsWith('//') ? back : '/private-training/ratings');
+  if (req.query.coach) values.coach_id = Number(req.query.coach);
+  res.render('private/assessment_form', {
+    title: 'تقييم فني جديد — التدريب الخاص', active: 'assessments', isEdit: false, returnGroup: null,
+    action: '/private-training/ratings/new', values,
+    levelGroups: await paLevelGroups(currentLevelId), generalCriteria: await paGeneralCriteria(),
+    swimmers: await paSwimmerOptions(), coaches: await paCoachOptions(), programs: await paProgramOptions()
+  });
+});
+
+router.post('/private-training/ratings/new', async function (req, res) {
+  if (!paAdd(req)) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const b = req.body;
+  const swimmerId = Number(b.swimmer_id || 0);
+  if (!swimmerId) {
+    setFlash(res, { type: 'error', message: 'اختر اللاعب أولاً' });
+    return res.redirect('/private-training/ratings/new');
+  }
+  const date = paDate(b);
+  const { perLevel, shared } = await paParseScores(b);
+  const ctx = paCtx(req, b);
+  let firstId = null, levelCount = 0;
+  for (const lid of Object.keys(perLevel)) {
+    const g = perLevel[lid];
+    if (!g || !g.n) continue;
+    if (!paHasScore(g) && !(await paExists(swimmerId, Number(lid), date))) continue;
+    const rid = await paUpsert(swimmerId, Number(lid), date, g, b, ctx);
+    if (rid) { await paSaveMeta(rid, b); if (firstId === null) firstId = rid; levelCount++; }
+  }
+  if (shared.n && (paHasScore(shared) || await paExists(swimmerId, null, date))) {
+    const gid = await paUpsert(swimmerId, null, date, shared, b, ctx);
+    if (gid) { await paSaveMeta(gid, b); if (firstId === null) firstId = gid; }
+  }
+  if (firstId) {
+    audit(req.currentUser.id, req.currentUser.full_name, 'add', 'privateTraining', firstId,
+      'تقييم فني خاص على ' + levelCount + ' مستوى', req);
+    setFlash(res, { type: 'success', message: 'تم حفظ تقييم التدريب الخاص بنجاح' });
+  } else {
+    setFlash(res, { type: 'error', message: 'لم تُسجل أي نسب — تأكد من تقييم مهارة واحدة على الأقل' });
+  }
+  res.redirect('/private-training/ratings');
+});
+
+/* حفظ سريع تلقائي من صفحة اللاعبين (نفس آلية حفظ المجموعة العادية) */
+router.post('/private-training/ratings/:sid/quick', async function (req, res) {
+  if (!paAdd(req) && !paEdit(req)) return res.status(403).json({ ok: false, error: 'لا تملك صلاحية التقييم' });
+  const swimmerId = Number(req.params.sid);
+  const sw = await db.prepare('SELECT id, level_id FROM swimmers WHERE id = ? AND deleted_at IS NULL').get(swimmerId);
+  if (!sw) return res.status(404).json({ ok: false, error: 'اللاعب غير موجود' });
+  const b = req.body || {};
+  const date = paDate(b);
+  const { perLevel, shared } = await paParseScores(b);
+  const ctx = paCtx(req, b);
+  const levelResults = {};
+  for (const lid of Object.keys(perLevel)) {
+    const g = perLevel[lid];
+    if (!g || !g.n) continue;
+    if (!paHasScore(g) && !(await paExists(swimmerId, Number(lid), date))) continue;
+    await paUpsert(swimmerId, Number(lid), date, g, b, ctx);
+    levelResults[lid] = Math.round((g.sum / g.n) * 1000) / 1000;
+  }
+  let generalPercent = null;
+  if (shared.n && (paHasScore(shared) || await paExists(swimmerId, null, date))) {
+    await paUpsert(swimmerId, null, date, shared, b, ctx);
+    generalPercent = Math.round((shared.sum / shared.n) * 1000) / 1000;
+  }
+  const ids = Object.keys(levelResults);
+  if (!ids.length && generalPercent === null) return res.status(400).json({ ok: false, error: 'لم تُسجل أي نسب — غيّر نسبة مهارة واحدة على الأقل' });
+  const overall = ids.length
+    ? Math.round((ids.reduce(function (s, k) { return s + levelResults[k]; }, 0) / ids.length) * 1000) / 1000
+    : generalPercent;
+  let assignedLevelId = sw.level_id != null ? Number(sw.level_id) : null;
+  if (assignedLevelId == null && b.level_id) {
+    const l = await db.prepare('SELECT id FROM levels WHERE id = ?').get(Number(b.level_id));
+    if (l) assignedLevelId = Number(l.id);
+  }
+  res.json({
+    ok: true, percent: overall,
+    level_percent: assignedLevelId != null && levelResults[assignedLevelId] !== undefined ? levelResults[assignedLevelId] : null,
+    general_percent: generalPercent, level_id: assignedLevelId, levels: levelResults,
+    date: date, date_label: fmtDate(date),
+    time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+  });
+});
+
+/* API: معايير المستوى + أحدث درجات اللاعب (لتعبئة النموذج الكامل) */
+router.get('/api/private-training/ratings/criteria', async function (req, res) {
+  if (!paView(req)) return res.status(403).json({ ok: false, error: 'لا تملك صلاحية العرض' });
+  const lid = req.query.level_id ? Number(req.query.level_id) : null;
+  res.json(lid
+    ? await db.prepare('SELECT * FROM assessment_criteria WHERE level_id = ? ORDER BY order_no').all(lid)
+    : await db.prepare('SELECT * FROM assessment_criteria WHERE level_id IS NULL ORDER BY order_no').all());
+});
+router.get('/api/private-training/ratings/swimmer/:id/scores', async function (req, res) {
+  if (!paView(req)) return res.status(403).json({ ok: false, error: 'لا تملك صلاحية العرض' });
+  const sw = await db.prepare('SELECT id, level_id FROM swimmers WHERE id = ? AND deleted_at IS NULL').get(Number(req.params.id));
+  if (!sw) return res.status(404).json({ ok: false, error: 'اللاعب غير موجود' });
+  res.json({ ok: true, level_id: sw.level_id, scores: await paLatestScores(sw.id) });
+});
+
+/* تفاصيل تقييم خاص */
+router.get('/private-training/ratings/:id', async function (req, res) {
+  if (!paView(req)) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const id = Number(req.params.id);
+  const a = await db.prepare(`SELECT pa.*, s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name,
+      l.name AS level_name, p.name AS program_name
+    FROM private_assessments pa
+    LEFT JOIN swimmers s ON s.id = pa.swimmer_id LEFT JOIN coaches c ON c.id = pa.coach_id
+    LEFT JOIN levels l ON l.id = pa.level_id LEFT JOIN programs p ON p.id = pa.program_id
+    WHERE pa.id = ?`).get(id);
+  if (!a) return res.redirect('/private-training/ratings');
+  let scores = {}; try { scores = JSON.parse(a.scores || '{}'); } catch (e) { scores = {}; }
+  const criteriaMap = {};
+  (await db.prepare('SELECT * FROM assessment_criteria').all()).forEach(function (c) { criteriaMap[c.id] = c; });
+  let levelTotal = 0, levelCount = 0;
+  Object.keys(scores).forEach(function (k) {
+    if (criteriaMap[Number(k)]) { levelTotal += Number(scores[k]) || 0; levelCount++; }
+  });
+  const levelPercent = levelCount ? Math.round((levelTotal / levelCount) * 1000) / 1000 : 0;
+  res.render('private/assessment_detail', {
+    title: 'تفاصيل تقييم التدريب الخاص', active: 'assessments', a, scores, criteriaMap,
+    levelTotal, levelCount, levelPercent, money, canEdit: paEdit(req), canDel: paDel(req)
+  });
+});
+
+/* تعديل التقييم الكامل */
+router.get('/private-training/ratings/:id/edit', async function (req, res) {
+  if (!paEdit(req)) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const row = await db.prepare('SELECT * FROM private_assessments WHERE id = ?').get(Number(req.params.id));
+  if (!row) return res.redirect('/private-training/ratings');
+  let saved = {}; try { saved = JSON.parse(row.scores || '{}'); } catch (e) { saved = {}; }
+  const values = Object.assign({}, row);
+  Object.keys(saved).forEach(function (k) { values['score_' + k] = saved[k]; });
+  const seen = {};
+  (await db.prepare('SELECT * FROM private_assessments WHERE swimmer_id = ? AND level_id IS NOT NULL ORDER BY date DESC, id DESC').all(row.swimmer_id))
+    .forEach(function (a) { if (!seen[a.level_id]) seen[a.level_id] = a; });
+  Object.keys(seen).forEach(function (lid) {
+    if (String(lid) === String(row.level_id)) return;
+    let sc = {}; try { sc = JSON.parse(seen[lid].scores || '{}'); } catch (e) { sc = {}; }
+    Object.keys(sc).forEach(function (k) { values['score_' + k] = sc[k]; });
+  });
+  const gen = await db.prepare('SELECT * FROM private_assessments WHERE swimmer_id = ? AND level_id IS NULL ORDER BY date DESC, id DESC').get(row.swimmer_id);
+  if (gen) {
+    let g = {}; try { g = JSON.parse(gen.scores || '{}'); } catch (e) { g = {}; }
+    Object.keys(g).forEach(function (k) { values['score_' + k] = g[k]; });
+  }
+  res.render('private/assessment_form', {
+    title: 'تعديل تقييم التدريب الخاص', active: 'assessments', isEdit: true, returnGroup: null,
+    action: '/private-training/ratings/' + row.id + '/edit', values,
+    levelGroups: await paLevelGroups(row.level_id != null ? row.level_id : null),
+    generalCriteria: await paGeneralCriteria(),
+    swimmers: await paSwimmerOptions(), coaches: await paCoachOptions(), programs: await paProgramOptions()
+  });
+});
+
+router.post('/private-training/ratings/:id/edit', async function (req, res) {
+  if (!paEdit(req)) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const id = Number(req.params.id), b = req.body;
+  const row = await db.prepare('SELECT * FROM private_assessments WHERE id = ?').get(id);
+  if (!row) return res.redirect('/private-training/ratings');
+  const swimmerId = Number(b.swimmer_id || row.swimmer_id);
+  const date = paDate(b, row.date);
+  const { perLevel, shared } = await paParseScores(b);
+  const primaryIsGeneral = row.level_id == null;
+  const primaryG = primaryIsGeneral ? shared : (perLevel[row.level_id] || { scores: {}, n: 0, sum: 0 });
+  const overall = primaryG.n ? Math.round((primaryG.sum / primaryG.n) * 1000) / 1000 : 0;
+  await db.prepare(`UPDATE private_assessments SET swimmer_id=?, coach_id=?, program_id=?, date=?,
+      scores=?, strengths=?, weaknesses=?, recommendations=?, ready_to_advance=?,
+      next_assessment_date=?, overall_percent=?, notes=? WHERE id=?`)
+    .run(swimmerId, b.coach_id || null, b.program_id || null, date, JSON.stringify(primaryG.scores),
+      b.strengths || '', b.weaknesses || '', b.recommendations || '', b.ready_to_advance === '1' ? 1 : 0,
+      b.next_assessment_date || null, overall, b.notes || '', id);
+  const ctx = paCtx(req, b);
+  for (const lid of Object.keys(perLevel)) {
+    if (!primaryIsGeneral && String(lid) === String(row.level_id)) continue;
+    const g = perLevel[lid];
+    if (!g || !g.n) continue;
+    if (!paHasScore(g) && !(await paExists(swimmerId, Number(lid), date))) continue;
+    await paUpsert(swimmerId, Number(lid), date, g, b, ctx);
+  }
+  if (!primaryIsGeneral && shared.n && (paHasScore(shared) || await paExists(swimmerId, null, date))) {
+    await paUpsert(swimmerId, null, date, shared, b, ctx);
+  }
+  audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'privateTraining', id, 'تعديل تقييم فني خاص', req);
+  setFlash(res, { type: 'success', message: 'تم حفظ التعديلات على جميع المستويات' });
+  res.redirect('/private-training/ratings/' + id);
+});
+
+router.post('/private-training/ratings/:id/delete', async function (req, res) {
+  if (!paDel(req)) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const id = Number(req.params.id);
+  const row = await db.prepare('SELECT swimmer_id, date FROM private_assessments WHERE id = ?').get(id);
+  if (row) await db.prepare('DELETE FROM private_assessments WHERE swimmer_id = ? AND date = ?').run(row.swimmer_id, row.date);
+  audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'privateTraining', id, 'حذف تقييم فني خاص', req);
+  setFlash(res, { type: 'success', message: 'تم حذف التقييم' });
+  res.redirect('/private-training/ratings/log');
 });
 
 /* ================================================================
@@ -232,6 +650,13 @@ router.get('/private-training/coach/:id', async function (req, res) {
     days.push({ date: dateISO, weekday: wd, label: DAY_FULL[wd], isToday: dateISO === today(), isPast: dateISO < today(), entries: entries });
   }
 
+  /* أحدث تقييم فني خاص لكل لاعب في هذه الصفحة */
+  const paIds = [];
+  availability.concat(allSessions).forEach(function (x) {
+    if (x.swimmer_id && paIds.indexOf(x.swimmer_id) === -1) paIds.push(x.swimmer_id);
+  });
+  const paPercents = await paLatestPercents(paIds);
+
   const activeSlots = availability.filter(function (a) { return a.status === 'نشط'; });
   const slotBlocked = function (a) { return !!blockingWindow(unavailable, a.weekday, a.start_time, a.end_time); };
   const blockedSlotIds = activeSlots.filter(slotBlocked).map(function (a) { return a.id; });
@@ -247,7 +672,7 @@ router.get('/private-training/coach/:id', async function (req, res) {
 
   res.render('private/coach', {
     title: 'التدريب الخاص — ' + coach.full_name, active: 'privateTraining',
-    coach, availability, unavailable, blockedSlotIds, days, weekStartISO, weekEndISO, prevWeek, nextWeek, packages, swimmers, allSessions, kpi,
+    coach, availability, unavailable, blockedSlotIds, days, weekStartISO, weekEndISO, prevWeek, nextWeek, packages, swimmers, allSessions, kpi, paPercents,
     dayFull: DAY_FULL, PRIV_STATUS, ATTENDED,
     canAdd: canAdd(req.currentUser, 'privateTraining'), canEdit: canEdit(req.currentUser, 'privateTraining'), canDel: canDel(req.currentUser, 'privateTraining'),
     money, fmtDate, statusBadge, ratingStars, ratingValue, today: today()
@@ -292,7 +717,7 @@ router.post('/private-training/availability/:aid/assign', async function (req, r
   const a = await db.prepare('SELECT * FROM private_availability WHERE id = ?').get(aid);
   if (!a) { setFlash(res, { type: 'error', message: 'الموعد غير موجود' }); return res.redirect('/private-training'); }
   const swimmerId = Number(req.body.swimmer_id) || 0;
-  const rating = ratingValue(req.body.rating);
+  const rating = ratingValue(req.body.rating != null && req.body.rating !== '' ? req.body.rating : a.rating);
   if (swimmerId) {
     const sw = await db.prepare('SELECT id FROM swimmers WHERE id = ? AND deleted_at IS NULL').get(swimmerId);
     if (!sw) return flashBack(res, 'error', 'اللاعب المختار غير موجود', a.coach_id);

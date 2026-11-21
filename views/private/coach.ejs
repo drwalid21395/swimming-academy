@@ -1,8 +1,13 @@
 <%- include('../partials/layout_top', { title: 'التدريب الخاص', active: 'privateTraining' }) %>
 <style>
-  .pt-stars { color:#f59e0b; letter-spacing:1px; white-space:nowrap; font-size:13px; }
-  .pt-stars .fa-star-regular { color:#cbd5e1; }
   .wk-slot.pt-blocked { background:rgba(239,68,68,.1); border:1px dashed rgba(239,68,68,.6); }
+  .pt-assess-link { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:5px; }
+  .pt-assess-link .btn { padding:3px 7px; font-size:11px; }
+  @media (max-width:768px) {
+    .pt-assign select { min-width:0; width:100%; flex:1 1 100%; }
+    .pt-assign .btn { flex:0 0 auto; }
+    .pt-assess-link { width:100%; }
+  }
   .pt-swimmer { margin-top:5px; font-size:12px; font-weight:700; color:var(--primary); }
   .pt-mini-form { margin-top:6px; display:grid; grid-template-columns:1fr auto; gap:4px; }
   .pt-mini-form select { padding:4px 6px; font-size:11px; }
@@ -70,7 +75,11 @@
                 <div class="wk-slot booked <%= day.isPast ? 'past' : '' %>">
                   <div class="wk-time"><span><i class="fas fa-clock"></i> <%= s.start_time %> - <%= s.end_time %></span><%- statusBadge(s.status) %></div>
                   <div class="wk-name"><i class="fas fa-user"></i> <%= s.swimmer_name || '—' %></div>
-                  <div><%- ratingStars(s.rating) %></div>
+                  <div class="pt-assess-link">
+                    <% var paS = paPercents[s.swimmer_id]; %>
+                    <% if (paS) { %><span class="score-pill <%= paS.percent >= 80 ? 'score-high' : (paS.percent >= 60 ? 'score-mid' : 'score-low') %>"><%= paS.percent %>%</span><% } %>
+                    <a href="/private-training/ratings/new?swimmer=<%= s.swimmer_id %>&coach=<%= coach.id %>" class="btn btn-ghost btn-sm" title="تقييم فني"><i class="fas fa-clipboard-check"></i> <% if (paS) { %>تقييم جديد<% } else { %>تقييم<% } %></a>
+                  </div>
                   <div class="wk-actions">
                     <% if (canEdit) { ['present','absent','late'].forEach(function (stt) { %>
                       <form method="post" action="/private-training/session/<%= s.id %>/attendance">
@@ -91,7 +100,11 @@
                 <div class="wk-slot booked">
                   <div class="wk-time"><span><i class="fas fa-clock"></i> <%= e.start %> - <%= e.end %></span><span class="badge badge-info">موعد ثابت</span></div>
                   <div class="pt-swimmer"><i class="fas fa-user"></i> <%= e.swimmer_name %></div>
-                  <div><%- ratingStars(e.rating) %></div>
+                  <div class="pt-assess-link">
+                    <% var paE = paPercents[e.swimmer_id]; %>
+                    <% if (paE) { %><span class="score-pill <%= paE.percent >= 80 ? 'score-high' : (paE.percent >= 60 ? 'score-mid' : 'score-low') %>"><%= paE.percent %>%</span><% } %>
+                    <a href="/private-training/ratings/new?swimmer=<%= e.swimmer_id %>&coach=<%= coach.id %>" class="btn btn-ghost btn-sm" title="تقييم فني"><i class="fas fa-clipboard-check"></i> <% if (paE) { %>تقييم جديد<% } else { %>تقييم<% } %></a>
+                  </div>
                   <% if (canAdd && !day.isPast) { %>
                     <form method="post" action="/private-training/coach/<%= coach.id %>/book" class="pt-mini-form">
                       <input type="hidden" name="date" value="<%= day.date %>">
@@ -100,8 +113,7 @@
                       <input type="hidden" name="availability_id" value="<%= e.availability_id %>">
                       <input type="hidden" name="swimmer_id" value="<%= e.swimmer_id %>">
                       <input type="hidden" name="rate" value="<%= e.rate || 0 %>">
-                      <input type="hidden" name="rating" value="<%= ratingValue(e.rating) %>">
-                      <button class="btn btn-outline" type="submit"><i class="fas fa-plus"></i> تسجيل حصة</button>
+                      <button class="btn btn-outline" type="submit" style="grid-column:1/-1"><i class="fas fa-plus"></i> تسجيل حصة</button>
                     </form>
                   <% } %>
                 </div>
@@ -118,10 +130,6 @@
                       <select name="swimmer_id" class="form-control" required>
                         <option value="">— اختر اللاعب —</option>
                         <% swimmers.forEach(function (sw) { %><option value="<%= sw.id %>"><%= sw.full_name %></option><% }); %>
-                      </select>
-                      <select name="rating" class="form-control" title="التقييم">
-                        <option value="0">بدون تقييم</option>
-                        <% for (var r = 1; r <= 5; r++) { %><option value="<%= r %>"><%= '★'.repeat(r) %></option><% } %>
                       </select>
                       <button class="btn btn-primary" type="submit" style="grid-column:1/-1"><i class="fas fa-plus"></i> حجز وتسكين</button>
                     </form>
@@ -142,7 +150,7 @@
   </div>
 </div>
 
-<div class="grid-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px">
+<div class="grid-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:14px">
   <div class="card">
     <div class="card-header"><i class="fas fa-repeat"></i> المواعيد الثابتة الأسبوعية</div>
     <div class="card-body">
@@ -173,19 +181,12 @@
               <% swimmers.forEach(function (sw) { %><option value="<%= sw.id %>"><%= sw.full_name %></option><% }); %>
             </select>
           </div>
-          <div class="form-group" style="margin:0">
-            <label class="font-11 text-muted">التقييم</label>
-            <select name="rating" class="form-control">
-              <option value="0">بدون</option>
-              <% for (var r2 = 1; r2 <= 5; r2++) { %><option value="<%= r2 %>"><%= '★'.repeat(r2) %></option><% } %>
-            </select>
-          </div>
           <button class="btn btn-primary" type="submit"><i class="fas fa-plus"></i> إضافة موعد</button>
         </form>
       <% } %>
       <div class="table-wrap">
         <table class="data-table rtable">
-          <thead><tr><th>اليوم</th><th>من</th><th>إلى</th><th>اللاعب</th><th>التقييم</th><th>مستحق المدرب</th><th>حالة</th><th></th></tr></thead>
+          <thead><tr><th>اليوم</th><th>من</th><th>إلى</th><th>اللاعب</th><th>التقييم فني</th><th>مستحق المدرب</th><th>حالة</th><th>إجراءات</th></tr></thead>
           <tbody>
             <% if (!availability.length) { %><tr><td colspan="8" class="text-center text-muted">لا توجد مواعيد بعد</td></tr><% } %>
             <% availability.forEach(function (a) { %>
@@ -200,22 +201,27 @@
                         <option value="">— فارغ —</option>
                         <% swimmers.forEach(function (sw) { %><option value="<%= sw.id %>" <%= Number(a.swimmer_id) === sw.id ? 'selected' : '' %>><%= sw.full_name %></option><% }); %>
                       </select>
-                      <select name="rating" class="form-control" title="التقييم">
-                        <% for (var rr = 0; rr <= 5; rr++) { %><option value="<%= rr %>" <%= ratingValue(a.rating) === rr ? 'selected' : '' %>><%= rr ? '★'.repeat(rr) : 'بدون' %></option><% } %>
-                      </select>
                       <button class="btn btn-outline btn-sm" type="submit" title="حفظ"><i class="fas fa-check"></i></button>
                     </form>
                   <% } else { %>
-                    <%= a.swimmer_name || '—' %> <%- ratingStars(a.rating) %>
+                    <%= a.swimmer_name || '—' %>
                   <% } %>
                 </td>
-                <td data-label="التقييم"><%- ratingStars(a.rating) %></td>
+                <td data-label="التقييم فني">
+                  <% if (a.swimmer_id) { %>
+                    <% var paA = paPercents[a.swimmer_id]; %>
+                    <div class="pt-assess-link">
+                      <% if (paA) { %><span class="score-pill <%= paA.percent >= 80 ? 'score-high' : (paA.percent >= 60 ? 'score-mid' : 'score-low') %>"><%= paA.percent %>%</span><% } %>
+                      <a href="/private-training/ratings/new?swimmer=<%= a.swimmer_id %>&coach=<%= coach.id %>" class="btn btn-ghost btn-sm" title="تقييم فني"><i class="fas fa-clipboard-check"></i> تقييم</a>
+                    </div>
+                  <% } else { %><span class="text-muted">—</span><% } %>
+                </td>
                 <td data-label="مستحق المدرب"><%= money(a.rate) %></td>
                 <td data-label="حالة">
                   <% if (blockedSlotIds.indexOf(a.id) > -1) { %><span class="badge badge-danger">غير متاح</span>
                   <% } else { %><span class="badge <%= a.status === 'نشط' ? 'badge-success' : 'badge-gray' %>"><%= a.swimmer_id ? 'محجوز' : a.status %></span><% } %>
                 </td>
-                <td class="rt-actions">
+                <td class="rt-actions" data-label="إجراءات">
                   <% if (canDel) { %>
                     <form method="post" action="/private-training/availability/<%= a.id %>/delete" data-confirm="حذف هذا الموعد الأسبوعي؟">
                       <button class="btn btn-ghost btn-sm" type="submit"><i class="fas fa-trash"></i></button>
@@ -267,7 +273,7 @@
                 <td data-label="من"><%= b.start_time %></td>
                 <td data-label="إلى"><%= b.end_time %></td>
                 <td data-label="ملاحظة"><%= b.note || '—' %></td>
-                <td class="rt-actions">
+                <td class="rt-actions" data-label="إجراءات">
                   <% if (canDel) { %>
                     <form method="post" action="/private-training/unavailable/<%= b.id %>/delete" data-confirm="إزالة فترة عدم التوفر؟">
                       <button class="btn btn-ghost btn-sm" type="submit"><i class="fas fa-trash"></i></button>
@@ -332,7 +338,7 @@
               <td data-label="المدفوع"><%= money(p.paid_amount) %></td>
               <td data-label="المتبقي"><%= money(p.remaining) %></td>
               <td data-label="حالة"><span class="badge <%= p.status === 'نشط' ? 'badge-success' : (p.status === 'منتهي' ? 'badge-gray' : 'badge-danger') %>"><%= p.status %></span></td>
-              <td class="rt-actions">
+              <td class="rt-actions" data-label="إجراءات">
                 <% if (canDel && Number(p.sessions_used) === 0) { %>
                   <form method="post" action="/private-training/package/<%= p.id %>/delete" data-confirm="حذف هذه الباقة؟">
                     <button class="btn btn-ghost" type="submit" title="حذف"><i class="fas fa-trash"></i></button>
@@ -352,7 +358,7 @@
   <div class="card-body">
     <div class="table-wrap">
       <table class="data-table rtable">
-        <thead><tr><th>التاريخ</th><th>الوقت</th><th>اللاعب</th><th>التقييم</th><th>مستحق المدرب</th><th>الحالة</th><th>تسجيل الحضور</th></tr></thead>
+        <thead><tr><th>التاريخ</th><th>الوقت</th><th>اللاعب</th><th>التقييم فني</th><th>مستحق المدرب</th><th>الحالة</th><th>تسجيل الحضور</th></tr></thead>
         <tbody>
           <% if (!allSessions.length) { %><tr><td colspan="7" class="text-center text-muted">لا توجد حصص مسجلة</td></tr><% } %>
           <% allSessions.forEach(function (s) { %>
@@ -360,7 +366,13 @@
               <td data-label="التاريخ"><%= s.date %></td>
               <td data-label="الوقت"><%= s.start_time %> - <%= s.end_time %></td>
               <td data-label="اللاعب"><%= s.swimmer_name || '—' %></td>
-              <td data-label="التقييم"><%- ratingStars(s.rating) %></td>
+              <td data-label="التقييم فني">
+                <% var paL = paPercents[s.swimmer_id]; %>
+                <div class="pt-assess-link">
+                  <% if (paL) { %><span class="score-pill <%= paL.percent >= 80 ? 'score-high' : (paL.percent >= 60 ? 'score-mid' : 'score-low') %>"><%= paL.percent %>%</span><% } %>
+                  <a href="/private-training/ratings/new?swimmer=<%= s.swimmer_id %>&coach=<%= coach.id %>" class="btn btn-ghost btn-sm" title="تقييم فني"><i class="fas fa-clipboard-check"></i> <% if (paL) { %>تقييم جديد<% } else { %>تقييم<% } %></a>
+                </div>
+              </td>
               <td data-label="مستحق المدرب"><%= money(s.rate) %></td>
               <td data-label="الحالة"><%- statusBadge(s.status) %></td>
               <td data-label="تسجيل الحضور">

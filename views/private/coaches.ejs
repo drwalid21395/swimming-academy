@@ -4,6 +4,11 @@
     <div class="page-title"><i class="fas fa-dumbbell"></i> التدريب الخاص</div>
     <div class="page-sub">مواعيد التدريب الخاص لكل مدرب مع شبكة الحجز الأسبوعية ومتابعة الباقات وحضور اللاعبين</div>
   </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="/private-training/ratings" class="btn btn-primary"><i class="fas fa-clipboard-check"></i> تقييمات التدريب الخاص</a>
+    <a href="/assessments" class="btn btn-outline"><i class="fas fa-arrow-right"></i> التقييمات الفنية</a>
+  </div>
 </div>
 
 <div class="card">
@@ -15,7 +20,7 @@
         <p class="text-muted" style="margin-top:10px">لا يوجد مدربون. أضف مدربين أولاً من تبويب «المدربون».</p>
       </div>
     <% } else { %>
-      <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
+      <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:14px">
         <% coaches.forEach(function (c) { var st = stats[c.id] || {}; %>
           <div class="card" style="margin:0;border:1px solid var(--card-border)">
             <div class="card-body">
@@ -38,6 +43,9 @@
               </div>
               <a href="/private-training/coach/<%= c.id %>" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px">
                 <i class="fas fa-calendar-days"></i> إدارة المواعيد والحجز
+              </a>
+              <a href="/private-training/ratings?coach=<%= c.id %>" class="btn btn-outline" style="width:100%;justify-content:center;margin-top:6px">
+                <i class="fas fa-clipboard-check"></i> تقييم لاعبي المدرب
               </a>
             </div>
           </div>

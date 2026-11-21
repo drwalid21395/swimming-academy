@@ -251,10 +251,11 @@ router.get('/assessments', async function (req, res) {
   let privateRated = 0;
   let privateAvg = 0;
   try {
-    const pr = await db.prepare(`SELECT COUNT(*) AS c, AVG(rating) AS avg FROM private_availability
-      WHERE swimmer_id IS NOT NULL AND rating > 0`).get();
+    /* تقييمات التدريب الخاص الآن بنفس نظام التقييم الفني (نسب 0-100) */
+    const pr = await db.prepare(`SELECT COUNT(DISTINCT swimmer_id) AS c, ROUND(AVG(overall_percent), 1) AS avg
+      FROM private_assessments`).get();
     privateRated = Number((pr && pr.c) || 0);
-    privateAvg = Math.round(Number((pr && pr.avg) || 0) * 10) / 10;
+    privateAvg = (pr && pr.avg != null) ? Number(pr.avg) : 0;
   } catch (e) { /* الجدول قد يكون فارغاً على تثبيت قديم */ }
   res.render('assessments_home', {
     title: 'التقييمات الفنية', active: 'assessments',

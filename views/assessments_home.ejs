@@ -1,11 +1,15 @@
 <%- include('partials/layout_top', { title: title, active: 'assessments' }) %>
+<style>
+  .section-title { font-size:18px; margin:18px 0 10px; display:flex; align-items:center; gap:8px; }
+  @media (max-width:768px) { .section-title { font-size:16px; margin:16px 0 8px; } }
+</style>
 <div class="page-head">
   <div>
     <div class="page-title"><i class="fas fa-clipboard-check"></i> التقييمات الفنية</div>
     <div class="page-sub">كل المجموعات والفرق في مكان واحد — ادخل أي مجموعة أو فريق لتقييم لاعبيها</div>
   </div>
   <div class="spacer"></div>
-  <div class="flex flex-wrap gap-1">
+  <div class="flex gap-1" style="flex-wrap:wrap">
     <% if (canAdd(user, 'assessments')) { %>
       <a href="/assessments/new" class="btn btn-primary"><i class="fas fa-plus"></i> تقييم جديد</a>
     <% } %>
@@ -27,13 +31,13 @@
 
 <h2 class="section-title" style="margin-top:6px"><i class="fas fa-dumbbell"></i> التدريب الخاص</h2>
 <a class="assess-group-card" href="/private-training/ratings">
-  <span class="assess-group-icon" style="background:linear-gradient(135deg,#f59e0b,#f97316)"><i class="fas fa-star"></i></span>
+  <span class="assess-group-icon" style="background:linear-gradient(135deg,#f59e0b,#f97316)"><i class="fas fa-clipboard-check"></i></span>
   <span class="assess-group-body">
     <span class="assess-group-name">تقييم التدريب الخاص</span>
-    <span class="assess-group-meta">تقييم اللاعبين في مواعيدهم الثابتة مع كل مدرب</span>
+    <span class="assess-group-meta">نفس المستويات والمعايير ونموذج التقييم الفني — للاعبي التدريب الخاص</span>
     <span class="assess-group-stats">
-      <span><i class="fas fa-star"></i> <%= privateRated || 0 %> موعد مُقيَّم</span>
-      <span><i class="fas fa-chart-line"></i> متوسط <%= privateAvg || 0 %></span>
+      <span><i class="fas fa-user-check"></i> <%= privateRated || 0 %> لاعب مُقيَّم</span>
+      <span><i class="fas fa-chart-line"></i> متوسط <%= privateAvg || 0 %>%</span>
     </span>
   </span>
   <i class="fas fa-chevron-left assess-group-arrow"></i>
@@ -115,7 +119,7 @@
             <button type="submit" class="btn btn-primary"><i class="fas fa-user-check"></i> تسكين المحددين</button>
           </div>
         </div>
-        <div style="overflow-x:auto">
+        <div class="table-wrap">
           <table class="data-table">
             <thead>
               <tr><th><input type="checkbox" id="selectAllUngrouped"></th><th>اللاعب</th><th>رقم العضوية</th><th>المستوى الحالي</th></tr>

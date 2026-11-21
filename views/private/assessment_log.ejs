@@ -1,0 +1,50 @@
+<%- include('../partials/layout_top', { title: title, active: 'assessments' }) %>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-list-check"></i> سجل تقييمات التدريب الخاص</div>
+    <div class="page-sub">كل تقييمات التدريب الخاص — بنفس المستويات والمعايير ونسب التقييمات الفنية العادية</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="/private-training/ratings" class="btn btn-primary"><i class="fas fa-users"></i> تقييم اللاعبين</a>
+    <a href="/private-training/ratings/new" class="btn btn-outline"><i class="fas fa-plus"></i> تقييم جديد</a>
+    <a href="/assessments" class="btn btn-ghost"><i class="fas fa-arrow-right"></i> التقييمات الفنية</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><i class="fas fa-clock-rotate-left"></i> التقييمات المسجلة (<%= rows.length %>)</div>
+  <div class="card-body">
+    <div class="table-wrap">
+      <table class="data-table rtable">
+        <thead>
+          <tr><th>اللاعب</th><th>المدرب</th><th>التاريخ</th><th>المستويات</th><th>النسبة النهائية</th><th>إجراءات</th></tr>
+        </thead>
+        <tbody>
+          <% if (!rows.length) { %>
+            <tr><td colspan="6" class="text-center text-muted">لا توجد تقييمات مسجلة للتدريب الخاص بعد</td></tr>
+          <% } %>
+          <% rows.forEach(function (r) { %>
+            <tr>
+              <td data-label="اللاعب">
+                <b><%= r.swimmer_name || '—' %></b>
+                <% if (r.membership_no) { %><div class="text-muted font-11"><%= r.membership_no %></div><% } %>
+              </td>
+              <td data-label="المدرب"><%= r.coach_name || '—' %></td>
+              <td data-label="التاريخ"><%= fmtDate(r.date) %></td>
+              <td data-label="المستويات"><%= r.level_names || 'معايير عامة' %></td>
+              <td data-label="النسبة النهائية"><span class="score-pill <%= r.avg >= 80 ? 'score-high' : (r.avg >= 60 ? 'score-mid' : 'score-low') %>"><%= r.avg %>%</span></td>
+              <td class="rt-actions" data-label="إجراءات">
+                <div class="table-actions">
+                  <a href="/private-training/ratings/<%= r.id %>" class="btn btn-outline btn-sm"><i class="fas fa-eye"></i> تفاصيل</a>
+                  <a href="/private-training/ratings/<%= r.id %>/edit" class="btn btn-primary btn-sm"><i class="fas fa-pen"></i> تعديل</a>
+                </div>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<%- include('../partials/layout_bottom') %>
