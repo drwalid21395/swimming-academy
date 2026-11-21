@@ -29,8 +29,11 @@
                 </div>
               </div>
               <div class="flex gap-1" style="flex-wrap:wrap;margin-top:12px">
-                <span class="badge badge-info"><i class="fas fa-clock"></i> <%= st.slots || 0 %> موعد</span>
-                <span class="badge badge-success"><i class="fas fa-ticket"></i> <%= st.packages || 0 %> باقة</span>
+                <span class="badge badge-info"><i class="fas fa-clock"></i> <%= st.slots || 0 %> موعد ثابت</span>
+                <span class="badge badge-success"><i class="fas fa-user-check"></i> <%= st.booked || 0 %> محجوز</span>
+                <span class="badge badge-warning"><i class="fas fa-hourglass-half"></i> <%= st.free || 0 %> متبقي</span>
+                <% if (st.blocked) { %><span class="badge badge-danger"><i class="fas fa-ban"></i> <%= st.blocked %> غير متاح</span><% } %>
+                <span class="badge badge-info"><i class="fas fa-ticket"></i> <%= st.packages || 0 %> باقة</span>
                 <span class="badge badge-warning"><i class="fas fa-calendar-check"></i> <%= st.upcoming || 0 %> قادمة</span>
               </div>
               <a href="/private-training/coach/<%= c.id %>" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px">

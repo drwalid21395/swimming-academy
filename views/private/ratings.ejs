@@ -1,0 +1,99 @@
+<%- include('../partials/layout_top', { title: 'تقييم التدريب الخاص', active: 'assessments' }) %>
+<style>
+  .pt-stars { color:#f59e0b; letter-spacing:1px; white-space:nowrap; }
+  .pt-stars .fa-star-regular { color:#cbd5e1; }
+  .pt-rate-form { display:flex; gap:4px; align-items:center; }
+  .pt-rate-form select { width:auto; min-width:110px; padding:4px 6px; font-size:12px; }
+</style>
+<div class="page-head">
+  <div>
+    <div class="page-title"><i class="fas fa-star"></i> تقييم التدريب الخاص</div>
+    <div class="page-sub">فئة مستقلة داخل التقييمات — تقييم كل لاعب في مواعيد التدريب الخاص مع المدرب</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="flex gap-1">
+    <a href="<%= backUrl %>" class="btn btn-outline"><i class="fas fa-arrow-right"></i> التقييمات الفنية</a>
+    <a href="/private-training" class="btn btn-ghost"><i class="fas fa-dumbbell"></i> التدريب الخاص</a>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="k-val text-primary"><%= kpi.fixed %></div><div class="k-lbl">مواعيد مُسكَّنة</div></div>
+  <div class="kpi"><div class="k-val text-success"><%= kpi.rated %></div><div class="k-lbl">مواعيد مُقيَّمة</div></div>
+  <div class="kpi"><div class="k-val text-warning"><%= kpi.avg %></div><div class="k-lbl">متوسط التقييم</div></div>
+  <div class="kpi"><div class="k-val"><%= kpi.sessions %></div><div class="k-lbl">حصص مسجلة</div></div>
+</div>
+
+<div class="card">
+  <div class="card-header"><i class="fas fa-calendar-day"></i> المواعيد الثابتة المُسكَّنة</div>
+  <div class="card-body">
+    <div class="table-wrap">
+      <table class="data-table rtable">
+        <thead><tr><th>المدرب</th><th>اليوم</th><th>من</th><th>إلى</th><th>اللاعب</th><th>التقييم</th><th></th></tr></thead>
+        <tbody>
+          <% if (!fixed.length) { %><tr><td colspan="7" class="text-center text-muted">لا توجد مواعيد مُسكَّنة بعد — اسكّن اللاعبين من صفحة التدريب الخاص</td></tr><% } %>
+          <% fixed.forEach(function (a) { %>
+            <tr>
+              <td data-label="المدرب"><%= a.coach_name || '—' %></td>
+              <td data-label="اليوم"><%= dayFull[Number(a.weekday)] || '—' %></td>
+              <td data-label="من"><%= a.start_time %></td>
+              <td data-label="إلى"><%= a.end_time %></td>
+              <td data-label="اللاعب"><b><%= a.swimmer_name %></b> <div class="text-muted font-11"><%= a.membership_no || '' %></div></td>
+              <td data-label="التقييم">
+                <% if (canRate) { %>
+                  <form method="post" action="/private-training/rating" class="pt-rate-form">
+                    <input type="hidden" name="kind" value="availability">
+                    <input type="hidden" name="id" value="<%= a.id %>">
+                    <input type="hidden" name="back" value="/private-training/ratings">
+                    <select name="rating" class="form-control">
+                      <% for (var r = 0; r <= 5; r++) { %><option value="<%= r %>" <%= ratingValue(a.rating) === r ? 'selected' : '' %>><%= r ? '★'.repeat(r) : 'بدون تقييم' %></option><% } %>
+                    </select>
+                    <button class="btn btn-primary btn-sm" type="submit"><i class="fas fa-check"></i></button>
+                  </form>
+                <% } else { %><%- ratingStars(a.rating) %><% } %>
+              </td>
+              <td class="rt-actions"><a class="btn btn-ghost btn-sm" href="/private-training/coach/<%= a.coach_id %>" title="فتح الموعد"><i class="fas fa-arrow-left"></i></a></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:14px">
+  <div class="card-header"><i class="fas fa-clock-rotate-left"></i> حصص التدريب الخاص المسجلة</div>
+  <div class="card-body">
+    <div class="table-wrap">
+      <table class="data-table rtable">
+        <thead><tr><th>التاريخ</th><th>الوقت</th><th>المدرب</th><th>اللاعب</th><th>الحالة</th><th>التقييم</th></tr></thead>
+        <tbody>
+          <% if (!sessions.length) { %><tr><td colspan="6" class="text-center text-muted">لا توجد حصص مسجلة بعد</td></tr><% } %>
+          <% sessions.forEach(function (s) { %>
+            <tr>
+              <td data-label="التاريخ"><%= s.date %></td>
+              <td data-label="الوقت"><%= s.start_time %> - <%= s.end_time %></td>
+              <td data-label="المدرب"><%= s.coach_name || '—' %></td>
+              <td data-label="اللاعب"><b><%= s.swimmer_name %></b></td>
+              <td data-label="الحالة"><span class="badge badge-info"><%= s.status %></span></td>
+              <td data-label="التقييم">
+                <% if (canRate) { %>
+                  <form method="post" action="/private-training/rating" class="pt-rate-form">
+                    <input type="hidden" name="kind" value="session">
+                    <input type="hidden" name="id" value="<%= s.id %>">
+                    <input type="hidden" name="back" value="/private-training/ratings">
+                    <select name="rating" class="form-control">
+                      <% for (var r2 = 0; r2 <= 5; r2++) { %><option value="<%= r2 %>" <%= ratingValue(s.rating) === r2 ? 'selected' : '' %>><%= r2 ? '★'.repeat(r2) : 'بدون تقييم' %></option><% } %>
+                    </select>
+                    <button class="btn btn-primary btn-sm" type="submit"><i class="fas fa-check"></i></button>
+                  </form>
+                <% } else { %><%- ratingStars(s.rating) %><% } %>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<%- include('../partials/layout_bottom') %>

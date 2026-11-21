@@ -248,10 +248,19 @@ router.get('/assessments', async function (req, res) {
       WHERE 1=1` + sportClause(sid, 't') + `
       GROUP BY tm.team_id`).all(todayISO())).forEach(function (r) { teamAssessed[r.id] = r.c; });
   teams.forEach(function (t) { t.assessed_today = teamAssessed[t.id] || 0; });
+  let privateRated = 0;
+  let privateAvg = 0;
+  try {
+    const pr = await db.prepare(`SELECT COUNT(*) AS c, AVG(rating) AS avg FROM private_availability
+      WHERE swimmer_id IS NOT NULL AND rating > 0`).get();
+    privateRated = Number((pr && pr.c) || 0);
+    privateAvg = Math.round(Number((pr && pr.avg) || 0) * 10) / 10;
+  } catch (e) { /* الجدول قد يكون فارغاً على تثبيت قديم */ }
   res.render('assessments_home', {
     title: 'التقييمات الفنية', active: 'assessments',
     groups, totalMembers, assessedToday, ungroupedCount: Number((ungrouped && ungrouped.c) || 0),
-    ungroupedSwimmers, availableGroups, teams, userCanExport: canExport(req.currentUser, 'assessments')
+    ungroupedSwimmers, availableGroups, teams, privateRated, privateAvg,
+    userCanExport: canExport(req.currentUser, 'assessments')
   });
 });
 
