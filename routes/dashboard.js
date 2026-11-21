@@ -9,13 +9,15 @@ const router = express.Router();
 
 async function swimmerSummary(sid) {
   const wc = swimmerClause(sid);
-  const [total, active, stopped, expired] = await Promise.all([
-    db.prepare('SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL' + wc).get(),
-    db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status = 'نشط'" + wc).get(),
-    db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status IN ('متوقف مؤقتاً','مجمد','منسحب')" + wc).get(),
-    db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status IN ('منتهي','خريج')" + wc).get()
-  ]);
-  return { total: total.c, active: active.c, stopped: stopped.c, expired: expired.c };
+  /* أربع قراءات كانت تُعاد لنفس الجدول بنفس الشرط؛ استعلام واحد بالجمع الشرطي
+     يُنتج نفس الأرقام ويوفّر ثلاث رحلات إلى قاعدة البيانات البعيدة. */
+  const row = await db.prepare(`
+    SELECT COUNT(*) total,
+           COALESCE(SUM(CASE WHEN status = 'نشط' THEN 1 ELSE 0 END),0) active,
+           COALESCE(SUM(CASE WHEN status IN ('متوقف مؤقتاً','مجمد','منسحب') THEN 1 ELSE 0 END),0) stopped,
+           COALESCE(SUM(CASE WHEN status IN ('منتهي','خريج') THEN 1 ELSE 0 END),0) expired
+    FROM swimmers WHERE deleted_at IS NULL` + wc).get();
+  return { total: Number(row.total), active: Number(row.active), stopped: Number(row.stopped), expired: Number(row.expired) };
 }
 
 router.get('/', async function (req, res) {
@@ -33,22 +35,22 @@ router.get('/', async function (req, res) {
   const now = today();
 
   const subsScope = progClause(sid, 'subscriptions');
-  const [subActive, subExpired, subExpiringSoon, subFrozen] = await Promise.all([
-    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'نشط'" + subsScope).get(),
-    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status IN ('منتهي','مكتمل','ملغي')" + subsScope).get(),
-    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'نشط' AND end_date IS NOT NULL AND date(end_date) BETWEEN date(?) AND date(?, '+7 day')" + subsScope).get(now, now),
-    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'مجمد'" + subsScope).get()
-  ]);
-  const subs = { active: subActive.c, expired: subExpired.c, expiringSoon: subExpiringSoon.c, frozen: subFrozen.c };
+  const subsRow = await db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN status = 'نشط' THEN 1 ELSE 0 END),0) active,
+           COALESCE(SUM(CASE WHEN status IN ('منتهي','مكتمل','ملغي') THEN 1 ELSE 0 END),0) expired,
+           COALESCE(SUM(CASE WHEN status = 'نشط' AND end_date IS NOT NULL AND date(end_date) BETWEEN date(?) AND date(?, '+7 day') THEN 1 ELSE 0 END),0) expiringSoon,
+           COALESCE(SUM(CASE WHEN status = 'مجمد' THEN 1 ELSE 0 END),0) frozen
+    FROM subscriptions WHERE 1=1` + subsScope).get(now, now);
+  const subs = { active: Number(subsRow.active), expired: Number(subsRow.expired), expiringSoon: Number(subsRow.expiringSoon), frozen: Number(subsRow.frozen) };
 
   const sScope = sessionClause(sid, 'se');
-  const [sessionExecuted, sessionToday, sessionUpcoming, sessionCancelled] = await Promise.all([
-    db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'completed' AND deleted_at IS NULL" + sScope).get(),
-    db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'scheduled' AND date = ? AND deleted_at IS NULL" + sScope).get(now),
-    db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'scheduled' AND date >= ? AND deleted_at IS NULL" + sScope).get(now),
-    db.prepare("SELECT COUNT(*) c FROM sessions se WHERE status = 'cancelled' AND deleted_at IS NULL" + sScope).get()
-  ]);
-  const sessions = { executed: sessionExecuted.c, scheduledToday: sessionToday.c, upcoming: sessionUpcoming.c, cancelled: sessionCancelled.c };
+  const sessionRow = await db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END),0) executed,
+           COALESCE(SUM(CASE WHEN status = 'scheduled' AND date = ? THEN 1 ELSE 0 END),0) scheduledToday,
+           COALESCE(SUM(CASE WHEN status = 'scheduled' AND date >= ? THEN 1 ELSE 0 END),0) upcoming,
+           COALESCE(SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END),0) cancelled
+    FROM sessions se WHERE deleted_at IS NULL` + sScope).get(now, now);
+  const sessions = { executed: Number(sessionRow.executed), scheduledToday: Number(sessionRow.scheduledToday), upcoming: Number(sessionRow.upcoming), cancelled: Number(sessionRow.cancelled) };
 
   const attScope = sessionClause(sid, 's');
   /* ثلاث قراءات متطابقة كانت تُكرَّر لحالات الحضور اليوم؛ دمجها في استعلام
