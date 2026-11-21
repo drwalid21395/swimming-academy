@@ -1022,13 +1022,92 @@ function chunkIds(ids, size) {
   for (let i = 0; i < clean.length; i += size) out.push(clean.slice(i, i + size));
   return out;
 }
-async function mapByIds(baseSql, ids, keyFn, valueFn) {
+async function mapByIds(baseSql, ids, keyFn, valueFn, suffixSql) {
   const map = new Map();
   for (const chunk of chunkIds(ids, 500)) {
-    const rows = await db.prepare(baseSql + ` IN (${chunk.map(() => '?').join(',')})`).all(...chunk);
+    const sql = baseSql + ` IN (${chunk.map(() => '?').join(',')})` + (suffixSql || '');
+    const rows = await db.prepare(sql).all(...chunk);
     rows.forEach(r => map.set(keyFn(r), valueFn ? valueFn(r) : r));
   }
   return map;
+}
+async function queryChunks(baseSql, ids, extraArgs, suffixSql) {
+  const rows = [];
+  for (const chunk of chunkIds(ids, 300)) {
+    const sql = baseSql + ` IN (${chunk.map(() => '?').join(',')})` + (suffixSql || '');
+    rows.push(...await db.prepare(sql).all(...chunk, ...(extraArgs || [])));
+  }
+  return rows;
+}
+function countByPerson(rows) { return new Map(rows.map(r => [r.person_id, Number(r.c || 0)])); }
+function sumByPerson(rows) { return new Map(rows.map(r => [r.person_id, Number(r.s || 0)])); }
+
+/* تجميع قراءات رصيد الحصص للكشوف الظاهرة في نفس الطلب.
+   نفس شروط الحالة ومنطق القبض بالظبط؛ بنجمّع فقط استعلامات العدّ/المجاميع،
+   أما استعلامات الحصص غير المقبوضة فتظل كما هي (مع حد الـ 500 لكل شخص)
+   لضمان تطابق النتائج المعروضة تماماً. */
+async function preloadPayrollSessionData(rows, ctx) {
+  const trainerIds = rows.filter(r => r.person_type === 'trainer' && r.coach_id).map(r => r.coach_id);
+  const staffIds = rows.filter(r => r.person_type === 'staff' && r.staff_id).map(r => r.staff_id);
+  ctx.sessionBalances = new Map();
+
+  const coachStatuses = coachPayableStatuses();
+  const staffStatuses = staffPayableStatuses();
+  const cph = coachStatuses.map(() => '?').join(',');
+  const sph = staffStatuses.map(() => '?').join(',');
+
+  if (trainerIds.length) {
+    const [attended, claimed, subAttended, subClaimed, amountTrainer, amountSub] = await Promise.all([
+      queryChunks('SELECT a.coach_id person_id, COUNT(*) c FROM trainer_session_attendance a WHERE a.coach_id', trainerIds, coachStatuses, ` AND a.status IN (${cph}) GROUP BY a.coach_id`),
+      queryChunks(`SELECT a.coach_id person_id, COUNT(*) c FROM trainer_session_attendance a JOIN payroll_items pi ON pi.source_type = 'trainer' AND pi.source_id = a.id WHERE a.coach_id`, trainerIds, coachStatuses, ` AND a.status IN (${cph}) GROUP BY a.coach_id`),
+      queryChunks('SELECT a.substitute_coach_id person_id, COUNT(*) c FROM trainer_session_attendance a WHERE a.substitute_coach_id', trainerIds, coachStatuses, ` AND a.status IN (${cph}) GROUP BY a.substitute_coach_id`),
+      queryChunks(`SELECT a.substitute_coach_id person_id, COUNT(*) c FROM trainer_session_attendance a JOIN payroll_items pi ON pi.source_type = 'substitute' AND pi.source_id = a.id WHERE a.substitute_coach_id`, trainerIds, coachStatuses, ` AND a.status IN (${cph}) GROUP BY a.substitute_coach_id`),
+      queryChunks(`SELECT a.coach_id person_id, COALESCE(SUM(pi.amount),0) s FROM payroll_items pi JOIN trainer_session_attendance a ON a.id = pi.source_id WHERE pi.source_type = 'trainer' AND a.coach_id`, trainerIds, [], ' GROUP BY a.coach_id'),
+      queryChunks(`SELECT a.substitute_coach_id person_id, COALESCE(SUM(pi.amount),0) s FROM payroll_items pi JOIN trainer_session_attendance a ON a.id = pi.source_id WHERE pi.source_type = 'substitute' AND a.substitute_coach_id`, trainerIds, [], ' GROUP BY a.substitute_coach_id'),
+    ]);
+    const aMap = countByPerson(attended), cMap = countByPerson(claimed), saMap = countByPerson(subAttended), scMap = countByPerson(subClaimed);
+    const amtMap = sumByPerson(amountTrainer), samtMap = sumByPerson(amountSub);
+
+    trainerIds.forEach(function (id) {
+      const attendedN = Number(aMap.get(id) || 0) + Number(saMap.get(id) || 0);
+      const claimedN = Number(cMap.get(id) || 0) + Number(scMap.get(id) || 0);
+      const unclaimedN = Math.max(0, attendedN - claimedN);
+      const rate = Number((ctx.trainerEffectiveRates && ctx.trainerEffectiveRates.get(id)) || 0);
+      const claimedAmount = round2(Number(amtMap.get(id) || 0) + Number(samtMap.get(id) || 0));
+      ctx.sessionBalances.set('trainer:' + id, {
+        attended: attendedN,
+        claimed: claimedN,
+        unclaimed: unclaimedN,
+        rate,
+        claimedAmount,
+        amountDue: unclaimedN * rate,
+      });
+    });
+  }
+
+  if (staffIds.length) {
+    const [attended, claimed, amountRows] = await Promise.all([
+      queryChunks('SELECT a.staff_id person_id, COUNT(*) c FROM staff_attendance a WHERE a.staff_id', staffIds, staffStatuses, ` AND a.status IN (${sph}) GROUP BY a.staff_id`),
+      queryChunks(`SELECT a.staff_id person_id, COUNT(*) c FROM staff_attendance a JOIN payroll_items pi ON pi.source_type = 'staff' AND pi.source_id = a.id WHERE a.staff_id`, staffIds, staffStatuses, ` AND a.status IN (${sph}) GROUP BY a.staff_id`),
+      queryChunks(`SELECT a.staff_id person_id, COALESCE(SUM(pi.amount),0) s FROM payroll_items pi JOIN staff_attendance a ON a.id = pi.source_id WHERE pi.source_type = 'staff' AND a.staff_id`, staffIds, [], ' GROUP BY a.staff_id'),
+    ]);
+    const aMap = countByPerson(attended), cMap = countByPerson(claimed), amtMap = sumByPerson(amountRows);
+
+    staffIds.forEach(function (id) {
+      const attendedN = Number(aMap.get(id) || 0);
+      const claimedN = Number(cMap.get(id) || 0);
+      const unclaimedN = Math.max(0, attendedN - claimedN);
+      const rate = Number((ctx.staffRates && ctx.staffRates.get(id)) || 0);
+      ctx.sessionBalances.set('staff:' + id, {
+        attended: attendedN,
+        claimed: claimedN,
+        unclaimed: unclaimedN,
+        rate,
+        claimedAmount: round2(amtMap.get(id) || 0),
+        amountDue: unclaimedN * rate,
+      });
+    });
+  }
 }
 function overlapsRange(row, range) {
   const r = parsePeriod(row.period, row.from_date, row.to_date);
@@ -1082,7 +1161,8 @@ router.get('/payroll', async function (req, res) {
       'SELECT payroll_id, COALESCE(SUM(amount),0) s FROM payroll_items WHERE payroll_id',
       perSessionRows.filter(r => r.id && !r.settled_at).map(r => r.id),
       r => r.payroll_id,
-      r => r.s
+      r => r.s,
+      ' GROUP BY payroll_id'
     );
     ctx.policy = (await getPolicy()).pol;
 
@@ -1110,13 +1190,20 @@ router.get('/payroll', async function (req, res) {
     }
   }
 
+  /* نجمّع عدّات الحصص لكل الأشخاص في طلب واحد بدل استعلام لكل كشف. */
+  if (perSessionRows.length) await preloadPayrollSessionData(perSessionRows, ctx);
+
   // حساب رصيد الحصص للتعاقدات بالحصة
   for (const r of rows) {
     const personId = personIdOf(r);
     const ps = !!personId && (r.person_type === 'trainer' ? isPerSessionCoach(coachTypes.get(personId)) : isPerSessionStaff(staffTypes.get(personId)));
     r.is_per_session = ps;
     if (ps) await syncPerSessionTotals(r, ctx);
-    r.session_balance = ps ? await countSessionBalance(r.person_type, personId, undefined, ctx) : null;
+    const balanceKey = r.person_type + ':' + personId;
+    const cachedBalance = ps && ctx.sessionBalances && ctx.sessionBalances.has(balanceKey) ? ctx.sessionBalances.get(balanceKey) : null;
+    /* نسخة مستقلة لكل كشف حتى لا تؤدي الإضافات أدناه إلى تعديل كشف آخر */
+    const balance = cachedBalance ? Object.assign({}, cachedBalance) : (ps ? await countSessionBalance(r.person_type, personId, undefined, ctx) : null);
+    r.session_balance = balance;
     /* قيمة الحصص غير المقبوضة (تظهر في البطاقة الخارجية حتى لو كان الكشف صفراً) */
     if (r.session_balance) {
       const pending = await listUnclaimedSessions(r.person_type, personId, 500, undefined, ctx);
