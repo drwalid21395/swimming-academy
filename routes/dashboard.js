@@ -51,12 +51,16 @@ router.get('/', async function (req, res) {
   const sessions = { executed: sessionExecuted.c, scheduledToday: sessionToday.c, upcoming: sessionUpcoming.c, cancelled: sessionCancelled.c };
 
   const attScope = sessionClause(sid, 's');
-  const [attPresent, attAbsent, attExcused] = await Promise.all([
-    db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'present'` + attScope).get(now),
-    db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'absent'` + attScope).get(now),
-    db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date = ? AND a.status = 'excused'` + attScope).get(now)
-  ]);
-  const attendanceToday = { present: attPresent.c, absent: attAbsent.c, excused: attExcused.c };
+  /* ثلاث قراءات متطابقة كانت تُكرَّر لحالات الحضور اليوم؛ دمجها في استعلام
+     واحد مجمّع يُعطي نفس الأرقام ويوفّر رحلتين إلى قاعدة البيانات البعيدة. */
+  const attTodayRows = await db.prepare(`
+    SELECT a.status status, COUNT(*) c
+    FROM attendance a JOIN sessions s ON s.id = a.session_id
+    WHERE s.deleted_at IS NULL AND s.date = ? AND a.status IN ('present','absent','excused')` + attScope + `
+    GROUP BY a.status
+  `).all(now);
+  const attToday = Object.fromEntries(attTodayRows.map(r => [r.status, r.c]));
+  const attendanceToday = { present: attToday.present || 0, absent: attToday.absent || 0, excused: attToday.excused || 0 };
 
   const [coachesRow, teamsRow, groupsRow, branchesRow] = await Promise.all([
     db.prepare("SELECT COUNT(*) c FROM coaches WHERE status = 'active' AND deleted_at IS NULL" + sportClause(sid, 'coaches')).get(),
