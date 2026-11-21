@@ -12,6 +12,7 @@ const { enabledSportsForAcademy } = require('./lib/sports');
 const { syncExpiredSubscriptions } = require('./lib/expiry');
 const { NAV_ITEMS } = require('./lib/navigation');
 const barcode39 = require('./lib/barcode39');
+const { withRequestCache, disableRequestCache, memoize } = require('./lib/request-cache');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -45,6 +46,10 @@ app.use(securityHeaders);
 
 /* دفاع إضافي ضد CSRF: طلبات من أصل مختلف تُرفض (لا يؤثر على نفس الأصل) */
 app.use(csrfProtect);
+
+/* كاش قراءة محدود بالطلب الواحد: يُستخدم في طبقات الوسائط فقط، ويُوقف
+   قبل المسارات حتى لا تتغير نتائج أي صفحة بعد تعديلات داخل الطلب. */
+app.use(function (req, res, next) { return withRequestCache(next); });
 
 /* ملفات تطبيق الويب التقدمي (PWA): أنواع محتوى صحيحة + نطاق كامل */
 app.get('/manifest.webmanifest', async function (req, res) {
@@ -95,66 +100,66 @@ app.get('/uploads/:name', async function (req, res) {
 async function currentUser(req) {
   const uid = getAuth(req);
   if (!uid) return null;
-  try {
-    const u = await db.prepare('SELECT * FROM users WHERE id = ?').get(Number(uid));
-    if (!u || u.status !== 'active') return null;
-    const role = await db.prepare('SELECT * FROM roles WHERE id = ?').get(u.role_id);
-    u.role_name = role ? role.name : u.user_type;
-    let perms = {};
-    try { perms = JSON.parse((role && role.permissions) || '{}'); } catch (e) { perms = {}; }
-    /* الصلاحيات الفردية للمستخدم تتجاوز صلاحيات دوره (لكل وحدة وإجراء على حدة) */
+  const impRaw = getCookie(req, 'swim_imp') || '';
+  return memoize('currentUser:' + Number(uid) + ':' + impRaw, async function () {
     try {
-      const own = JSON.parse(u.permissions || '{}');
-      Object.entries(own).forEach(([m, actions]) => {
-        if (!actions || typeof actions !== 'object') return;
-        perms[m] = perms[m] || {};
-        Object.entries(actions).forEach(([a, v]) => { perms[m][a] = v ? 1 : 0; });
-      });
-    } catch (e) { /* تجاهل */ }
-    if (u.user_type === 'system') {
-      perms = {};
-      const MODULES = require('./lib/helpers').MODULES;
-      MODULES.forEach(m => { perms[m] = { view: 1, add: 1, edit: 1, del: 1, export: 1 }; });
-    }
-    u.perms = perms;
-    u.academy_id = u.academy_id ? Number(u.academy_id) : 1;
-    u.is_super = u.user_type === 'system';
-    /* فرض صلاحيات خطة الأكاديمية على مستخدمي الأكاديميات (non-system).
-       صلاحيات الخطة = تقاطع مع صلاحيات المستخدم/الدور: أي وحدة/إجراء غير مفعّل
-       بالخطة يُغلق حتى لو كان مفعلاً للمستخدم. الأكاديمية الأساسية premium
-       والدخول بالنيابة (Super Admin) لا يخضعان للقيود. */
-    if (!u.is_super) {
+      const u = await db.prepare('SELECT * FROM users WHERE id = ?').get(Number(uid));
+      if (!u || u.status !== 'active') return null;
+      const role = await db.prepare('SELECT * FROM roles WHERE id = ?').get(u.role_id);
+      u.role_name = role ? role.name : u.user_type;
+      let perms = {};
+      try { perms = JSON.parse((role && role.permissions) || '{}'); } catch (e) { perms = {}; }
+      /* الصلاحيات الفردية للمستخدم تتجاوز صلاحيات دوره (لكل وحدة وإجراء على حدة) */
       try {
-        const planPerms = await academyPlanPerms(u.academy_id);
-        if (planPerms) {
-          Object.keys(perms).forEach(function (m) {
-            /* تفضيل صوت الإشعارات ولوحة التحكم لا يخضعان لمزايا خطة الأكاديمية */
-            if (m === 'notifSound' || m === 'dashboard') return;
-            const planActions = planPerms[m] || {};
-            ACTIONS.forEach(function (a) {
-              if (perms[m] && typeof perms[m][a] !== 'undefined') {
-                perms[m][a] = (perms[m][a] && planActions[a]) ? 1 : 0;
-              }
+        const own = JSON.parse(u.permissions || '{}');
+        Object.entries(own).forEach(([m, actions]) => {
+          if (!actions || typeof actions !== 'object') return;
+          perms[m] = perms[m] || {};
+          Object.entries(actions).forEach(([a, v]) => { perms[m][a] = v ? 1 : 0; });
+        });
+      } catch (e) { /* تجاهل */ }
+      if (u.user_type === 'system') {
+        perms = {};
+        const MODULES = require('./lib/helpers').MODULES;
+        MODULES.forEach(m => { perms[m] = { view: 1, add: 1, edit: 1, del: 1, export: 1 }; });
+      }
+      u.perms = perms;
+      u.academy_id = u.academy_id ? Number(u.academy_id) : 1;
+      u.is_super = u.user_type === 'system';
+      /* فرض صلاحيات خطة الأكاديمية على مستخدمي الأكاديميات (non-system).
+         صلاحيات الخطة = تقاطع مع صلاحيات المستخدم/الدور: أي وحدة/إجراء غير مفعّل
+         بالخطة يُغلق حتى لو كان مفعلاً للمستخدم. الأكاديمية الأساسية premium
+         والدخول بالنيابة (Super Admin) لا يخضعان للقيود. */
+      if (!u.is_super) {
+        try {
+          const planPerms = await academyPlanPerms(u.academy_id);
+          if (planPerms) {
+            Object.keys(perms).forEach(function (m) {
+              /* تفضيل صوت الإشعارات ولوحة التحكم لا يخضعان لمزايا خطة الأكاديمية */
+              if (m === 'notifSound' || m === 'dashboard') return;
+              const planActions = planPerms[m] || {};
+              ACTIONS.forEach(function (a) {
+                if (perms[m] && typeof perms[m][a] !== 'undefined') {
+                  perms[m][a] = (perms[m][a] && planActions[a]) ? 1 : 0;
+                }
+              });
             });
-          });
-        }
-      } catch (e) { /* تجاهل: لا نقيّد عند خطأ */ }
-    }
-    /* وضع الدخول بالنيابة (Super Admin فقط): أقصد من أكاديمية محددة للدعم الفني */
-    u.impersonatingAcademyId = null;
-    u.impersonatingAcademy = null;
-    if (u.is_super) {
-      const impRaw = getCookie(req, 'swim_imp');
-      if (impRaw) {
+          }
+        } catch (e) { /* تجاهل: لا نقيّد عند خطأ */ }
+      }
+      /* وضع الدخول بالنيابة (Super Admin فقط): أقصد من أكاديمية محددة للدعم الفني */
+      u.impersonatingAcademyId = null;
+      u.impersonatingAcademy = null;
+      if (u.is_super && impRaw) {
         const impAcademy = await getAcademy(impRaw);
         if (impAcademy) {
           u.impersonatingAcademyId = impAcademy.id;
           u.impersonatingAcademy = impAcademy;
         }
       }
-    }
-    return u;
-  } catch (e) { return null; }
+      return u;
+    } catch (e) { return null; }
+  });
 }
 
 /* توفير المتغيرات العامة لكل الصفحات */
@@ -293,6 +298,10 @@ app.use(function (req, res, next) {
   const acadId = u.impersonatingAcademyId || u.academy_id;
   return withAcademy(acadId, next);
 });
+
+/* انتهت طبقات الوسائط: يُوقف الكاش هنا قبل أي مسار، لتبقى كل صفحة
+   تقرأ البيانات مباشرة كما كانت قبل هذا التحسين. */
+app.use(function (req, res, next) { disableRequestCache(); next(); });
 
 /* ======================= توجيه الوحدات ======================= */
 app.use('/', require('./routes/auth'));
