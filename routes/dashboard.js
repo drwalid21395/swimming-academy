@@ -184,32 +184,69 @@ router.get('/my-portal', async function (req, res) {
   }
   if (!kidIds.length) return res.render('portal/empty', { title: 'بوابتي', active: '' });
 
+  /* بوابة ولي الأمر: كل قراءات الأبناء تُجمع في استعلام واحد لكل نوع، ثم تُعاد
+     بنفس ترتيب kidIds ونفس حدود LIMIT لكل ابن. */
+  const kph = kidIds.map(function () { return '?'; }).join(',');
+  const kidRows = await db.prepare(`SELECT s.*, l.name AS level_name, g.name AS group_name, c.full_name AS coach_name, p.name AS program_name FROM swimmers s
+    LEFT JOIN levels l ON l.id = s.level_id LEFT JOIN groups g ON g.id = s.group_id
+    LEFT JOIN coaches c ON c.id = s.coach_id LEFT JOIN programs p ON p.id = s.program_id
+    WHERE s.id IN (` + kph + `)`).all(...kidIds);
+  const swimmerById = {};
+  kidRows.forEach(function (r) { swimmerById[String(r.id)] = r; });
+  const groupIds = Array.from(new Set(kidRows.map(function (r) { return r.group_id; }).filter(function (x) { return x !== null && x !== undefined; })));
+  const gph = groupIds.map(function () { return '?'; }).join(',');
+
+  const [subs, attRows, assessments, tests, nextRows, noteRows, progressRows, messages, myNotifications, announcements] = await Promise.all([
+    db.prepare('SELECT * FROM subscriptions WHERE swimmer_id IN (' + kph + ') ORDER BY id DESC').all(...kidIds),
+    db.prepare(`SELECT a.swimmer_id, COUNT(*) c, COALESCE(SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END),0) p
+      FROM attendance a JOIN sessions s ON s.id=a.session_id
+      WHERE s.deleted_at IS NULL AND a.swimmer_id IN (` + kph + `) GROUP BY a.swimmer_id`).all(...kidIds),
+    db.prepare(`SELECT a.*, c.full_name AS coach_name, l.name AS level_name FROM assessments a
+      LEFT JOIN coaches c ON c.id=a.coach_id LEFT JOIN levels l ON l.id=a.level_id
+      WHERE a.swimmer_id IN (` + kph + `) ORDER BY a.swimmer_id, a.date DESC, a.id DESC`).all(...kidIds),
+    db.prepare('SELECT * FROM tests WHERE swimmer_id IN (' + kph + ') ORDER BY swimmer_id, date DESC, id DESC').all(...kidIds),
+    groupIds.length ? db.prepare(`SELECT se.*, g.name AS group_name FROM sessions se JOIN groups g ON g.id = se.group_id
+      WHERE g.id IN (` + gph + `) AND se.deleted_at IS NULL AND se.date >= ? AND se.status='scheduled'
+      ORDER BY g.id, se.date, se.start_time, se.id`).all(...groupIds, today()) : Promise.resolve([]),
+    db.prepare(`SELECT a.swimmer_id, a.coach_note, s.date FROM attendance a JOIN sessions s ON s.id=a.session_id
+      WHERE a.swimmer_id IN (` + kph + `) AND a.coach_note != '' ORDER BY a.swimmer_id, s.date DESC, a.id DESC`).all(...kidIds),
+    db.prepare(`SELECT lp.*, l.name AS to_level FROM level_progress lp LEFT JOIN levels l ON l.id=lp.to_level_id
+      WHERE lp.swimmer_id IN (` + kph + `) ORDER BY lp.swimmer_id, lp.date, lp.id`).all(...kidIds),
+    db.prepare('SELECT * FROM messages WHERE to_user_id = ? ORDER BY id DESC LIMIT 10').all(user.id),
+    db.prepare(`SELECT n.* FROM notifications n JOIN notification_recipients r ON r.notification_id = n.id WHERE r.user_id = ? ORDER BY n.id DESC LIMIT 10`).all(user.id),
+    db.prepare('SELECT * FROM announcements WHERE is_public = 1 ORDER BY id DESC LIMIT 5').all()
+  ]);
+
+  function groupBySwimmer(rows) {
+    const out = {};
+    rows.forEach(function (r) { (out[String(r.swimmer_id)] = out[String(r.swimmer_id)] || []).push(r); });
+    return out;
+  }
+  const subByKid = {}, attByKid = {}, assessByKid = groupBySwimmer(assessments),
+    testByKid = groupBySwimmer(tests), nextByGroup = {}, noteByKid = groupBySwimmer(noteRows), progressByKid = groupBySwimmer(progressRows);
+  subs.forEach(function (r) { const k = String(r.swimmer_id); if (subByKid[k] === undefined) subByKid[k] = r; });
+  attRows.forEach(function (r) { attByKid[String(r.swimmer_id)] = r; });
+  nextRows.forEach(function (r) { (nextByGroup[String(r.group_id)] = nextByGroup[String(r.group_id)] || []).push(r); });
+
   const kids = [];
   for (const kidId of kidIds) {
-    const s = await db.prepare(`SELECT s.*, l.name AS level_name, g.name AS group_name, c.full_name AS coach_name, p.name AS program_name FROM swimmers s
-      LEFT JOIN levels l ON l.id = s.level_id LEFT JOIN groups g ON g.id = s.group_id
-      LEFT JOIN coaches c ON c.id = s.coach_id LEFT JOIN programs p ON p.id = s.program_id WHERE s.id = ?`).get(kidId);
+    const s = swimmerById[String(kidId)];
     if (!s) continue;
-    const sub = await db.prepare("SELECT * FROM subscriptions WHERE swimmer_id = ? ORDER BY id DESC LIMIT 1").get(kidId);
-    const totalAtt = (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND a.swimmer_id = ?`).get(kidId)).c;
-    const presentAtt = (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND a.swimmer_id = ? AND a.status='present'`).get(kidId)).c;
-    const assessments = await db.prepare(`SELECT a.*, c.full_name AS coach_name, l.name AS level_name FROM assessments a LEFT JOIN coaches c ON c.id=a.coach_id LEFT JOIN levels l ON l.id=a.level_id WHERE a.swimmer_id=? ORDER BY a.date DESC LIMIT 4`).all(kidId);
-    const tests = await db.prepare('SELECT * FROM tests WHERE swimmer_id = ? ORDER BY date DESC LIMIT 5').all(kidId);
-    const nextSessions = await db.prepare(`SELECT se.*, g.name AS group_name FROM sessions se JOIN groups g ON g.id = se.group_id WHERE g.id = ? AND se.deleted_at IS NULL AND se.date >= ? AND se.status='scheduled' ORDER BY se.date, se.start_time LIMIT 6`).all(s.group_id, today());
-    const coachNotes = await db.prepare(`SELECT a.coach_note, s.date FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE a.swimmer_id=? AND a.coach_note != '' ORDER BY s.date DESC LIMIT 5`).all(kidId);
-    const levelProgress = await db.prepare(`SELECT lp.*, l.name AS to_level FROM level_progress lp LEFT JOIN levels l ON l.id=lp.to_level_id WHERE lp.swimmer_id=? ORDER BY lp.date`).all(kidId);
+    const sub = subByKid[String(kidId)];
+    const att = attByKid[String(kidId)] || { c: 0, p: 0 };
+    const totalAtt = att.c, presentAtt = att.p;
     kids.push({
       s,
       sub,
       attendance: { total: totalAtt, present: presentAtt, pct: pct(presentAtt, totalAtt) },
       remaining: sub ? Math.max(0, sub.sessions_total - sub.sessions_used) : 0,
-      assessments, tests, nextSessions, coachNotes, levelProgress
+      assessments: (assessByKid[String(kidId)] || []).slice(0, 4),
+      tests: (testByKid[String(kidId)] || []).slice(0, 5),
+      nextSessions: (nextByGroup[String(s.group_id)] || []).slice(0, 6),
+      coachNotes: (noteByKid[String(kidId)] || []).slice(0, 5).map(function (r) { return { coach_note: r.coach_note, date: r.date }; }),
+      levelProgress: progressByKid[String(kidId)] || []
     });
   }
-
-  const messages = await db.prepare('SELECT * FROM messages WHERE to_user_id = ? ORDER BY id DESC LIMIT 10').all(user.id);
-  const myNotifications = await db.prepare(`SELECT n.* FROM notifications n JOIN notification_recipients r ON r.notification_id = n.id WHERE r.user_id = ? ORDER BY n.id DESC LIMIT 10`).all(user.id);
-  const announcements = await db.prepare('SELECT * FROM announcements WHERE is_public = 1 ORDER BY id DESC LIMIT 5').all();
 
   res.render('portal/index', {
     title: 'بوابتي الشخصية',

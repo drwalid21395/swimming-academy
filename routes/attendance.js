@@ -2125,13 +2125,24 @@ async function reportData(range, type, filterCoach, sid) {
   const rows = [];
   const pol = (await getPolicy()).pol;
   const payable = coachPayableStatuses();
-  for (const c of coachesList) {
-    const atts = await db.prepare(`SELECT * FROM trainer_session_attendance WHERE coach_id=? AND date >= ? AND date <= ?`).all(c.id, range.from, range.to);
-    /* الحصص التي تم قبضها/استحقاقها لهذا المدرب (مرتبطة ببنود الكشوف) */
-    const claimedRows = await db.prepare(`SELECT pi.source_id AS id, pi.amount AS amount
+
+  /* قراءة حضور المدربين والبنود المستحقة مرة واحدة لكل المدربين، ثم التجميع في الذاكرة. */
+  const coachIds = coachesList.map(function (c) { return c.id; });
+  const cph = coachIds.map(function () { return '?'; }).join(',');
+  const [attRows, claimedRowsAll] = coachIds.length ? await Promise.all([
+    db.prepare('SELECT * FROM trainer_session_attendance WHERE coach_id IN (' + cph + ') AND date >= ? AND date <= ?').all(...coachIds, range.from, range.to),
+    db.prepare(`SELECT a.coach_id, pi.source_id AS id, pi.amount AS amount
       FROM payroll_items pi
       JOIN trainer_session_attendance a ON a.id = pi.source_id
-      WHERE pi.source_type = 'trainer' AND a.coach_id = ? AND a.date >= ? AND a.date <= ?`).all(c.id, range.from, range.to);
+      WHERE pi.source_type = 'trainer' AND a.coach_id IN (` + cph + `) AND a.date >= ? AND a.date <= ?`).all(...coachIds, range.from, range.to)
+  ]) : [[], []];
+  const attsByCoach = {}, claimedByCoach = {};
+  attRows.forEach(function (a) { (attsByCoach[String(a.coach_id)] = attsByCoach[String(a.coach_id)] || []).push(a); });
+  claimedRowsAll.forEach(function (x) { (claimedByCoach[String(x.coach_id)] = claimedByCoach[String(x.coach_id)] || []).push(x); });
+
+  for (const c of coachesList) {
+    const atts = attsByCoach[String(c.id)] || [];
+    const claimedRows = claimedByCoach[String(c.id)] || [];
     const claimedMap = {};
     let claimedAmount = 0;
     claimedRows.forEach(function (x) { claimedMap[x.id] = 1; claimedAmount += Number(x.amount || 0); });
@@ -2162,7 +2173,7 @@ async function reportData(range, type, filterCoach, sid) {
     presentTotal += r.present; absentTotal += r.absent; lateTotal += r.late; costTotal += r.cost; totalSessions += r.total;
     claimedTotal += r.claimed; unclaimedTotal += r.unclaimed; claimedAmountTotal += r.claimedAmount;
   });
-  return { rows, range, summary: { presentTotal, absentTotal, lateTotal, costTotal, totalSessions, claimedTotal, unclaimedTotal, claimedAmountTotal: Math.round(claimedAmountTotal * 100) / 100 } };
+  return { rows, coaches: coachesList, range, summary: { presentTotal, absentTotal, lateTotal, costTotal, totalSessions, claimedTotal, unclaimedTotal, claimedAmountTotal: Math.round(claimedAmountTotal * 100) / 100 } };
 }
 
 router.get('/attendance-reports', async function (req, res) {
@@ -2172,8 +2183,7 @@ router.get('/attendance-reports', async function (req, res) {
   const filterCoach = req.query.coach || 0;
   try {
     const data = await reportData(range, type, filterCoach, activeSport(req));
-    const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), '') + ' ORDER BY full_name').all();
-    res.render('attendance_payroll/reports', { title: 'تقارير الحضور والمستحقات', active: 'reports', ...data, type, coaches, from: range.from, to: range.to, filterCoach, canExport: canExport(req.currentUser, 'payroll') || canExport(req.currentUser, 'reports') });
+    res.render('attendance_payroll/reports', { title: 'تقارير الحضور والمستحقات', active: 'reports', ...data, type, coaches: data.coaches, from: range.from, to: range.to, filterCoach, canExport: canExport(req.currentUser, 'payroll') || canExport(req.currentUser, 'reports') });
   } catch (e) {
     console.error('attendance-reports error:', e);
     res.status(500).send('حدث خطأ في تقرير الحضور: ' + e.message);

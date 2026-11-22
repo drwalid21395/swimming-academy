@@ -78,24 +78,77 @@ router.get('/reports/attendance/daily', async function (req, res) {
   const date = req.query.date || today();
   const groupRows = await db.prepare(`SELECT g.*, c.full_name AS coach_name FROM groups g
     LEFT JOIN coaches c ON c.id = g.coach_id WHERE g.deleted_at IS NULL` + groupClause(activeSport(req)) + ` ORDER BY g.name`).all();
-  const groups = [];
-  for (const g of groupRows) {
-    const session = await db.prepare(`SELECT * FROM sessions WHERE date = ? AND deleted_at IS NULL AND (group_id = ? OR EXISTS (SELECT 1 FROM session_groups sg WHERE sg.session_id = sessions.id AND sg.group_id = ?)) ORDER BY start_time LIMIT 1`).get(date, g.id, g.id);
+  const gScope = sessionClause(activeSport(req), 's');
+  const gIds = groupRows.map(function (g) { return g.id; });
+  const gSet = new Set(gIds.map(Number));
+  const gph = gIds.map(function () { return '?'; }).join(',');
+
+  /* جلسة كل مجموعة + أعضاء المجموعات + إجماليات اليوم: قراءات مستقلة وتجميعية. */
+  const [sessionRows, memberRows, dailyRow] = await Promise.all([
+    gIds.length ? db.prepare(`SELECT se.*, sg.group_id AS linked_group_id FROM sessions se
+      LEFT JOIN session_groups sg ON sg.session_id = se.id
+      WHERE se.date = ? AND se.deleted_at IS NULL
+        AND (se.group_id IN (` + gph + `) OR sg.group_id IN (` + gph + `))
+      ORDER BY se.start_time, se.id, linked_group_id`).all(date, ...gIds, ...gIds) : Promise.resolve([]),
+    gIds.length ? db.prepare(`SELECT sg.group_id, s.id AS swimmer_id, s.full_name, s.membership_no, l.name AS level_name
+      FROM swimmer_group sg JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN levels l ON l.id = s.level_id
+      WHERE sg.group_id IN (` + gph + `) ORDER BY sg.group_id, s.full_name, s.id`).all(...gIds) : Promise.resolve([]),
+    db.prepare(`SELECT
+        COALESCE(SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END),0) present,
+        COALESCE(SUM(CASE WHEN a.status='absent' THEN 1 ELSE 0 END),0) absent,
+        COALESCE(SUM(CASE WHEN a.status='excused' THEN 1 ELSE 0 END),0) excused,
+        COALESCE(SUM(CASE WHEN a.status='late' THEN 1 ELSE 0 END),0) late
+      FROM attendance a JOIN sessions s ON s.id=a.session_id
+      WHERE s.deleted_at IS NULL AND s.date=?` + gScope).get(date)
+  ]);
+
+  const sessionByGroup = {};
+  sessionRows.forEach(function (r) {
+    const session = Object.assign({}, r);
+    delete session.linked_group_id;
+    const ids = new Set();
+    if (r.group_id !== null && r.group_id !== undefined && gSet.has(Number(r.group_id))) ids.add(Number(r.group_id));
+    if (r.linked_group_id !== null && r.linked_group_id !== undefined && gSet.has(Number(r.linked_group_id))) ids.add(Number(r.linked_group_id));
+    ids.forEach(function (gid) {
+      const k = String(gid);
+      const list = sessionByGroup[k] = sessionByGroup[k] || [];
+      if (!list.some(function (x) { return x.id === session.id; })) list.push(session);
+    });
+  });
+  const membersByGroup = {};
+  memberRows.forEach(function (m) {
+    const k = String(m.group_id);
+    (membersByGroup[k] = membersByGroup[k] || []).push(m);
+  });
+
+  const chosenSessions = [];
+  Object.keys(sessionByGroup).forEach(function (k) { if (sessionByGroup[k][0]) chosenSessions.push(sessionByGroup[k][0]); });
+  const uniqueSessions = [];
+  const seenSession = new Set();
+  chosenSessions.forEach(function (s) { if (!seenSession.has(s.id)) { seenSession.add(s.id); uniqueSessions.push(s); } });
+  const attMap = {};
+  if (uniqueSessions.length) {
+    const sph = uniqueSessions.map(function () { return '?'; }).join(',');
+    const attRows = await db.prepare('SELECT session_id, swimmer_id, status, reason FROM attendance WHERE session_id IN (' + sph + ')').all(...uniqueSessions.map(function (s) { return s.id; }));
+    attRows.forEach(function (a) { attMap[String(a.session_id) + ':' + String(a.swimmer_id)] = a; });
+  }
+
+  const groups = groupRows.map(function (g) {
+    const session = (sessionByGroup[String(g.id)] || [])[0] || null;
     let members = [];
     if (session) {
-      members = await db.prepare(`SELECT s.full_name, s.membership_no, l.name AS level_name, a.status, a.reason
-        FROM swimmer_group sg JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN levels l ON l.id = s.level_id
-        LEFT JOIN attendance a ON a.session_id = ? AND a.swimmer_id = s.id
-        WHERE sg.group_id = ? ORDER BY s.full_name`).all(session.id, g.id);
+      members = (membersByGroup[String(g.id)] || []).map(function (m) {
+        const a = attMap[String(session.id) + ':' + String(m.swimmer_id)];
+        return {
+          full_name: m.full_name, membership_no: m.membership_no, level_name: m.level_name,
+          status: a ? a.status : undefined, reason: a ? a.reason : undefined
+        };
+      });
     }
-    groups.push({ ...g, session, members });
-  }
-  const gScope = sessionClause(activeSport(req), 's');
+    return Object.assign({}, g, { session: session, members: members });
+  });
   const daily = {
-    present: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='present'` + gScope).get(date)).c,
-    absent: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='absent'` + gScope).get(date)).c,
-    excused: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='excused'` + gScope).get(date)).c,
-    late: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='late'` + gScope).get(date)).c
+    present: dailyRow.present, absent: dailyRow.absent, excused: dailyRow.excused, late: dailyRow.late
   };
   res.render('report_attendance_daily', {
     title: 'تقرير الحضور اليومي', active: 'reports', date, groups, daily, today: today(), fmtDate, dayAr
