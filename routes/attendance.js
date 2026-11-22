@@ -267,7 +267,7 @@ async function countSessionBalance(personType, personId, range, ctx) {
   return { attended, claimed, unclaimed: Math.max(0, attended - claimed), rate, claimedAmount, amountDue: Math.max(0, attended - claimed) * rate };
 }
 
-async function listUnclaimedSessions(personType, personId, limit, range, ctx) {
+async function listUnclaimedSessions(personType, personId, limit, range, ctx, prefetched) {
   const id = Number(personId) || 0;
   if (!id) return [];
   limit = Math.max(1, Math.min(500, Number(limit) || 100));
@@ -276,14 +276,14 @@ async function listUnclaimedSessions(personType, personId, limit, range, ctx) {
     const pol = (ctx && ctx.policy) ? ctx.policy : (await getPolicy()).pol;
     const statuses = coachPayableStatuses();
     const ph = statuses.map(() => '?').join(',');
-    const rows = await db.prepare(`SELECT a.*, g.name AS group_name,
+    const rows = prefetched ? prefetched.main : await db.prepare(`SELECT a.*, g.name AS group_name,
       CASE WHEN pi.id IS NULL THEN 0 ELSE 1 END AS claimed
       FROM trainer_session_attendance a
       LEFT JOIN groups g ON g.id = a.group_id
       LEFT JOIN payroll_items pi ON pi.source_type = 'trainer' AND pi.source_id = a.id
       WHERE a.coach_id = ? AND a.status IN (${ph}) AND pi.id IS NULL` + rw.sql + `
       ORDER BY a.date ASC, a.start_time ASC LIMIT ?`).all(id, ...statuses, ...rw.args, limit);
-    const subRows = await db.prepare(`SELECT a.*, g.name AS group_name,
+    const subRows = prefetched ? prefetched.sub : await db.prepare(`SELECT a.*, g.name AS group_name,
       CASE WHEN pi.id IS NULL THEN 0 ELSE 1 END AS claimed
       FROM trainer_session_attendance a
       LEFT JOIN groups g ON g.id = a.group_id
@@ -309,6 +309,7 @@ async function listUnclaimedSessions(personType, personId, limit, range, ctx) {
   const rate = (ctx && ctx.staffRates && ctx.staffRates.has(id)) ? Number(ctx.staffRates.get(id) || 0) : await perSessionRateForStaff(id);
   const statuses = staffPayableStatuses();
   const ph = statuses.map(() => '?').join(',');
+  if (prefetched) return prefetched;
   return await db.prepare(`SELECT a.id, a.date, a.status, a.session_rate,
     CASE WHEN pi.id IS NULL THEN 0 ELSE 1 END AS claimed,
     ('يوم عمل — ' || a.date) AS title,
@@ -1109,6 +1110,80 @@ async function preloadPayrollSessionData(rows, ctx) {
     });
   }
 }
+/* PROTOTYPE: each branch below is the ORIGINAL per-person SQL, wrapped so
+   LIMIT 500 / ordering / dedup stay byte-exact. Branches are combined into
+   one round trip per chunk. */
+function unclaimedBranch(personType, isSub, id, statuses, ph, rate) {
+  if (personType === 'trainer') {
+    const joinType = isSub ? 'substitute' : 'trainer';
+    const idCol = isSub ? 'a.substitute_coach_id' : 'a.coach_id';
+    return {
+      sql: `SELECT ${Number(id)} AS person_id, ${isSub ? 1 : 0} AS is_sub, t.* FROM (
+        SELECT a.*, g.name AS group_name,
+          CASE WHEN pi.id IS NULL THEN 0 ELSE 1 END AS claimed
+        FROM trainer_session_attendance a
+        LEFT JOIN groups g ON g.id = a.group_id
+        LEFT JOIN payroll_items pi ON pi.source_type = '${joinType}' AND pi.source_id = a.id
+        WHERE ${idCol} = ? AND a.status IN (${ph}) AND pi.id IS NULL
+        ORDER BY a.date ASC, a.start_time ASC LIMIT 500
+      ) t`,
+      args: [Number(id), ...statuses]
+    };
+  }
+  const TITLE = '\u064A\u0648\u0645 \u0639\u0645\u0644 \u2014 ';
+  return {
+    sql: `SELECT ${Number(id)} AS person_id, 0 AS is_sub, t.* FROM (
+      SELECT a.id, a.date, a.status, a.session_rate,
+        CASE WHEN pi.id IS NULL THEN 0 ELSE 1 END AS claimed,
+        ('${TITLE}' || a.date) AS title,
+        COALESCE(a.session_rate, ?) AS amount
+      FROM staff_attendance a
+      LEFT JOIN payroll_items pi ON pi.source_type = 'staff' AND pi.source_id = a.id
+      WHERE a.staff_id = ? AND a.status IN (${ph}) AND pi.id IS NULL
+      ORDER BY a.date ASC LIMIT 500
+    ) t`,
+    args: [Number(rate), Number(id), ...statuses]
+  };
+}
+
+async function preloadUnclaimedSessions(perSessionRows, ctx) {
+  ctx.unclaimedPrefetched = new Map();
+  const trainerIds = Array.from(new Set(perSessionRows.filter(r => r.person_type === 'trainer' && r.coach_id).map(r => r.coach_id)));
+  const staffIds = Array.from(new Set(perSessionRows.filter(r => r.person_type === 'staff' && r.staff_id).map(r => r.staff_id)));
+  trainerIds.forEach(id => ctx.unclaimedPrefetched.set('trainer:' + id, { main: [], sub: [] }));
+  staffIds.forEach(id => ctx.unclaimedPrefetched.set('staff:' + id, []));
+  const cStatuses = coachPayableStatuses(), cph = cStatuses.map(() => '?').join(',');
+  const sStatuses = staffPayableStatuses(), sph = sStatuses.map(() => '?').join(',');
+
+  for (const kind of ['trainer-main', 'trainer-sub', 'staff']) {
+    const ids = kind === 'staff' ? staffIds : trainerIds;
+    if (!ids.length) continue;
+    for (let i = 0; i < ids.length; i += 80) {
+      const part = ids.slice(i, i + 80);
+      const branches = part.map(id => kind === 'staff'
+        ? unclaimedBranch('staff', false, id, sStatuses, sph, Number((ctx.staffRates && ctx.staffRates.get(id)) || 0))
+        : unclaimedBranch('trainer', kind === 'trainer-sub', id, cStatuses, cph));
+      const sql = branches.map(b => b.sql).join(' UNION ALL ');
+      const args = branches.reduce((acc, b) => acc.concat(b.args), []);
+      const rows = await db.prepare(sql).all(...args);
+      rows.sort((a, b) => (Number(a.person_id) - Number(b.person_id)) || (Number(a.is_sub) - Number(b.is_sub)));
+      const grouped = new Map();
+      rows.forEach(function (r) {
+        const key = (kind === 'staff' ? 'staff:' : 'trainer:') + r.person_id;
+        if (!grouped.has(key)) grouped.set(key, kind === 'staff' ? [] : { main: [], sub: [] });
+        if (kind === 'staff') grouped.get(key).push(r);
+        else grouped.get(key)[r.is_sub ? 'sub' : 'main'].push(r);
+      });
+      grouped.forEach((v, key) => {
+        const prev = ctx.unclaimedPrefetched.get(key);
+        if (!prev) { ctx.unclaimedPrefetched.set(key, v); return; }
+        if (Array.isArray(v)) v.forEach(x => prev.push(x));
+        else { v.main.forEach(x => prev.main.push(x)); v.sub.forEach(x => prev.sub.push(x)); }
+      });
+    }
+  }
+}
+
 function overlapsRange(row, range) {
   const r = parsePeriod(row.period, row.from_date, row.to_date);
   return r.to >= range.from && r.from <= range.to;
@@ -1191,7 +1266,10 @@ router.get('/payroll', async function (req, res) {
   }
 
   /* نجمّع عدّات الحصص لكل الأشخاص في طلب واحد بدل استعلام لكل كشف. */
-  if (perSessionRows.length) await preloadPayrollSessionData(perSessionRows, ctx);
+  if (perSessionRows.length) {
+    await preloadPayrollSessionData(perSessionRows, ctx);
+    await preloadUnclaimedSessions(perSessionRows, ctx);
+  }
 
   // حساب رصيد الحصص للتعاقدات بالحصة
   for (const r of rows) {
@@ -1206,7 +1284,8 @@ router.get('/payroll', async function (req, res) {
     r.session_balance = balance;
     /* قيمة الحصص غير المقبوضة (تظهر في البطاقة الخارجية حتى لو كان الكشف صفراً) */
     if (r.session_balance) {
-      const pending = await listUnclaimedSessions(r.person_type, personId, 500, undefined, ctx);
+      const prefetchedUnclaimed = ctx.unclaimedPrefetched && ctx.unclaimedPrefetched.get(balanceKey);
+      const pending = await listUnclaimedSessions(r.person_type, personId, 500, undefined, ctx, prefetchedUnclaimed);
       const unclaimedAmount = round2(pending.reduce(function (s, it) { return s + Number(it.amount || 0); }, 0));
       r.session_balance.unclaimedAmount = unclaimedAmount;
       r.session_balance.unclaimedAmounts = pending.map(function (it) { return round2(it.amount); });
