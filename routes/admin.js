@@ -252,8 +252,17 @@ const SETTING_DEFS = [
 ];
 router.get('/settings', async function (req, res) {
   if (!canView(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const acadId = req.currentUser.impersonatingAcademyId || req.currentUser.academy_id;
+  /* قراءات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [settingsRows, , academy, canUploadLogo, canCustomizeBranding] = await Promise.all([
+    db.prepare('SELECT * FROM settings').all(),
+    maybeNotifyAcademySubscription(acadId).catch(() => { /* تجاهل */ }),
+    getAcademy(acadId),
+    featureEnabled(acadId, 'academy_logo'),
+    featureEnabled(acadId, 'custom_branding')
+  ]);
   const current = {};
-  (await db.prepare('SELECT * FROM settings').all()).forEach(r => { current[r.key] = r.value; });
+  settingsRows.forEach(r => { current[r.key] = r.value; });
   /* إظهار القيم الافتراضية لرسالة الإيصال حتى يستطيع الأدمن تعديلها مباشرة */
   if (!current.receipt_message_template) current.receipt_message_template = DEFAULT_RECEIPT_TEMPLATE;
   if (!current.receipt_group_text) current.receipt_group_text = DEFAULT_RECEIPT_GROUP_TEXT;
@@ -264,17 +273,16 @@ router.get('/settings', async function (req, res) {
   if (current.notif_sound_volume === undefined) current.notif_sound_volume = '70';
   if (current.notif_sound_type === undefined) current.notif_sound_type = 'chime';
   if (current.notif_poll_seconds === undefined) current.notif_poll_seconds = '20';
-  /* سياق الأكاديمية الحالية: معلومات الاشتراك + صلاحية رفع الشعار */
-  const acadId = req.currentUser.impersonatingAcademyId || req.currentUser.academy_id;
-  try { await maybeNotifyAcademySubscription(acadId); } catch (e) { /* تجاهل */ }
-  const academy = await getAcademy(acadId);
   let subscription = null, subInfo = null, plan = null, paidAmount = 0, dueAmount = 0;
   if (academy) {
-    subscription = await getActiveSubscription(academy.id);
+    const [sub, pr] = await Promise.all([
+      getActiveSubscription(academy.id),
+      db.prepare("SELECT COALESCE(SUM(amount),0) s FROM payments_history WHERE academy_id = ? AND status='APPROVED'").get(academy.id)
+    ]);
+    subscription = sub;
     subInfo = subscriptionStatus(subscription);
     const planId = subscription ? subscription.plan_id : (academy.plan_id || null);
     if (planId) plan = await db.prepare('SELECT * FROM plans WHERE id = ?').get(planId);
-    const pr = await db.prepare("SELECT COALESCE(SUM(amount),0) s FROM payments_history WHERE academy_id = ? AND status='APPROVED'").get(academy.id);
     paidAmount = Number(pr ? pr.s : 0) || 0;
     const periodCost = subscription ? (Number(subscription.price) || 0) : 0;
     dueAmount = periodCost > paidAmount ? (periodCost - paidAmount) : 0;
@@ -282,8 +290,8 @@ router.get('/settings', async function (req, res) {
   res.render('settings', { title: 'إعدادات النظام', active: 'settings', defs: SETTING_DEFS, current,
     canEdit: canEdit(req.currentUser, 'settings'),
     academy, subscription, subInfo, plan, paidAmount, dueAmount,
-    canUploadLogo: !!await featureEnabled(acadId, 'academy_logo'),
-    canCustomizeBranding: !!await featureEnabled(acadId, 'custom_branding') });
+    canUploadLogo: !!canUploadLogo,
+    canCustomizeBranding: !!canCustomizeBranding });
 });
 
 /* رفع صورة/شعار الأكاديمية (يتطلب تفعيل ميزة "رفع صورة وشعار الأكاديمية") */
