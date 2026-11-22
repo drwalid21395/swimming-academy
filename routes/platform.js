@@ -334,7 +334,7 @@ router.get('/platform/payments', async function (req, res) {
   /* الاستعلامات مستقلة؛ أسماء الخطط والمراجعين تُقرأ مرة واحدة وتُربط بكل صف. */
   const [rows, allPlans, allUsers] = await Promise.all([
     db.prepare(`SELECT pr.*, a.name AS academy_name, a.phone AS academy_phone FROM payment_requests pr LEFT JOIN academies a ON a.id = pr.academy_id
-    WHERE (? = 'ALL' OR pr.status = ?) ORDER BY pr.created_at DESC LIMIT 200`).all(filter, filter, filter),
+    WHERE (? = 'ALL' OR pr.status = ?) ORDER BY pr.created_at DESC LIMIT 200`).all(filter, filter),
     db.prepare('SELECT id, name FROM plans').all(),
     db.prepare('SELECT id, full_name FROM users').all()
   ]);
