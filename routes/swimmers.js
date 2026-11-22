@@ -298,7 +298,13 @@ router.get('/swimmers', async function (req, res) {
   if (coach_id) { sql += ' AND s.coach_id = ?'; params.push(coach_id); }
   if (q) { sql += ' AND (s.full_name LIKE ? OR s.membership_no LIKE ? OR s.phone LIKE ?)'; const like = '%' + q + '%'; params.push(like, like, like); }
   sql += ' ORDER BY s.id DESC';
-  const rows = await db.prepare(sql).all(...params);
+  /* الاستعلامات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [rows, programRows, levelRows, coachRows] = await Promise.all([
+    db.prepare(sql).all(...params),
+    db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'programs') + ' ORDER BY name').all(),
+    db.prepare('SELECT * FROM levels WHERE 1=1' + sportClause(activeSport(req), 'levels') + ' ORDER BY order_no').all(),
+    db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'coaches') + ' ORDER BY full_name').all()
+  ]);
 
   const page = {
     title: 'اللاعبون', subtitle: 'إدارة الملفات الكاملة لللاعبين', icon: 'fa-person-swimming', module: 'swimmers', active: 'swimmers',
@@ -321,9 +327,9 @@ router.get('/swimmers', async function (req, res) {
     rows,
     filters: [
       { name: 'status', label: 'الحالة', options: SW_STATUS.map(v => ({ value: v, label: v })) },
-      { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'programs') + ' ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) },
-      { name: 'level_id', label: 'المستوى', options: (await db.prepare('SELECT * FROM levels WHERE 1=1' + sportClause(activeSport(req), 'levels') + ' ORDER BY order_no').all()).map(l => ({ value: l.id, label: l.name })) },
-      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'coaches') + ' ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) }
+      { name: 'program_id', label: 'البرنامج', options: programRows.map(p => ({ value: p.id, label: p.name })) },
+      { name: 'level_id', label: 'المستوى', options: levelRows.map(l => ({ value: l.id, label: l.name })) },
+      { name: 'coach_id', label: 'الكابتن', options: coachRows.map(c => ({ value: c.id, label: c.full_name })) }
     ],
     canAdd: true,
     addUrl: '/swimmers/new',

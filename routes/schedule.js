@@ -403,11 +403,18 @@ router.get('/attendance', async function (req, res) {
       AND se.group_id IS NOT NULL` + groupClause(activeSport(req), 'g') + `
     ORDER BY se.start_time, se.id`).all(date);
   const gScope = sessionClause(activeSport(req), 's');
+  /* عدّات الحالات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [presentC, absentC, excusedC, lateC] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='present'` + gScope).get(date),
+    db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='absent'` + gScope).get(date),
+    db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='excused'` + gScope).get(date),
+    db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='late'` + gScope).get(date)
+  ]);
   const daily = {
-    present: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='present'` + gScope).get(date)).c,
-    absent: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='absent'` + gScope).get(date)).c,
-    excused: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='excused'` + gScope).get(date)).c,
-    late: (await db.prepare(`SELECT COUNT(*) c FROM attendance a JOIN sessions s ON s.id=a.session_id WHERE s.deleted_at IS NULL AND s.date=? AND a.status='late'` + gScope).get(date)).c
+    present: presentC.c,
+    absent: absentC.c,
+    excused: excusedC.c,
+    late: lateC.c
   };
   res.render('attendance', { title: 'الحضور والغياب', active: 'attendance', groups, allGroups: groupRows, daySessions, daily, date, from, to, groupFilter, slotMode, today: today(), canSave,
     canAddSession: canAdd(req.currentUser, 'sessions'),

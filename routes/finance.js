@@ -92,8 +92,12 @@ function subscriptionAmounts(b) {
 /* ============================================================== */
 router.get('/subscriptions', async function (req, res) {
   if (!canView(req.currentUser, 'subscriptions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT sub.*, s.full_name AS swimmer_name, s.membership_no, p.name AS program_name, g.name AS group_name, sp.name AS sport_name, COALESCE(NULLIF(TRIM(gu.whatsapp), ''), NULLIF(TRIM(gu.phone), '')) AS guardian_whatsapp FROM subscriptions sub
-    LEFT JOIN swimmers s ON s.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id LEFT JOIN sports sp ON sp.id = COALESCE(sub.sport_id, p.sport_id, s.sport_id) LEFT JOIN guardians gu ON gu.id = s.guardian_id WHERE 1=1` + subscriptionSportClause(activeSport(req), 'sub') + ` ORDER BY sub.created_at DESC`).all();
+  /* الاستعلامات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [rows, programRows] = await Promise.all([
+    db.prepare(`SELECT sub.*, s.full_name AS swimmer_name, s.membership_no, p.name AS program_name, g.name AS group_name, sp.name AS sport_name, COALESCE(NULLIF(TRIM(gu.whatsapp), ''), NULLIF(TRIM(gu.phone), '')) AS guardian_whatsapp FROM subscriptions sub
+    LEFT JOIN swimmers s ON s.id = sub.swimmer_id LEFT JOIN programs p ON p.id = sub.program_id LEFT JOIN groups g ON g.id = sub.group_id LEFT JOIN sports sp ON sp.id = COALESCE(sub.sport_id, p.sport_id, s.sport_id) LEFT JOIN guardians gu ON gu.id = s.guardian_id WHERE 1=1` + subscriptionSportClause(activeSport(req), 'sub') + ` ORDER BY sub.created_at DESC`).all(),
+    db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'programs') + ' ORDER BY name').all()
+  ]);
   const page = {
     title: 'الاشتراكات', subtitle: 'اشتراكات اللاعبين في البرامج', icon: 'fa-file-contract', module: 'subscriptions', active: 'subscriptions',
     columns: [
@@ -111,7 +115,7 @@ router.get('/subscriptions', async function (req, res) {
     filters: [
       { name: 'status', label: 'الحالة', options: ['نشط', 'مكتمل', 'منتهي', 'مجمد', 'ملغي'].map(v => ({ value: v, label: v })) },
       { name: 'payment_method', label: 'طريقة الدفع', options: ['نقدي', 'تحويل بنكي', 'بطاقة', 'محفظة إلكترونية', 'شيك'].map(v => ({ value: v, label: v })) },
-      { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'programs') + ' ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) }
+      { name: 'program_id', label: 'البرنامج', options: programRows.map(p => ({ value: p.id, label: p.name })) }
     ],
     canAdd: canAdd(req.currentUser, 'subscriptions'), addUrl: canAdd(req.currentUser, 'subscriptions') ? '/subscriptions/new' : null, addLabel: 'اشتراك جديد',
     headerActions: canAdd(req.currentUser, 'subscriptions') ? [{ href: '/subscriptions/one-time', label: 'اشتراك لمرة واحدة', icon: 'fa-bolt', cls: 'btn-success' }] : [],

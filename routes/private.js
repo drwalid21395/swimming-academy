@@ -237,21 +237,24 @@ function paCtx(req, b) {
 router.get('/private-training', async function (req, res) {
   if (!canView(req.currentUser, 'privateTraining')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const sid = activeSport(req);
-  const coaches = await db.prepare('SELECT * FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, '') + ' ORDER BY full_name').all();
+  /* القراءات مستقلة؛ تشغيلها معاً يوفّر رحلات قاعدة البيانات بنفس الترتيب والنتيجة. */
+  const [coaches, slotsRows, bookedRows, freeRows, blockedRows, packagesRows, upc] = await Promise.all([
+    db.prepare('SELECT * FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, '') + ' ORDER BY full_name').all(),
+    db.prepare("SELECT coach_id, COUNT(*) AS c FROM private_availability WHERE status='نشط' GROUP BY coach_id").all(),
+    db.prepare("SELECT coach_id, COUNT(*) AS c FROM private_availability WHERE status='نشط' AND swimmer_id IS NOT NULL GROUP BY coach_id").all(),
+    db.prepare("SELECT coach_id, COUNT(*) AS c FROM private_availability WHERE status='نشط' AND swimmer_id IS NULL GROUP BY coach_id").all(),
+    db.prepare('SELECT coach_id, COUNT(*) AS c FROM private_unavailable GROUP BY coach_id').all(),
+    db.prepare("SELECT coach_id, COUNT(*) AS c FROM private_packages WHERE status='نشط' GROUP BY coach_id").all(),
+    db.prepare("SELECT coach_id, COUNT(*) AS c FROM private_sessions WHERE status='scheduled' AND date >= ? GROUP BY coach_id").all(today())
+  ]);
 
   const stats = {};
   const put = (id, key, val) => { stats[id] = stats[id] || {}; stats[id][key] = val; };
-  (await db.prepare("SELECT coach_id, COUNT(*) AS c FROM private_availability WHERE status='نشط' GROUP BY coach_id").all())
-    .forEach(a => { put(a.coach_id, 'slots', a.c); });
-  (await db.prepare("SELECT coach_id, COUNT(*) AS c FROM private_availability WHERE status='نشط' AND swimmer_id IS NOT NULL GROUP BY coach_id").all())
-    .forEach(a => { put(a.coach_id, 'booked', a.c); });
-  (await db.prepare("SELECT coach_id, COUNT(*) AS c FROM private_availability WHERE status='نشط' AND swimmer_id IS NULL GROUP BY coach_id").all())
-    .forEach(a => { put(a.coach_id, 'free', a.c); });
-  (await db.prepare('SELECT coach_id, COUNT(*) AS c FROM private_unavailable GROUP BY coach_id').all())
-    .forEach(a => { put(a.coach_id, 'blocked', a.c); });
-  (await db.prepare("SELECT coach_id, COUNT(*) AS c FROM private_packages WHERE status='نشط' GROUP BY coach_id").all())
-    .forEach(a => { put(a.coach_id, 'packages', a.c); });
-  const upc = await db.prepare("SELECT coach_id, COUNT(*) AS c FROM private_sessions WHERE status='scheduled' AND date >= ? GROUP BY coach_id").all(today());
+  slotsRows.forEach(a => { put(a.coach_id, 'slots', a.c); });
+  bookedRows.forEach(a => { put(a.coach_id, 'booked', a.c); });
+  freeRows.forEach(a => { put(a.coach_id, 'free', a.c); });
+  blockedRows.forEach(a => { put(a.coach_id, 'blocked', a.c); });
+  packagesRows.forEach(a => { put(a.coach_id, 'packages', a.c); });
   upc.forEach(a => { put(a.coach_id, 'upcoming', a.c); });
 
   res.render('private/coaches', {

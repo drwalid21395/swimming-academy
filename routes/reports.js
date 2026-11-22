@@ -16,13 +16,22 @@ router.get('/reports', async function (req, res) {
   if (!canView(req.currentUser, 'reports')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const sid = activeSport(req);
   const wc = swimmerClause(sid);
+  /* قراءات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [swimmersC, activeC, subsActiveC, subsDueC, sessionsC, upcomingCompsC] = await Promise.all([
+    db.prepare('SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL' + wc).get(),
+    db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status='نشط'" + wc).get(),
+    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status='نشط'" + subscriptionSportClause(sid, 'subscriptions')).get(),
+    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0" + subscriptionSportClause(sid, 'subscriptions')).get(),
+    db.prepare('SELECT COUNT(*) c FROM sessions WHERE deleted_at IS NULL' + sessionClause(sid)).get(),
+    db.prepare("SELECT COUNT(*) c FROM competitions WHERE status IN ('قادمة','جارية')").get()
+  ]);
   const counts = {
-    swimmers: (await db.prepare('SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL' + wc).get()).c,
-    active: (await db.prepare("SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND status='نشط'" + wc).get()).c,
-    subsActive: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status='نشط'" + subscriptionSportClause(sid, 'subscriptions')).get()).c,
-    subsDue: (await db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0" + subscriptionSportClause(sid, 'subscriptions')).get()).c,
-    sessions: (await db.prepare('SELECT COUNT(*) c FROM sessions WHERE deleted_at IS NULL' + sessionClause(sid)).get()).c,
-    upcomingComps: (await db.prepare("SELECT COUNT(*) c FROM competitions WHERE status IN ('قادمة','جارية')").get()).c
+    swimmers: swimmersC.c,
+    active: activeC.c,
+    subsActive: subsActiveC.c,
+    subsDue: subsDueC.c,
+    sessions: sessionsC.c,
+    upcomingComps: upcomingCompsC.c
   };
   res.render('reports', { title: 'التقارير', active: 'reports', counts, today: today(), daysAgo });
 });
