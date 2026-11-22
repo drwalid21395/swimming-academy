@@ -1221,8 +1221,10 @@ router.get('/payroll', async function (req, res) {
      الحسابات والتحديثات كما هي، تغيّر فقط عدد رحلات قاعدة البيانات. */
   const coachIds = rows.filter(r => r.person_type === 'trainer' && r.coach_id).map(r => r.coach_id);
   const staffIds = rows.filter(r => r.person_type === 'staff' && r.staff_id).map(r => r.staff_id);
-  const coachTypes = await mapByIds('SELECT id, salary_type, contract_type FROM coaches WHERE id', coachIds, r => r.id);
-  const staffTypes = await mapByIds('SELECT id, salary_type, contract_type FROM staff WHERE id', staffIds, r => r.id);
+  const [coachTypes, staffTypes] = await Promise.all([
+    mapByIds('SELECT id, salary_type, contract_type FROM coaches WHERE id', coachIds, r => r.id),
+    mapByIds('SELECT id, salary_type, contract_type FROM staff WHERE id', staffIds, r => r.id)
+  ]);
 
   const perSessionRows = rows.filter(function (r) {
     const id = personIdOf(r);
@@ -1232,30 +1234,33 @@ router.get('/payroll', async function (req, res) {
 
   const ctx = {};
   if (perSessionRows.length) {
-    ctx.payrollSums = await mapByIds(
-      'SELECT payroll_id, COALESCE(SUM(amount),0) s FROM payroll_items WHERE payroll_id',
-      perSessionRows.filter(r => r.id && !r.settled_at).map(r => r.id),
-      r => r.payroll_id,
-      r => r.s,
-      ' GROUP BY payroll_id'
-    );
-    ctx.policy = (await getPolicy()).pol;
-
     const psTrainerIds = perSessionRows.filter(r => r.person_type === 'trainer' && r.coach_id).map(r => r.coach_id);
     const psStaffIds = perSessionRows.filter(r => r.person_type === 'staff' && r.staff_id).map(r => r.staff_id);
 
-    if (psStaffIds.length) {
-      ctx.staffRates = await mapByIds('SELECT id, salary FROM staff WHERE id', psStaffIds, r => r.id, r => Number(r.salary || 0));
-    }
+    /* كل قراءة مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+    const [payrollSums, policy, staffRates, rateRows, coachSalaries] = await Promise.all([
+      mapByIds(
+        'SELECT payroll_id, COALESCE(SUM(amount),0) s FROM payroll_items WHERE payroll_id',
+        perSessionRows.filter(r => r.id && !r.settled_at).map(r => r.id),
+        r => r.payroll_id,
+        r => r.s,
+        ' GROUP BY payroll_id'
+      ),
+      getPolicy(),
+      psStaffIds.length ? mapByIds('SELECT id, salary FROM staff WHERE id', psStaffIds, r => r.id, r => Number(r.salary || 0)) : Promise.resolve(null),
+      psTrainerIds.length ? mapByIds('SELECT id, coach_id, default_rate FROM trainer_rates WHERE coach_id', psTrainerIds, r => r.id) : Promise.resolve(null),
+      psTrainerIds.length ? mapByIds('SELECT id, salary_amount FROM coaches WHERE id', psTrainerIds, r => r.id) : Promise.resolve(null)
+    ]);
+    ctx.payrollSums = payrollSums;
+    ctx.policy = policy.pol;
+    if (staffRates) ctx.staffRates = staffRates;
 
-    if (psTrainerIds.length) {
-      const rateRows = await mapByIds('SELECT id, coach_id, default_rate FROM trainer_rates WHERE coach_id', psTrainerIds, r => r.id);
+    if (rateRows && coachSalaries) {
       const latestRate = new Map();
       rateRows.forEach(function (tr) {
         const cur = latestRate.get(tr.coach_id);
         if (!cur || Number(tr.id) > Number(cur.id)) latestRate.set(tr.coach_id, tr);
       });
-      const coachSalaries = await mapByIds('SELECT id, salary_amount FROM coaches WHERE id', psTrainerIds, r => r.id);
       ctx.trainerEffectiveRates = new Map(psTrainerIds.map(function (id) {
         const tr = latestRate.get(id);
         const base = tr ? Number(tr.default_rate || 0) : 0;
@@ -1267,8 +1272,10 @@ router.get('/payroll', async function (req, res) {
 
   /* نجمّع عدّات الحصص لكل الأشخاص في طلب واحد بدل استعلام لكل كشف. */
   if (perSessionRows.length) {
-    await preloadPayrollSessionData(perSessionRows, ctx);
-    await preloadUnclaimedSessions(perSessionRows, ctx);
+    await Promise.all([
+      preloadPayrollSessionData(perSessionRows, ctx),
+      preloadUnclaimedSessions(perSessionRows, ctx)
+    ]);
   }
 
   // حساب رصيد الحصص للتعاقدات بالحصة
