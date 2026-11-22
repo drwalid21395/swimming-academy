@@ -97,24 +97,27 @@ function todayISO() { return new Date().toISOString().slice(0, 10); }
 
 /* كل المجموعات مع عدد اللاعبين وعدد من تم تقييمهم اليوم */
 async function assessmentGroupsOverview(sid) {
-  const groups = await db.prepare(`SELECT g.id, g.name, g.capacity, g.program_id, g.coach_id,
-      p.name AS program_name, c.full_name AS coach_name,
-      (SELECT COUNT(*) FROM swimmers s
-        WHERE s.deleted_at IS NULL
-          AND (s.group_id = g.id OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id AND sg.group_id = g.id))) AS members
-    FROM groups g
-    LEFT JOIN programs p ON p.id = g.program_id
-    LEFT JOIN coaches c ON c.id = g.coach_id
-    WHERE g.deleted_at IS NULL` + groupClause(sid, 'g') + `
-    ORDER BY g.name`).all();
-  const assessed = {};
-  (await db.prepare(`SELECT g.id AS group_id, COUNT(DISTINCT a.swimmer_id) AS c
+  const [groups, assessedRows] = await Promise.all([
+    db.prepare(`SELECT g.id, g.name, g.capacity, g.program_id, g.coach_id,
+        p.name AS program_name, c.full_name AS coach_name,
+        (SELECT COUNT(*) FROM swimmers s
+          WHERE s.deleted_at IS NULL
+            AND (s.group_id = g.id OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id AND sg.group_id = g.id))) AS members
       FROM groups g
-      JOIN swimmers s ON s.deleted_at IS NULL
-        AND (s.group_id = g.id OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id AND sg.group_id = g.id))
-      JOIN assessments a ON a.swimmer_id = s.id AND a.date = ?
-      WHERE g.deleted_at IS NULL
-      GROUP BY g.id`).all(todayISO())).forEach(r => { assessed[r.group_id] = r.c; });
+      LEFT JOIN programs p ON p.id = g.program_id
+      LEFT JOIN coaches c ON c.id = g.coach_id
+      WHERE g.deleted_at IS NULL` + groupClause(sid, 'g') + `
+      ORDER BY g.name`).all(),
+    db.prepare(`SELECT g.id AS group_id, COUNT(DISTINCT a.swimmer_id) AS c
+        FROM groups g
+        JOIN swimmers s ON s.deleted_at IS NULL
+          AND (s.group_id = g.id OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id AND sg.group_id = g.id))
+        JOIN assessments a ON a.swimmer_id = s.id AND a.date = ?
+        WHERE g.deleted_at IS NULL
+        GROUP BY g.id`).all(todayISO())
+  ]);
+  const assessed = {};
+  assessedRows.forEach(r => { assessed[r.group_id] = r.c; });
   groups.forEach(g => { g.assessed_today = assessed[g.id] || 0; });
   return groups;
 }
@@ -212,51 +215,61 @@ async function upsertAssessmentForDate(swimmerId, levelId, date, g, b, userId, g
 router.get('/assessments', async function (req, res) {
   if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const sid = activeSport(req);
-  const groups = await assessmentGroupsOverview(sid);
-  const totalRes = await db.prepare(`SELECT COUNT(DISTINCT s.id) AS c FROM swimmers s
-      WHERE s.deleted_at IS NULL
-        AND (s.group_id IS NOT NULL OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id))` + progClause(sid, 's')).get();
+  /* القراءات مستقلة؛ تشغيلها معاً يوفّر رحلات قاعدة البياناتالبعيدة دون تغيير النتيجة. */
+  const [
+    groups, totalRes, assessedRes, ungrouped, ungroupedSwimmers,
+    availableGroups, teams, teamAssessedRows, pr
+  ] = await Promise.all([
+    assessmentGroupsOverview(sid),
+    db.prepare(`SELECT COUNT(DISTINCT s.id) AS c FROM swimmers s
+        WHERE s.deleted_at IS NULL
+          AND (s.group_id IS NOT NULL OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id))` + progClause(sid, 's')).get(),
+    db.prepare(`SELECT COUNT(DISTINCT a.swimmer_id) AS c
+        FROM assessments a JOIN swimmers s ON s.id = a.swimmer_id AND s.deleted_at IS NULL
+        WHERE a.date = ?
+          AND (s.group_id IS NOT NULL OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id))` + progClause(sid, 's')).get(todayISO()),
+    db.prepare(`SELECT COUNT(*) AS c FROM swimmers s
+        WHERE s.deleted_at IS NULL AND s.group_id IS NULL
+          AND NOT EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id)` + progClause(sid, 's')).get(),
+    db.prepare(`SELECT s.id, s.full_name, s.membership_no, l.name AS level_name
+        FROM swimmers s
+        LEFT JOIN levels l ON l.id = s.level_id
+        WHERE s.deleted_at IS NULL AND s.group_id IS NULL
+          AND NOT EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id)` + progClause(sid, 's') + `
+        ORDER BY s.full_name`).all(),
+    db.prepare(`SELECT g.id, g.name, g.capacity,
+        (SELECT COUNT(*) FROM swimmer_group sg WHERE sg.group_id = g.id) AS members
+        FROM groups g WHERE g.deleted_at IS NULL` + groupClause(sid, 'g') + ` ORDER BY g.name`).all(),
+    db.prepare(`SELECT t.*, c.full_name AS coach_name,
+        (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id) AS members
+        FROM teams t LEFT JOIN coaches c ON c.id = t.coach_id
+        WHERE 1=1` + sportClause(sid, 't') + `
+        ORDER BY t.name`).all(),
+    db.prepare(`SELECT tm.team_id AS id, COUNT(DISTINCT a.swimmer_id) AS c
+        FROM team_members tm
+        JOIN teams t ON t.id = tm.team_id
+        JOIN swimmers s ON s.id = tm.swimmer_id AND s.deleted_at IS NULL
+        JOIN assessments a ON a.swimmer_id = s.id AND a.date = ?
+        WHERE 1=1` + sportClause(sid, 't') + `
+        GROUP BY tm.team_id`).all(todayISO()),
+    /* تقييمات التدريب الخاص الآن بنفس نظام التقييم الفني (نسب 0-100) */
+    (async function () {
+      try {
+        return await db.prepare(`SELECT COUNT(DISTINCT swimmer_id) AS c, ROUND(AVG(overall_percent), 1) AS avg
+          FROM private_assessments`).get();
+      } catch (e) { return null; } /* الجدول قد يكون فارغاً على تثبيت قديم */
+    })()
+  ]);
+
   const totalMembers = Number((totalRes && totalRes.c) || 0);
-  const assessedRes = await db.prepare(`SELECT COUNT(DISTINCT a.swimmer_id) AS c
-      FROM assessments a JOIN swimmers s ON s.id = a.swimmer_id AND s.deleted_at IS NULL
-      WHERE a.date = ?
-        AND (s.group_id IS NOT NULL OR EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id))` + progClause(sid, 's')).get(todayISO());
   const assessedToday = Number((assessedRes && assessedRes.c) || 0);
-  const ungrouped = await db.prepare(`SELECT COUNT(*) AS c FROM swimmers s
-      WHERE s.deleted_at IS NULL AND s.group_id IS NULL
-        AND NOT EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id)` + progClause(sid, 's')).get();
-  const ungroupedSwimmers = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, l.name AS level_name
-      FROM swimmers s
-      LEFT JOIN levels l ON l.id = s.level_id
-      WHERE s.deleted_at IS NULL AND s.group_id IS NULL
-        AND NOT EXISTS (SELECT 1 FROM swimmer_group sg WHERE sg.swimmer_id = s.id)` + progClause(sid, 's') + `
-      ORDER BY s.full_name`).all();
-  const availableGroups = await db.prepare(`SELECT g.id, g.name, g.capacity,
-      (SELECT COUNT(*) FROM swimmer_group sg WHERE sg.group_id = g.id) AS members
-      FROM groups g WHERE g.deleted_at IS NULL` + groupClause(sid, 'g') + ` ORDER BY g.name`).all();
-  const teams = await db.prepare(`SELECT t.*, c.full_name AS coach_name,
-      (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id) AS members
-      FROM teams t LEFT JOIN coaches c ON c.id = t.coach_id
-      WHERE 1=1` + sportClause(sid, 't') + `
-      ORDER BY t.name`).all();
   const teamAssessed = {};
-  (await db.prepare(`SELECT tm.team_id AS id, COUNT(DISTINCT a.swimmer_id) AS c
-      FROM team_members tm
-      JOIN teams t ON t.id = tm.team_id
-      JOIN swimmers s ON s.id = tm.swimmer_id AND s.deleted_at IS NULL
-      JOIN assessments a ON a.swimmer_id = s.id AND a.date = ?
-      WHERE 1=1` + sportClause(sid, 't') + `
-      GROUP BY tm.team_id`).all(todayISO())).forEach(function (r) { teamAssessed[r.id] = r.c; });
+  teamAssessedRows.forEach(function (r) { teamAssessed[r.id] = r.c; });
   teams.forEach(function (t) { t.assessed_today = teamAssessed[t.id] || 0; });
   let privateRated = 0;
   let privateAvg = 0;
-  try {
-    /* تقييمات التدريب الخاص الآن بنفس نظام التقييم الفني (نسب 0-100) */
-    const pr = await db.prepare(`SELECT COUNT(DISTINCT swimmer_id) AS c, ROUND(AVG(overall_percent), 1) AS avg
-      FROM private_assessments`).get();
-    privateRated = Number((pr && pr.c) || 0);
-    privateAvg = (pr && pr.avg != null) ? Number(pr.avg) : 0;
-  } catch (e) { /* الجدول قد يكون فارغاً على تثبيت قديم */ }
+  privateRated = Number((pr && pr.c) || 0);
+  privateAvg = (pr && pr.avg != null) ? Number(pr.avg) : 0;
   res.render('assessments_home', {
     title: 'التقييمات الفنية', active: 'assessments',
     groups, totalMembers, assessedToday, ungroupedCount: Number((ungrouped && ungrouped.c) || 0),

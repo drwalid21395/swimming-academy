@@ -31,88 +31,54 @@ router.get('/', async function (req, res) {
   try { await maybeNotifyAcademySubscription(user.impersonatingAcademyId || user.academy_id); } catch (e) { console.error('خطأ في إشعار اشتراك الأكاديمية:', e.message); }
 
   const sid = activeSport(req);
-  const S = await swimmerSummary(sid);
   const now = today();
 
   const subsScope = progClause(sid, 'subscriptions');
-  const subsRow = await db.prepare(`
-    SELECT COALESCE(SUM(CASE WHEN status = 'نشط' THEN 1 ELSE 0 END),0) active,
-           COALESCE(SUM(CASE WHEN status IN ('منتهي','مكتمل','ملغي') THEN 1 ELSE 0 END),0) expired,
-           COALESCE(SUM(CASE WHEN status = 'نشط' AND end_date IS NOT NULL AND date(end_date) BETWEEN date(?) AND date(?, '+7 day') THEN 1 ELSE 0 END),0) expiringSoon,
-           COALESCE(SUM(CASE WHEN status = 'مجمد' THEN 1 ELSE 0 END),0) frozen
-    FROM subscriptions WHERE 1=1` + subsScope).get(now, now);
-  const subs = { active: Number(subsRow.active), expired: Number(subsRow.expired), expiringSoon: Number(subsRow.expiringSoon), frozen: Number(subsRow.frozen) };
-
   const sScope = sessionClause(sid, 'se');
-  const sessionRow = await db.prepare(`
-    SELECT COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END),0) executed,
-           COALESCE(SUM(CASE WHEN status = 'scheduled' AND date = ? THEN 1 ELSE 0 END),0) scheduledToday,
-           COALESCE(SUM(CASE WHEN status = 'scheduled' AND date >= ? THEN 1 ELSE 0 END),0) upcoming,
-           COALESCE(SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END),0) cancelled
-    FROM sessions se WHERE deleted_at IS NULL` + sScope).get(now, now);
-  const sessions = { executed: Number(sessionRow.executed), scheduledToday: Number(sessionRow.scheduledToday), upcoming: Number(sessionRow.upcoming), cancelled: Number(sessionRow.cancelled) };
-
   const attScope = sessionClause(sid, 's');
-  /* ثلاث قراءات متطابقة كانت تُكرَّر لحالات الحضور اليوم؛ دمجها في استعلام
-     واحد مجمّع يُعطي نفس الأرقام ويوفّر رحلتين إلى قاعدة البيانات البعيدة. */
-  const attTodayRows = await db.prepare(`
-    SELECT a.status status, COUNT(*) c
-    FROM attendance a JOIN sessions s ON s.id = a.session_id
-    WHERE s.deleted_at IS NULL AND s.date = ? AND a.status IN ('present','absent','excused')` + attScope + `
-    GROUP BY a.status
-  `).all(now);
-  const attToday = Object.fromEntries(attTodayRows.map(r => [r.status, r.c]));
-  const attendanceToday = { present: attToday.present || 0, absent: attToday.absent || 0, excused: attToday.excused || 0 };
+  const subsDueScope = progClause(sid, 'subscriptions');
+  const expiringScope = progClause(sid, 'sub');
 
-  const [coachesRow, teamsRow, groupsRow, branchesRow] = await Promise.all([
+  /* كل القراءات مستقلة؛ إرسالها معاً يقلّل رحلات قاعدة البيانات البعيدة.
+     الترتيب هنا مطابق لترتيب المتغيرات في الحسابات أدناه، والنتيجة النهائية كما هي. */
+  const [
+    S, subsRow, sessionRow, attTodayRows,
+    coachesRow, teamsRow, groupsRow, branchesRow,
+    revenueRow, expenseRow, dueRow, unpaidRow,
+    weeklyRevenues, weeklyExpenses,
+    attendanceRows,
+    byProgram, expiring, overdue, missingDocs, upcomingComp, todaySessions, latestAssess
+  ] = await Promise.all([
+    swimmerSummary(sid),
+    db.prepare(`
+      SELECT COALESCE(SUM(CASE WHEN status = 'نشط' THEN 1 ELSE 0 END),0) active,
+             COALESCE(SUM(CASE WHEN status IN ('منتهي','مكتمل','ملغي') THEN 1 ELSE 0 END),0) expired,
+             COALESCE(SUM(CASE WHEN status = 'نشط' AND end_date IS NOT NULL AND date(end_date) BETWEEN date(?) AND date(?, '+7 day') THEN 1 ELSE 0 END),0) expiringSoon,
+             COALESCE(SUM(CASE WHEN status = 'مجمد' THEN 1 ELSE 0 END),0) frozen
+      FROM subscriptions WHERE 1=1` + subsScope).get(now, now),
+    db.prepare(`
+      SELECT COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END),0) executed,
+             COALESCE(SUM(CASE WHEN status = 'scheduled' AND date = ? THEN 1 ELSE 0 END),0) scheduledToday,
+             COALESCE(SUM(CASE WHEN status = 'scheduled' AND date >= ? THEN 1 ELSE 0 END),0) upcoming,
+             COALESCE(SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END),0) cancelled
+      FROM sessions se WHERE deleted_at IS NULL` + sScope).get(now, now),
+    db.prepare(`
+      SELECT a.status status, COUNT(*) c
+      FROM attendance a JOIN sessions s ON s.id = a.session_id
+      WHERE s.deleted_at IS NULL AND s.date = ? AND a.status IN ('present','absent','excused')` + attScope + `
+      GROUP BY a.status
+    `).all(now),
     db.prepare("SELECT COUNT(*) c FROM coaches WHERE status = 'active' AND deleted_at IS NULL" + sportClause(sid, 'coaches')).get(),
     db.prepare('SELECT COUNT(*) c FROM teams').get(),
     db.prepare('SELECT COUNT(*) c FROM groups WHERE deleted_at IS NULL' + groupClause(sid)).get(),
-    db.prepare('SELECT COUNT(*) c FROM branches').get()
-  ]);
-  const coachesCount = coachesRow.c, teamsCount = teamsRow.c, groupsCount = groupsRow.c, branchesCount = branchesRow.c;
-
-  const subsDueScope = progClause(sid, 'subscriptions');
-  const [revenueRow, expenseRow, dueRow, unpaidRow] = await Promise.all([
+    db.prepare('SELECT COUNT(*) c FROM branches').get(),
     db.prepare('SELECT COALESCE(SUM(amount),0) s FROM revenues').get(),
     db.prepare('SELECT COALESCE(SUM(amount),0) s FROM expenses').get(),
     db.prepare("SELECT COALESCE(SUM(remaining),0) s FROM subscriptions WHERE status IN ('نشط', 'منتهي')" + subsDueScope).get(),
-    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0 AND status IN ('نشط', 'منتهي')" + subsDueScope).get()
-  ]);
-  const finance = { revenues: revenueRow.s, expenses: expenseRow.s, due: dueRow.s, unpaidCount: unpaidRow.c };
-
-  /* إيرادات ومصروفات آخر 12 أسبوع */
-  const weeklyRevenue = [], weeklyExpense = [];
-  const weekLabels = [];
-  const [weeklyRevenues, weeklyExpenses] = await Promise.all([
+    db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE remaining > 0 AND status IN ('نشط', 'منتهي')" + subsDueScope).get(),
     db.prepare('SELECT date, COALESCE(SUM(amount),0) s FROM revenues WHERE date BETWEEN ? AND ? GROUP BY date').all(daysAgo(83), now),
-    db.prepare('SELECT date, COALESCE(SUM(amount),0) s FROM expenses WHERE date BETWEEN ? AND ? GROUP BY date').all(daysAgo(83), now)
-  ]);
-  for (let w = 11; w >= 0; w--) {
-    const from = daysAgo(w * 7 + 6);
-    const to = daysAgo(w * 7);
-    weekLabels.push(shortDate(from));
-    weeklyRevenue.push(weeklyRevenues.filter(r => r.date >= from && r.date <= to).reduce((sum, r) => sum + Number(r.s), 0));
-    weeklyExpense.push(weeklyExpenses.filter(r => r.date >= from && r.date <= to).reduce((sum, r) => sum + Number(r.s), 0));
-  }
-
-  /* الحضور آخر 14 يوم */
-  const attLabels = [], attPresentSeries = [], attAbsentSeries = [];
-  const [attendanceRows] = await Promise.all([
-    db.prepare(`SELECT s.date, SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) present, SUM(CASE WHEN a.status IN ('absent','excused') THEN 1 ELSE 0 END) absent FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date BETWEEN ? AND ?` + attScope + ' GROUP BY s.date').all(daysAgo(13), now)
-  ]);
-  for (let d = 13; d >= 0; d--) {
-    const day = daysAgo(d);
-    attLabels.push(shortDate(day));
-    const row = attendanceRows.find(r => r.date === day);
-    attPresentSeries.push(row ? Number(row.present) : 0);
-    attAbsentSeries.push(row ? Number(row.absent) : 0);
-  }
-
-  /* بطاقات التنبيهات والجداول مستقلة؛ تشغيلها معاً يقلل رحلات Turso. */
-  const alerts = [];
-  const expiringScope = progClause(sid, 'sub');
-  const [byProgram, expiring, overdue, missingDocs, upcomingComp, todaySessions, latestAssess] = await Promise.all([
+    db.prepare('SELECT date, COALESCE(SUM(amount),0) s FROM expenses WHERE date BETWEEN ? AND ? GROUP BY date').all(daysAgo(83), now),
+    db.prepare(`SELECT s.date, SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) present, SUM(CASE WHEN a.status IN ('absent','excused') THEN 1 ELSE 0 END) absent FROM attendance a JOIN sessions s ON s.id = a.session_id WHERE s.deleted_at IS NULL AND s.date BETWEEN ? AND ?` + attScope + ' GROUP BY s.date').all(daysAgo(13), now),
     db.prepare(`SELECT p.name, COUNT(s.id) c FROM programs p LEFT JOIN swimmers s ON s.program_id = p.id AND s.deleted_at IS NULL WHERE p.deleted_at IS NULL` + sportClause(sid, 'p') + ` GROUP BY p.id ORDER BY c DESC LIMIT 8`).all(),
     db.prepare(`SELECT s.full_name, sub.end_date, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE s.deleted_at IS NULL AND sub.status = 'نشط' AND sub.end_date IS NOT NULL AND date(sub.end_date) BETWEEN date(?) AND date(?, '+7 day')` + expiringScope).all(now, now),
     db.prepare(`SELECT s.full_name, sub.remaining, sub.id FROM subscriptions sub JOIN swimmers s ON s.id = sub.swimmer_id WHERE s.deleted_at IS NULL AND sub.status IN ('نشط', 'منتهي') AND sub.remaining > 0` + expiringScope).all(),
@@ -124,6 +90,36 @@ router.get('/', async function (req, res) {
     db.prepare(`SELECT a.*, s.full_name AS swimmer_name, c.full_name AS coach_name, l.name AS level_name FROM assessments a
       JOIN swimmers s ON s.id = a.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = a.coach_id LEFT JOIN levels l ON l.id = a.level_id WHERE 1=1` + progClause(sid, 'a') + ` ORDER BY a.date DESC LIMIT 6`).all()
   ]);
+
+  const subs = { active: Number(subsRow.active), expired: Number(subsRow.expired), expiringSoon: Number(subsRow.expiringSoon), frozen: Number(subsRow.frozen) };
+  const sessions = { executed: Number(sessionRow.executed), scheduledToday: Number(sessionRow.scheduledToday), upcoming: Number(sessionRow.upcoming), cancelled: Number(sessionRow.cancelled) };
+  const attToday = Object.fromEntries(attTodayRows.map(r => [r.status, r.c]));
+  const attendanceToday = { present: attToday.present || 0, absent: attToday.absent || 0, excused: attToday.excused || 0 };
+  const coachesCount = coachesRow.c, teamsCount = teamsRow.c, groupsCount = groupsRow.c, branchesCount = branchesRow.c;
+  const finance = { revenues: revenueRow.s, expenses: expenseRow.s, due: dueRow.s, unpaidCount: unpaidRow.c };
+
+  /* إيرادات ومصروفات آخر 12 أسبوع */
+  const weeklyRevenue = [], weeklyExpense = [];
+  const weekLabels = [];
+  for (let w = 11; w >= 0; w--) {
+    const from = daysAgo(w * 7 + 6);
+    const to = daysAgo(w * 7);
+    weekLabels.push(shortDate(from));
+    weeklyRevenue.push(weeklyRevenues.filter(r => r.date >= from && r.date <= to).reduce((sum, r) => sum + Number(r.s), 0));
+    weeklyExpense.push(weeklyExpenses.filter(r => r.date >= from && r.date <= to).reduce((sum, r) => sum + Number(r.s), 0));
+  }
+
+  /* الحضور آخر 14 يوم */
+  const attLabels = [], attPresentSeries = [], attAbsentSeries = [];
+  for (let d = 13; d >= 0; d--) {
+    const day = daysAgo(d);
+    attLabels.push(shortDate(day));
+    const row = attendanceRows.find(r => r.date === day);
+    attPresentSeries.push(row ? Number(row.present) : 0);
+    attAbsentSeries.push(row ? Number(row.absent) : 0);
+  }
+
+  const alerts = [];
   expiring.forEach(function (x) {
     alerts.push({ type: 'warn', icon: 'fa-clock', title: 'اشتراك على وشك الانتهاء: ' + x.full_name, sub: 'ينتهي في ' + fmtDate(x.end_date), link: '/subscriptions/' + x.id });
   });
