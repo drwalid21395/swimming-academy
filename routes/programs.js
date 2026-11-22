@@ -22,14 +22,19 @@ async function programTypes() {
 router.get('/levels', async function (req, res) {
   if (!canView(req.currentUser, 'levels')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const sid = activeSport(req);
-  const levels = await db.prepare(`SELECT l.*, (SELECT COUNT(*) FROM assessment_criteria c WHERE c.level_id = l.id) AS skills_count,
-    (SELECT COUNT(*) FROM swimmers s WHERE s.level_id = l.id` + progClause(sid, 's') + `) AS swimmers_count FROM levels l WHERE 1=1` + sportClause(sid, 'l') + ` ORDER BY l.order_no`).all();
+  /* القراءات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [levels, criteriaRows, sharedCountRow] = await Promise.all([
+    db.prepare(`SELECT l.*, (SELECT COUNT(*) FROM assessment_criteria c WHERE c.level_id = l.id) AS skills_count,
+    (SELECT COUNT(*) FROM swimmers s WHERE s.level_id = l.id` + progClause(sid, 's') + `) AS swimmers_count FROM levels l WHERE 1=1` + sportClause(sid, 'l') + ` ORDER BY l.order_no`).all(),
+    db.prepare('SELECT level_id, name FROM assessment_criteria ORDER BY order_no, id').all(),
+    db.prepare('SELECT COUNT(*) c FROM assessment_criteria WHERE level_id IS NULL').get()
+  ]);
   const skillsByLevel = {};
-  (await db.prepare('SELECT level_id, name FROM assessment_criteria ORDER BY order_no, id').all()).forEach(c => {
+  criteriaRows.forEach(c => {
     (skillsByLevel[c.level_id] = skillsByLevel[c.level_id] || []).push(c.name);
   });
   const rows = levels.map(l => ({ ...l, skills: skillsByLevel[l.id] || [] }));
-  const sharedCount = (await db.prepare('SELECT COUNT(*) c FROM assessment_criteria WHERE level_id IS NULL').get()).c;
+  const sharedCount = sharedCountRow.c;
   const page = {
     title: 'المستويات والمهارات', subtitle: 'المستويات التعليمية مع مهارات كل مستوى' + (sharedCount ? ' — ' + sharedCount + ' معيار عام مشترك يُضمَّن تلقائياً في كل المستويات' : ''), icon: 'fa-layer-group', module: 'levels', active: 'levels',
     columns: [
@@ -196,11 +201,16 @@ function collectProgramSchedule(b) {
 
 router.get('/programs', async function (req, res) {
   const activeSport = req.activeSportId || 0;
-  const rows = await db.prepare(`SELECT p.*, c.full_name AS coach_name, b.name AS branch_name, pool.name AS pool_name,
+  /* الاستعلامات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [rows, programTypeRows, coachRows] = await Promise.all([
+    db.prepare(`SELECT p.*, c.full_name AS coach_name, b.name AS branch_name, pool.name AS pool_name,
     (SELECT COUNT(*) FROM swimmers s WHERE s.program_id = p.id) AS enrolled
     FROM programs p LEFT JOIN coaches c ON c.id = p.coach_id LEFT JOIN branches b ON b.id = p.branch_id LEFT JOIN pools pool ON pool.id = p.pool_id
     WHERE p.deleted_at IS NULL AND (? = 0 OR p.sport_id = ?)
-    ORDER BY p.id`).all(activeSport, activeSport);
+    ORDER BY p.id`).all(activeSport, activeSport),
+    programTypes(),
+    db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()
+  ]);
   const page = {
     title: 'البرامج والدورات', subtitle: 'إدارة البرامج التدريبية والدورات المتخصصة', icon: 'fa-list-check', module: 'programs', active: 'programs',
     columns: [
@@ -214,8 +224,8 @@ router.get('/programs', async function (req, res) {
     ],
     rows,
     filters: [
-      { name: 'type', label: 'النوع', options: (await programTypes()).map(v => ({ value: v, label: v })) },
-      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
+      { name: 'type', label: 'النوع', options: programTypeRows.map(v => ({ value: v, label: v })) },
+      { name: 'coach_id', label: 'الكابتن', options: coachRows.map(c => ({ value: c.id, label: c.full_name })) },
       { name: 'status', label: 'الحالة', options: PROGRAM_STATUS.map(v => ({ value: v, label: v })) }
     ],
     canAdd: true, addUrl: '/programs/new', addLabel: 'برنامج جديد',
@@ -288,15 +298,21 @@ router.get('/groups', async function (req, res) {
   const sid = activeSport(req);
   const prog = req.query.program;
   const pScope = sportClause(sid, 'p');
-  let rows;
-  if (prog) rows = await db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name, pool.name AS pool_name, b.name AS branch_name,
+  /* الاستعلامات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const rowsP = prog
+    ? db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name, pool.name AS pool_name, b.name AS branch_name,
     (SELECT COUNT(*) FROM swimmers s WHERE s.group_id = g.id AND s.deleted_at IS NULL) AS members FROM groups g
     LEFT JOIN programs p ON p.id = g.program_id LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools pool ON pool.id = g.pool_id
-    LEFT JOIN branches b ON b.id = g.branch_id WHERE g.program_id = ? AND g.deleted_at IS NULL` + pScope + ` ORDER BY g.id`).all(prog);
-  else rows = await db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name, pool.name AS pool_name, b.name AS branch_name,
+    LEFT JOIN branches b ON b.id = g.branch_id WHERE g.program_id = ? AND g.deleted_at IS NULL` + pScope + ` ORDER BY g.id`).all(prog)
+    : db.prepare(`SELECT g.*, p.name AS program_name, c.full_name AS coach_name, pool.name AS pool_name, b.name AS branch_name,
     (SELECT COUNT(*) FROM swimmers s WHERE s.group_id = g.id AND s.deleted_at IS NULL) AS members FROM groups g
     LEFT JOIN programs p ON p.id = g.program_id LEFT JOIN coaches c ON c.id = g.coach_id LEFT JOIN pools pool ON pool.id = g.pool_id
     LEFT JOIN branches b ON b.id = g.branch_id WHERE g.deleted_at IS NULL` + groupClause(sid, 'g') + ` ORDER BY g.id`).all();
+  const [rows, programRows, coachRows] = await Promise.all([
+    rowsP,
+    db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(sid, 'programs') + ' ORDER BY name').all(),
+    db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches') + ' ORDER BY full_name').all()
+  ]);
   const page = {
     title: 'المجموعات التدريبية', subtitle: 'تنظيم اللاعبين في مجموعات حسب البرنامج', icon: 'fa-people-group', module: 'groups', active: 'groups',
     columns: [
@@ -309,8 +325,8 @@ router.get('/groups', async function (req, res) {
     ],
     rows,
     filters: [
-      { name: 'program_id', label: 'البرنامج', options: (await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL' + sportClause(sid, 'programs') + ' ORDER BY name').all()).map(p => ({ value: p.id, label: p.name })) },
-      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches') + ' ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
+      { name: 'program_id', label: 'البرنامج', options: programRows.map(p => ({ value: p.id, label: p.name })) },
+      { name: 'coach_id', label: 'الكابتن', options: coachRows.map(c => ({ value: c.id, label: c.full_name })) },
       { name: 'status', label: 'الحالة', options: [{ value: 'نشطة', label: 'نشطة' }, { value: 'متوقفة', label: 'متوقفة' }] }
     ],
     canAdd: true, addUrl: '/groups/new', addLabel: 'مجموعة جديدة',

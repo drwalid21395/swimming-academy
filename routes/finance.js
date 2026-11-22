@@ -806,7 +806,11 @@ router.post('/expenses/bulk', async function (req, res) {
 router.get('/coach-payments', async function (req, res) {
   if (!canView(req.currentUser, 'coachPayments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const sid = activeSport(req);
-  const rows = await db.prepare(`SELECT cp.*, c.full_name AS coach_name FROM coach_payments cp LEFT JOIN coaches c ON c.id = cp.coach_id WHERE 1=1` + sportClause(sid, 'c') + ` ORDER BY cp.period DESC`).all();
+  /* الاستعلامات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [rows, coaches] = await Promise.all([
+    db.prepare(`SELECT cp.*, c.full_name AS coach_name FROM coach_payments cp LEFT JOIN coaches c ON c.id = cp.coach_id WHERE 1=1` + sportClause(sid, 'c') + ` ORDER BY cp.period DESC`).all(),
+    db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches') + ' ORDER BY full_name').all()
+  ]);
   const page = {
     title: 'مستحقات المدربين', subtitle: 'إدارة رواتب ومستحقات المدربين', icon: 'fa-coins', module: 'coachPayments', active: 'coachPayments',
     columns: [
@@ -823,7 +827,7 @@ router.get('/coach-payments', async function (req, res) {
     rows,
     filters: [
       { name: 'status', label: 'الحالة', options: ['مستحق', 'مدفوع جزئياً', 'مسدد'].map(v => ({ value: v, label: v })) },
-      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(sid, 'coaches') + ' ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) }
+      { name: 'coach_id', label: 'الكابتن', options: coaches.map(c => ({ value: c.id, label: c.full_name })) }
     ],
     bulkUrl: '/coach-payments/bulk',
     bulkActions: [

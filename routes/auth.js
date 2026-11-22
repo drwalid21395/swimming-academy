@@ -102,13 +102,21 @@ router.get('/search', async function (req, res) {
   const results = { swimmers: [], guardians: [], coaches: [], programs: [], groups: [] };
   if (q) {
     const like = '%' + q + '%';
-    results.swimmers = await db.prepare(`SELECT s.*, g.full_name AS guardian_name, l.name AS level_name FROM swimmers s
+    /* الاستعلامات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+    const [swimmersR, guardiansR, coachesR, programsR, groupsR] = await Promise.all([
+      db.prepare(`SELECT s.*, g.full_name AS guardian_name, l.name AS level_name FROM swimmers s
       LEFT JOIN guardians g ON g.id = s.guardian_id LEFT JOIN levels l ON l.id = s.level_id
-      WHERE s.deleted_at IS NULL AND (s.full_name LIKE ? OR s.membership_no LIKE ? OR s.phone LIKE ? OR g.full_name LIKE ?) LIMIT 12`).all(like, like, like, like);
-    results.guardians = await db.prepare('SELECT * FROM guardians WHERE deleted_at IS NULL AND (full_name LIKE ? OR phone LIKE ?) LIMIT 8').all(like, like);
-    results.coaches = await db.prepare('SELECT * FROM coaches WHERE deleted_at IS NULL AND (full_name LIKE ? OR phone LIKE ?) LIMIT 8').all(like, like);
-    results.programs = await db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL AND name LIKE ? LIMIT 8').all(like);
-    results.groups = await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL AND name LIKE ? LIMIT 8').all(like);
+      WHERE s.deleted_at IS NULL AND (s.full_name LIKE ? OR s.membership_no LIKE ? OR s.phone LIKE ? OR g.full_name LIKE ?) LIMIT 12`).all(like, like, like, like),
+      db.prepare('SELECT * FROM guardians WHERE deleted_at IS NULL AND (full_name LIKE ? OR phone LIKE ?) LIMIT 8').all(like, like),
+      db.prepare('SELECT * FROM coaches WHERE deleted_at IS NULL AND (full_name LIKE ? OR phone LIKE ?) LIMIT 8').all(like, like),
+      db.prepare('SELECT * FROM programs WHERE deleted_at IS NULL AND name LIKE ? LIMIT 8').all(like),
+      db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL AND name LIKE ? LIMIT 8').all(like)
+    ]);
+    results.swimmers = swimmersR;
+    results.guardians = guardiansR;
+    results.coaches = coachesR;
+    results.programs = programsR;
+    results.groups = groupsR;
   }
   res.render('search', { q, results, title: 'نتائج البحث', active: 'dashboard' });
 });

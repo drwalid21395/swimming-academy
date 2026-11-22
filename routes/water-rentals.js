@@ -69,7 +69,9 @@ router.get('/water-rentals', async function (req, res) {
     args.push(like, like, like);
   }
 
-  const rows = await db.prepare(`SELECT r.*, c.full_name AS coach_full_name,
+  /* القراءتان مستقلتان؛ إرسالهما معاً يوفّر رحلة قاعدة البيانات بنفس النتيجة. */
+  const [rows, all] = await Promise.all([
+    db.prepare(`SELECT r.*, c.full_name AS coach_full_name,
       b.name AS branch_name, p.name AS pool_name,
       (SELECT COUNT(*) FROM water_rental_attendance a WHERE a.rental_id = r.id) AS att_count
     FROM water_rentals r
@@ -77,9 +79,9 @@ router.get('/water-rentals', async function (req, res) {
     LEFT JOIN branches b ON b.id = r.branch_id
     LEFT JOIN pools p ON p.id = r.pool_id
     ${where}
-    ORDER BY CASE r.status WHEN 'نشط' THEN 0 WHEN 'منتهي' THEN 1 ELSE 2 END, r.id DESC`).all(...args);
-
-  const all = await db.prepare('SELECT r.* FROM water_rentals r WHERE 1=1' + sportClause(sid, 'r')).all();
+    ORDER BY CASE r.status WHEN 'نشط' THEN 0 WHEN 'منتهي' THEN 1 ELSE 2 END, r.id DESC`).all(...args),
+    db.prepare('SELECT r.* FROM water_rentals r WHERE 1=1' + sportClause(sid, 'r')).all()
+  ]);
   const kpi = {
     total: all.length,
     active: all.filter(function (r) { return r.status === 'نشط'; }).length,

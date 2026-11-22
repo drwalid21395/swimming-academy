@@ -52,7 +52,11 @@ const MODULE_GROUPS = [
 /* ============================================================== */
 router.get('/users', async function (req, res) {
   if (!canView(req.currentUser, 'users')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT u.*, r.name AS role_name FROM users u LEFT JOIN roles r ON r.id = u.role_id ORDER BY u.id`).all();
+  /* الاستعلامات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [rows, roles] = await Promise.all([
+    db.prepare(`SELECT u.*, r.name AS role_name FROM users u LEFT JOIN roles r ON r.id = u.role_id ORDER BY u.id`).all(),
+    db.prepare('SELECT * FROM roles ORDER BY id').all()
+  ]);
   const page = {
     title: 'المستخدمون والصلاحيات', subtitle: 'إدارة حسابات النظام', icon: 'fa-user-shield', module: 'users', active: 'users',
     columns: [
@@ -66,7 +70,7 @@ router.get('/users', async function (req, res) {
     rows,
     filters: [
       { name: 'status', label: 'الحالة', options: [{ value: 'active', label: 'مفعّل' }, { value: 'disabled', label: 'معطّل' }] },
-      { name: 'role_id', label: 'الدور', options: (await db.prepare('SELECT * FROM roles ORDER BY id').all()).map(r => ({ value: r.id, label: r.name })) },
+      { name: 'role_id', label: 'الدور', options: roles.map(r => ({ value: r.id, label: r.name })) },
       { name: 'user_type', label: 'النوع', options: [{ value: 'staff', label: 'موظف' }, { value: 'coach', label: 'مدرب' }, { value: 'guardian', label: 'ولي أمر' }, { value: 'swimmer', label: 'لاعب' }] }
     ],
     canAdd: canAdd(req.currentUser, 'users'), addUrl: canAdd(req.currentUser, 'users') ? '/users/new' : null, addLabel: 'مستخدم جديد',

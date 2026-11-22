@@ -329,22 +329,24 @@ function weekdayName(dateStr) { try { const d = new Date(dateStr + 'T12:00:00');
 
 /* حصص اليوم: الصفوف الفعلية + جلسات المجموعات المتكررة النشطة المتوقعة في ذلك اليوم */
 async function sessionsFor(date, sid) {
-  const rows = await db.prepare(`SELECT se.id, se.date, se.start_time, se.end_time, se.title, se.status AS ses_status,
+  const wd = weekdayName(date);
+  /* الاستعلامان مستقلان؛ إرسالهما معاً يوفّر رحلة قاعدة البيانات بنفس النتيجة. */
+  const [rows, groups] = await Promise.all([
+    db.prepare(`SELECT se.id, se.date, se.start_time, se.end_time, se.title, se.status AS ses_status,
       se.group_id, g.name AS group_name, g.branch_id, c.id AS coach_id, c.full_name AS coach_name, p.name AS pool_name
     FROM sessions se
     LEFT JOIN groups g ON g.id = se.group_id
     LEFT JOIN coaches c ON c.id = se.coach_id
     LEFT JOIN pools p ON p.id = se.pool_id
     WHERE se.date = ? AND se.deleted_at IS NULL` + sessionClause(sid, 'se') + `
-    ORDER BY se.start_time`).all(date);
-
-  const wd = weekdayName(date);
-  if (wd) {
-    const groups = await db.prepare(`SELECT g.id, g.name, g.branch_id, g.coach_id, g.pool_id, g.schedule, c.full_name AS coach_name, p.name AS pool_name
+    ORDER BY se.start_time`).all(date),
+    wd ? db.prepare(`SELECT g.id, g.name, g.branch_id, g.coach_id, g.pool_id, g.schedule, c.full_name AS coach_name, p.name AS pool_name
       FROM groups g
       LEFT JOIN coaches c ON c.id = g.coach_id
       LEFT JOIN pools p ON p.id = g.pool_id
-      WHERE (g.status IS NULL OR g.status = '' OR g.status = 'نشطة') AND g.deleted_at IS NULL` + groupClause(sid) + ``).all();
+      WHERE (g.status IS NULL OR g.status = '' OR g.status = 'نشطة') AND g.deleted_at IS NULL` + groupClause(sid) + ``).all() : Promise.resolve([])
+  ]);
+  if (wd) {
     for (const g of groups) {
       const hasRealSession = rows.some(r => r.group_id === g.id);
       if (hasRealSession) continue;
@@ -369,11 +371,13 @@ router.get('/staff-hours', async function (req, res) {
   if (!canView(req.currentUser, 'trainerAttendance') && !canView(req.currentUser, 'staffAttendance')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const date = (req.query.date && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)) ? req.query.date : today();
   const ai = getAcademyId();
-  const { pol } = await getPolicy();
-
-  let sessionsToday = await sessionsFor(date, activeSport(req));
-
-  const atts = await db.prepare('SELECT * FROM trainer_session_attendance WHERE 1=1' + tacScope(activeSport(req)) + ' AND date = ?').all(date);
+  /* القراءات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [policy, sessionsToday, atts] = await Promise.all([
+    getPolicy(),
+    sessionsFor(date, activeSport(req)),
+    db.prepare('SELECT * FROM trainer_session_attendance WHERE 1=1' + tacScope(activeSport(req)) + ' AND date = ?').all(date)
+  ]);
+  const { pol } = policy;
   const attMap = {};
   atts.forEach(a => { attMap[a.session_id + ':' + a.coach_id] = a; });
 
@@ -835,22 +839,26 @@ router.get('/staff-attendance', async function (req, res) {
   if (!canView(req.currentUser, 'staffAttendance')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const month = (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) ? req.query.month : today().slice(0, 7);
   const date = (req.query.date && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)) ? req.query.date : today();
-  const rows = await db.prepare(`SELECT s.*, b.name AS branch_name, st.full_name AS staff_name
+  /* القراءات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [rows, staff, dayRows, rateRows] = await Promise.all([
+    db.prepare(`SELECT s.*, b.name AS branch_name, st.full_name AS staff_name
     FROM staff_attendance s
     LEFT JOIN branches b ON b.id = s.branch_id
     LEFT JOIN staff st ON st.id = s.staff_id
     WHERE substr(s.date,1,7) = ?
-    ORDER BY s.date DESC`).all(month);
-  const staff = await db.prepare(`SELECT st.*, b.name AS branch_name FROM staff st
+    ORDER BY s.date DESC`).all(month),
+    db.prepare(`SELECT st.*, b.name AS branch_name FROM staff st
     LEFT JOIN branches b ON b.id = st.branch_id
     WHERE (st.status IS NULL OR st.status = '' OR st.status = 'active' OR st.status = 'نشط' OR st.status = 'نشطة')
-    ORDER BY st.full_name`).all();
+    ORDER BY st.full_name`).all(),
+    db.prepare('SELECT * FROM staff_attendance WHERE date = ? ORDER BY check_in, id').all(date),
+    db.prepare('SELECT * FROM staff_rates').all()
+  ]);
   const dayAtt = {}, dayAtts = {};
-  const dayRows = await db.prepare('SELECT * FROM staff_attendance WHERE date = ? ORDER BY check_in, id').all(date);
   dayRows.forEach(a => { if (!dayAtt[a.staff_id]) dayAtt[a.staff_id] = a; if (!dayAtts[a.staff_id]) dayAtts[a.staff_id] = []; dayAtts[a.staff_id].push(a); });
   const sheet = staff.map(s => Object.assign({}, s, { att: dayAtt[s.id] || null, atts: dayAtts[s.id] || [] }));
   const staffRates = {};
-  (await db.prepare('SELECT * FROM staff_rates').all()).forEach(r => staffRates[r.staff_id] = r);
+  rateRows.forEach(r => staffRates[r.staff_id] = r);
   let present = 0, absent = 0, excused = 0, late = 0;
   dayRows.forEach(a => {
     const st = a.status;
@@ -924,14 +932,17 @@ router.get('/deductions', async function (req, res) {
   if (!canView(req.currentUser, 'payroll')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const month = (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) ? req.query.month : today().slice(0, 7);
   const type = req.query.type || 'all';
-  const rows = await db.prepare(`SELECT a.*, c.full_name AS coach_name, s.full_name AS staff_name
+  /* القراءات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [rows, coaches, staff] = await Promise.all([
+    db.prepare(`SELECT a.*, c.full_name AS coach_name, s.full_name AS staff_name
     FROM salary_adjustments a
     LEFT JOIN coaches c ON c.id = a.coach_id
     LEFT JOIN staff s ON s.id = a.staff_id
     WHERE substr(a.date,1,7) = ?` + (type === 'deduction' ? ' AND a.adj_type=\'deduction\'' : type === 'bonus' ? ' AND a.adj_type=\'bonus\'' : '') + tpersonScope(activeSport(req), 'a') + `
-    ORDER BY a.date DESC`).all(month);
-  const coaches = await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), '') + ' ORDER BY full_name').all();
-  const staff = await db.prepare('SELECT id, full_name FROM staff ORDER BY full_name').all();
+    ORDER BY a.date DESC`).all(month),
+    db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), '') + ' ORDER BY full_name').all(),
+    db.prepare('SELECT id, full_name FROM staff ORDER BY full_name').all()
+  ]);
   res.render('attendance_payroll/deductions', { title: 'الخصومات والإضافات', active: 'payroll', rows, month, type, coaches, staff, D: ADJ_CATEGORIES_D, B: ADJ_CATEGORIES_B, canAdd: canAdd(req.currentUser, 'payroll') });
 });
 

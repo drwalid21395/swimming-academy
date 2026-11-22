@@ -22,18 +22,50 @@ function requireSuper(req, res) {
 function today() { return new Date().toISOString().slice(0, 10); }
 function addDays(days) { return new Date(Date.now() + days * 86400000).toISOString().slice(0, 10); }
 
+/* قراءات مرتبطة بالأكاديميات: استعلام واحد لكل نوع بدل استعلام لكل أكاديمية.
+   ترتيب الاشتراكات تنازلي حسب id يضمن اختيار الأحدث تماماً كما في getActiveSubscription. */
+async function platformBatch(academies, plans) {
+  const ids = academies.map(function (a) { return a.id; });
+  const ph = ids.map(function () { return '?'; }).join(',');
+  const [subRows, studentRows, userRows] = await Promise.all([
+    ids.length ? db.prepare('SELECT * FROM academy_subscriptions WHERE academy_id IN (' + ph + ') ORDER BY id DESC').all(...ids) : Promise.resolve([]),
+    ids.length ? db.prepare('SELECT academy_id, COUNT(*) c FROM swimmers WHERE deleted_at IS NULL AND academy_id IN (' + ph + ') GROUP BY academy_id').all(...ids) : Promise.resolve([]),
+    ids.length ? db.prepare('SELECT academy_id, COUNT(*) c FROM users WHERE academy_id IN (' + ph + ') GROUP BY academy_id').all(...ids) : Promise.resolve([])
+  ]);
+  const subs = {}, students = {}, users = {};
+  subRows.forEach(function (s) { const k = String(s.academy_id); if (subs[k] === undefined) subs[k] = s; });
+  studentRows.forEach(function (r) { students[String(r.academy_id)] = r.c; });
+  userRows.forEach(function (r) { users[String(r.academy_id)] = r.c; });
+  const planById = {};
+  (plans || []).forEach(function (p) { planById[String(p.id)] = p; });
+  return {
+    subFor: function (id) { return subs[String(id)]; },
+    studentsFor: function (id) { return students[String(id)] || 0; },
+    usersFor: function (id) { return users[String(id)] || 0; },
+    planFor: function (id) { const p = id ? planById[String(id)] : null; return p ? { name: p.name } : null; }
+  };
+}
+
 /* ================================================================ */
 /*  لوحة تحكم Super Admin                                           */
 /* ================================================================ */
 router.get('/platform', async function (req, res) {
   if (requireSuper(req, res)) return;
-  const academies = await db.all('SELECT * FROM academies ORDER BY id');
-  const plans = await db.all('SELECT * FROM plans ORDER BY id');
+  /* القراءات مستقلة وتجميعية؛ نفس أحدث اشتراك ونفس العدّادات لكل أكاديمية. */
+  const [academies, plans, userCountRow, studentCountRow, pendingRow, revenueRow] = await Promise.all([
+    db.all('SELECT * FROM academies ORDER BY id'),
+    db.all('SELECT * FROM plans ORDER BY id'),
+    db.prepare('SELECT COUNT(*) c FROM users').get(),
+    db.prepare('SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL').get(),
+    db.prepare("SELECT COUNT(*) c FROM payment_requests WHERE status='PENDING'").get(),
+    db.prepare("SELECT COALESCE(SUM(amount),0) s FROM payments_history WHERE strftime('%Y-%m', approved_at) = strftime('%Y-%m', 'now')").get()
+  ]);
   const now = today();
+  const batch = await platformBatch(academies, plans);
 
   let activeCount = 0, suspendedCount = 0, expiringSoonCount = 0, expiredCount = 0;
   for (const a of academies) {
-    const sub = await getActiveSubscription(a.id);
+    const sub = batch.subFor(a.id);
     const st = subscriptionStatus(sub);
     if (+a.premium === 1) { activeCount++; continue; }
     if (a.status !== 'active') suspendedCount++;
@@ -42,18 +74,18 @@ router.get('/platform', async function (req, res) {
     else if (st.status === 'ACTIVE') activeCount++;
     else expiredCount++;
   }
-  const totalUsers = (await db.prepare('SELECT COUNT(*) c FROM users').get()).c;
-  const totalStudents = (await db.prepare('SELECT COUNT(*) c FROM swimmers WHERE deleted_at IS NULL').get()).c;
-  const pendingPayments = (await db.prepare("SELECT COUNT(*) c FROM payment_requests WHERE status='PENDING'").get()).c;
-  const monthlyRevenue = (await db.prepare("SELECT COALESCE(SUM(amount),0) s FROM payments_history WHERE strftime('%Y-%m', approved_at) = strftime('%Y-%m', 'now')").get()).s;
+  const totalUsers = userCountRow.c;
+  const totalStudents = studentCountRow.c;
+  const pendingPayments = pendingRow.c;
+  const monthlyRevenue = revenueRow.s;
 
   const rows = [];
   for (const a of academies) {
-    const sub = await getActiveSubscription(a.id);
+    const sub = batch.subFor(a.id);
     const st = subscriptionStatus(sub);
-    const studentCount = (await db.prepare('SELECT COUNT(*) c FROM swimmers WHERE academy_id = ? AND deleted_at IS NULL').get(a.id)).c;
-    const userCount = (await db.prepare('SELECT COUNT(*) c FROM users WHERE academy_id = ?').get(a.id)).c;
-    const planRow = a.plan_id ? await db.prepare('SELECT name FROM plans WHERE id = ?').get(a.plan_id) : null;
+    const studentCount = batch.studentsFor(a.id);
+    const userCount = batch.usersFor(a.id);
+    const planRow = batch.planFor(a.plan_id);
     rows.push({
       a, plan: planRow, sub, st,
       studentCount, userCount,
@@ -74,14 +106,16 @@ router.get('/platform', async function (req, res) {
 /* ================================================================ */
 router.get('/platform/academies', async function (req, res) {
   if (requireSuper(req, res)) return;
-  const academies = await db.all('SELECT a.*, p.name AS plan_name FROM academies a LEFT JOIN plans p ON p.id = a.plan_id ORDER BY a.id');
+  const [academies, plans] = await Promise.all([
+    db.all('SELECT a.*, p.name AS plan_name FROM academies a LEFT JOIN plans p ON p.id = a.plan_id ORDER BY a.id'),
+    db.all('SELECT * FROM plans ORDER BY id')
+  ]);
+  const batch = await platformBatch(academies, plans);
   for (const a of academies) {
-    const sub = await getActiveSubscription(a.id);
-    a.subInfo = subscriptionStatus(sub);
-    a.studentCount = (await db.prepare('SELECT COUNT(*) c FROM swimmers WHERE academy_id = ? AND deleted_at IS NULL').get(a.id)).c;
-    a.userCount = (await db.prepare('SELECT COUNT(*) c FROM users WHERE academy_id = ?').get(a.id)).c;
+    a.subInfo = subscriptionStatus(batch.subFor(a.id));
+    a.studentCount = batch.studentsFor(a.id);
+    a.userCount = batch.usersFor(a.id);
   }
-  const plans = await db.all('SELECT * FROM plans ORDER BY id');
   res.render('platform/academies', { title: 'الأكاديميات', active: 'platform', academies, plans });
 });
 
@@ -297,12 +331,20 @@ router.post('/platform/impersonate/exit', async function (req, res) {
 router.get('/platform/payments', async function (req, res) {
   if (requireSuper(req, res)) return;
   const filter = req.query.status || 'PENDING';
-  const rows = await db.prepare(`SELECT pr.*, a.name AS academy_name, a.phone AS academy_phone FROM payment_requests pr LEFT JOIN academies a ON a.id = pr.academy_id
-    WHERE (? = 'ALL' OR pr.status = ?) ORDER BY pr.created_at DESC LIMIT 200`).all(filter, filter, filter);
+  /* الاستعلامات مستقلة؛ أسماء الخطط والمراجعين تُقرأ مرة واحدة وتُربط بكل صف. */
+  const [rows, allPlans, allUsers] = await Promise.all([
+    db.prepare(`SELECT pr.*, a.name AS academy_name, a.phone AS academy_phone FROM payment_requests pr LEFT JOIN academies a ON a.id = pr.academy_id
+    WHERE (? = 'ALL' OR pr.status = ?) ORDER BY pr.created_at DESC LIMIT 200`).all(filter, filter, filter),
+    db.prepare('SELECT id, name FROM plans').all(),
+    db.prepare('SELECT id, full_name FROM users').all()
+  ]);
+  const planById = {}, userById = {};
+  allPlans.forEach(function (p) { planById[String(p.id)] = p; });
+  allUsers.forEach(function (u) { userById[String(u.id)] = u; });
   for (const r of rows) {
-    const plan = r.plan_id ? await db.prepare('SELECT name FROM plans WHERE id = ?').get(r.plan_id) : null;
+    const plan = r.plan_id ? (planById[String(r.plan_id)] || planById[String(Number(r.plan_id))]) : null;
     r.plan_name = plan ? plan.name : '—';
-    const reviewer = r.reviewed_by ? await db.prepare('SELECT full_name FROM users WHERE id = ?').get(r.reviewed_by) : null;
+    const reviewer = r.reviewed_by ? (userById[String(r.reviewed_by)] || userById[String(Number(r.reviewed_by))]) : null;
     r.reviewer_name = reviewer ? reviewer.full_name : '—';
   }
   res.render('platform/payments', { title: 'مراجعة طلبات الدفع', active: 'platform', rows, filter });

@@ -324,9 +324,12 @@ router.get('/api/notifications/poll', async function (req, res) {
   if (!receive) return res.json(Object.assign(base, { unread: 0, latestId: 0, items: [] }));
 
   try {
-    const unreadRow = await db.prepare('SELECT COUNT(*) AS c FROM notification_recipients WHERE user_id = ? AND is_read = 0').get(uid);
-    const latestRow = await db.prepare(`SELECT MAX(n.id) AS id FROM notifications n
-      JOIN notification_recipients nr ON nr.notification_id = n.id WHERE nr.user_id = ?`).get(uid);
+    /* القراءتان مستقلتان؛ إرسالهما معاً يوفّر رحلة قاعدة البيانات بنفس النتيجة. */
+    const [unreadRow, latestRow] = await Promise.all([
+      db.prepare('SELECT COUNT(*) AS c FROM notification_recipients WHERE user_id = ? AND is_read = 0').get(uid),
+      db.prepare(`SELECT MAX(n.id) AS id FROM notifications n
+      JOIN notification_recipients nr ON nr.notification_id = n.id WHERE nr.user_id = ?`).get(uid)
+    ]);
     const latestId = Number(latestRow && latestRow.id) || 0;
     let items = [];
     if (after > 0 && latestId > after) {
@@ -389,9 +392,13 @@ router.get('/notifications', async function (req, res) {
   if (!canView(req.currentUser, 'notifications')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const uid = req.currentUser.id;
   await db.prepare("UPDATE notification_recipients SET is_read = 1, read_at = datetime('now','localtime') WHERE user_id = ?").run(uid);
+  /* نفس عدّاد غير المقروء، لكن بحسابه مرة واحدة في استعلام تجميعي بدل استعلام لكل إشعار.
+     التجميع يحدث بعد تحديث المقروء مباشرةً، وCOALESCE يحافظ على الصفر عند غياب المستلمين. */
   const rows = await db.prepare(`SELECT n.*, u.full_name AS sender_name,
-      (SELECT COUNT(*) FROM notification_recipients nr WHERE nr.notification_id = n.id AND nr.is_read = 0) AS unread
+      COALESCE(uc.unread, 0) AS unread
     FROM notifications n LEFT JOIN users u ON u.id = n.created_by
+    LEFT JOIN (SELECT notification_id, COUNT(*) AS unread FROM notification_recipients WHERE is_read = 0 GROUP BY notification_id) uc
+      ON uc.notification_id = n.id
     ORDER BY n.created_at DESC LIMIT 200`).all();
   const page = {
     title: 'الإشعارات', subtitle: 'إشعارات النظام والتواصل', icon: 'fa-bell', module: 'notifications', active: 'notifications',

@@ -46,6 +46,58 @@ async function levelGroups(sid, currentLevelId) {
   return groups;
 }
 
+/* نفس بيانات نموذج التقييم، لكن بمجموعة قراءات واحدة بدل استعلام لكل مستوى.
+   ترتيب المعايير داخل كل مستوى مطابق لترتيب criteriaFor (order_no ثم id). */
+async function assessmentFormOptions(sid, currentLevelId) {
+  const [levels, criteria, general, swimmers, coaches, programs] = await Promise.all([
+    levelOptions(sid),
+    db.prepare('SELECT * FROM assessment_criteria WHERE level_id IS NOT NULL ORDER BY level_id, order_no, id').all(),
+    db.prepare('SELECT * FROM assessment_criteria WHERE level_id IS NULL ORDER BY order_no, id').all(),
+    swimmerOptions(sid),
+    coachOptions(sid),
+    programOptions(sid)
+  ]);
+  const byLevel = {};
+  criteria.forEach(function (c) {
+    const k = String(c.level_id);
+    (byLevel[k] = byLevel[k] || []).push(c);
+  });
+  return {
+    levelGroups: levels.map(function (l) {
+      return {
+        level: { ...l, current: currentLevelId !== null && currentLevelId !== undefined && String(l.value) === String(currentLevelId) },
+        criteria: byLevel[String(l.value)] || []
+      };
+    }),
+    generalCriteria: general,
+    swimmers: swimmers,
+    coaches: coaches,
+    programs: programs
+  };
+}
+
+/* بيانات نموذج الاختبار الجماعي: أعضاء الفرق يُقرأون في استعلام واحد. */
+async function testFormOptions(sid) {
+  const [swimmers, types, levels, teams, members] = await Promise.all([
+    swimmerOptions(sid),
+    testTypes(),
+    levelOptions(sid),
+    db.prepare('SELECT t.id, t.name, t.coach_id FROM teams t ORDER BY t.name').all(),
+    db.prepare(`SELECT tm.team_id, s.id, s.full_name, s.membership_no, l.name AS level_name FROM team_members tm
+      JOIN swimmers s ON s.id = tm.swimmer_id LEFT JOIN levels l ON l.id = s.level_id
+      WHERE s.deleted_at IS NULL ORDER BY tm.team_id, s.full_name, tm.id`).all()
+  ]);
+  const byTeam = {};
+  members.forEach(function (m) {
+    const k = String(m.team_id);
+    (byTeam[k] = byTeam[k] || []).push({ id: m.id, full_name: m.full_name, membership_no: m.membership_no, level_name: m.level_name });
+  });
+  return {
+    swimmers, testTypes: types, levels,
+    teams: teams.map(function (t) { return { id: t.id, name: t.name, coach_id: t.coach_id, swimmers: byTeam[String(t.id)] || [] }; })
+  };
+}
+
 /* قراءة تقييم (scores) من req.body مقسّمة إلى: مستوى محدد + معايير عامة */
 async function parseScores(b) {
   const critLevel = {};
@@ -907,7 +959,9 @@ function gradeColor(score) {
 router.get('/assessments/log', async function (req, res) {
   if (!canView(req.currentUser, 'assessments')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   /* التقييمات: نجمع صفوف اللاعب الواحد في نفس التاريخ في سطر واحد (كل المستويات معاً) */
-  const rows = await db.prepare(`SELECT 'تقييم' AS kind,
+  /* الاستعلامات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [rows, levelOpts, coachOpts] = await Promise.all([
+    db.prepare(`SELECT 'تقييم' AS kind,
       COALESCE(MIN(CASE WHEN a.level_id IS NOT NULL THEN a.id END), MIN(a.id)) AS id,
       a.date AS date,
       COALESCE(ROUND(AVG(CASE WHEN a.level_id IS NOT NULL THEN a.overall_percent END), 2), ROUND(AVG(a.overall_percent), 2)) AS overall_percent,
@@ -931,7 +985,10 @@ router.get('/assessments/log', async function (req, res) {
     UNION ALL
     SELECT 'اختبار' AS kind, t.id AS id, t.date AS date, NULL AS overall_percent, t.passed AS ready_to_advance, NULL AS level_id, t.coach_id AS coach_id, t.result_note AS notes, t.swimmer_id AS swimmer_id, s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name, l.name AS level_name, 1 AS levels_count, t.type AS t_type, t.race_type AS t_race, t.time_seconds AS time_seconds, t.status AS test_status, t.distance_m AS distance_m, t.result_note AS result_note FROM tests t
     LEFT JOIN swimmers s ON s.id = t.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN levels l ON l.id = t.level_id WHERE 1=1` + swimmerOfClause(activeSport(req), 't') + `
-    ORDER BY date DESC`).all();
+    ORDER BY date DESC`).all(),
+    levelOptions(activeSport(req)),
+    coachOptions(activeSport(req))
+  ]);
   const page = {
     title: 'التقييمات الفنية', subtitle: 'تقييم مهارات اللاعبين ونتائج الاختبارات', icon: 'fa-clipboard-check', module: 'assessments', active: 'assessments',
     columns: [
@@ -948,8 +1005,8 @@ router.get('/assessments/log', async function (req, res) {
     ],
     rows,
     filters: [
-      { name: 'level_id', label: 'المستوى', options: await levelOptions(activeSport(req)) },
-      { name: 'coach_id', label: 'الكابتن', options: await coachOptions(activeSport(req)) },
+      { name: 'level_id', label: 'المستوى', options: levelOpts },
+      { name: 'coach_id', label: 'الكابتن', options: coachOpts },
       { name: 'ready_to_advance', label: 'الترقية', options: [{ value: '1', label: 'جاهز للترقية' }, { value: '0', label: 'قيد التدريب' }] }
     ],
     canAdd: canAdd(req.currentUser, 'assessments'), addUrl: canAdd(req.currentUser, 'assessments') ? '/assessments/new' : null, addLabel: 'تقييم جديد',
@@ -1007,10 +1064,11 @@ router.get('/assessments/new', async function (req, res) {
       if (values.program_id === undefined && returnGroup.program_id) values.program_id = returnGroup.program_id;
     }
   }
+  const opts = await assessmentFormOptions(activeSport(req), currentLevelId);
   res.render('assessment_form', {
     title: 'تقييم فني جديد', active: 'assessments', isEdit: false, returnGroup,
-    action: '/assessments/new', values, levelGroups: await levelGroups(activeSport(req), currentLevelId), generalCriteria: await generalCriteria(),
-    swimmers: await swimmerOptions(activeSport(req)), coaches: await coachOptions(activeSport(req)), programs: await programOptions(activeSport(req))
+    action: '/assessments/new', values, levelGroups: opts.levelGroups, generalCriteria: opts.generalCriteria,
+    swimmers: opts.swimmers, coaches: opts.coaches, programs: opts.programs
   });
 });
 router.post('/assessments/new', async function (req, res) {
@@ -1136,10 +1194,11 @@ router.get('/assessments/:id/edit', async function (req, res) {
     returnGroup = await db.prepare('SELECT id, name FROM groups WHERE id = ? AND deleted_at IS NULL').get(Number(req.query.group));
     if (returnGroup) values.group_id = returnGroup.id;
   }
+  const opts = await assessmentFormOptions(activeSport(req), row.level_id != null ? row.level_id : null);
   res.render('assessment_form', {
     title: 'تعديل التقييم', active: 'assessments', isEdit: true, returnGroup,
-    action: '/assessments/' + row.id + '/edit', values, levelGroups: await levelGroups(activeSport(req), row.level_id != null ? row.level_id : null), generalCriteria: await generalCriteria(),
-    swimmers: await swimmerOptions(activeSport(req)), coaches: await coachOptions(activeSport(req)), programs: await programOptions(activeSport(req))
+    action: '/assessments/' + row.id + '/edit', values, levelGroups: opts.levelGroups, generalCriteria: opts.generalCriteria,
+    swimmers: opts.swimmers, coaches: opts.coaches, programs: opts.programs
   });
 });
 router.post('/assessments/:id/edit', async function (req, res) {
@@ -1202,12 +1261,15 @@ async function testTypes() {
   const v = (await db.prepare("SELECT value FROM settings WHERE key = 'test_types'").get() || {}).value;
   try { const a = JSON.parse(v || '[]'); return Array.isArray(a) && a.length ? a : TEST_TYPES_DEFAULT; } catch (e) { return TEST_TYPES_DEFAULT; }
 }
-const testFields = async function (values, sid) {
+const testFields = async function (values, sid, pre) {
+  const swimmers = pre ? pre.swimmers : await swimmerOptions(sid);
+  const types = pre ? pre.testTypes : await testTypes();
+  const levels = pre ? pre.levels : await levelOptions(sid);
   return [
-    { key: 'swimmer_id', label: 'اللاعب', type: 'select', options: await swimmerOptions(sid), required: true, section: 'بيانات الاختبار', sectionIcon: 'fa-vial-circle-check' },
-    { key: 'type', label: 'نوع الاختبار', type: 'select', options: (await testTypes()).map(v => ({ value: v, label: v })) },
+    { key: 'swimmer_id', label: 'اللاعب', type: 'select', options: swimmers, required: true, section: 'بيانات الاختبار', sectionIcon: 'fa-vial-circle-check' },
+    { key: 'type', label: 'نوع الاختبار', type: 'select', options: types.map(v => ({ value: v, label: v })) },
     { key: 'race_type', label: 'نوع السباق (اكتبه يدوياً)', type: 'text', placeholder: 'مثال: حرة — ظهر — صدر — فراشة' },
-    { key: 'level_id', label: 'المستوى (يظهر مع نوع "مستوى" فقط)', type: 'select', options: await levelOptions(sid) },
+    { key: 'level_id', label: 'المستوى (يظهر مع نوع "مستوى" فقط)', type: 'select', options: levels },
     { key: 'date', label: 'تاريخ الاختبار', type: 'date' },
     { key: 'distance_m', label: 'المسافة (متر)', type: 'number', number: true },
     { key: 'time_seconds', label: 'الزمن (ثانية)', type: 'number', number: true, step: '0.01' },
@@ -1253,8 +1315,14 @@ async function saveTestResult(o) {
 
 router.get('/tests', async function (req, res) {
   if (!canView(req.currentUser, 'tests')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT t.*, l.name AS level_name, s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name FROM tests t
-    LEFT JOIN swimmers s ON s.id = t.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN levels l ON l.id = t.level_id WHERE 1=1` + swimmerOfClause(activeSport(req), 't') + ` ORDER BY t.date DESC`).all();
+  /* الاستعلامات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [rows, testTypeRows, levelOpts, coachOpts] = await Promise.all([
+    db.prepare(`SELECT t.*, l.name AS level_name, s.full_name AS swimmer_name, s.membership_no, c.full_name AS coach_name FROM tests t
+    LEFT JOIN swimmers s ON s.id = t.swimmer_id AND s.deleted_at IS NULL LEFT JOIN coaches c ON c.id = t.coach_id LEFT JOIN levels l ON l.id = t.level_id WHERE 1=1` + swimmerOfClause(activeSport(req), 't') + ` ORDER BY t.date DESC`).all(),
+    testTypes(),
+    levelOptions(activeSport(req)),
+    coachOptions(activeSport(req))
+  ]);
   const page = {
     title: 'الاختبارات', subtitle: 'اختبارات المستويات والأزمنة', icon: 'fa-vial-circle-check', module: 'tests', active: 'tests',
     columns: [
@@ -1269,9 +1337,9 @@ router.get('/tests', async function (req, res) {
     ],
     rows,
     filters: [
-      { name: 'type', label: 'النوع', options: (await testTypes()).map(v => ({ value: v, label: v })) },
-      { name: 'level_id', label: 'المستوى', options: await levelOptions(activeSport(req)) },
-      { name: 'coach_id', label: 'الكابتن', options: await coachOptions(activeSport(req)) },
+      { name: 'type', label: 'النوع', options: testTypeRows.map(v => ({ value: v, label: v })) },
+      { name: 'level_id', label: 'المستوى', options: levelOpts },
+      { name: 'coach_id', label: 'الكابتن', options: coachOpts },
       { name: 'status', label: 'النتيجة', options: [{ value: 'اجتاز', label: 'اجتاز' }, { value: 'لم يجتز', label: 'لم يجتز' }] }
     ],
     canAdd: canAdd(req.currentUser, 'tests'), addUrl: canAdd(req.currentUser, 'tests') ? '/tests/new' : null, addLabel: 'اختبار جديد',
@@ -1285,9 +1353,10 @@ router.get('/tests', async function (req, res) {
 
 router.get('/tests/new', async function (req, res) {
   if (!canAdd(req.currentUser, 'tests')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const opts = await testFormOptions(activeSport(req));
   res.render('test_group_form', {
-    form: { title: 'اختبار جديد', subtitle: 'تسجيل اختبار للاعب واحد أو لكل لاعب في فريق', icon: 'fa-plus', active: 'tests', action: '/tests/new', fields: await testFields({}, activeSport(req)), values: {}, submitLabel: 'حفظ الاختبار', cancelUrl: '/tests', csrf: '' },
-    teams: await testTeamsWithSwimmers(activeSport(req)), testTypes: await testTypes(), levelOptions: await levelOptions(activeSport(req)), swimmerOptions: await swimmerOptions(activeSport(req))
+    form: { title: 'اختبار جديد', subtitle: 'تسجيل اختبار للاعب واحد أو لكل لاعب في فريق', icon: 'fa-plus', active: 'tests', action: '/tests/new', fields: await testFields({}, activeSport(req), opts), values: {}, submitLabel: 'حفظ الاختبار', cancelUrl: '/tests', csrf: '' },
+    teams: opts.teams, testTypes: opts.testTypes, levelOptions: opts.levels, swimmerOptions: opts.swimmers
   });
 });
 router.post('/tests/new', async function (req, res) {
@@ -1431,7 +1500,11 @@ const teamFields = async function (values, sports, defaultSport) {
 
 router.get('/teams', async function (req, res) {
   if (!canView(req.currentUser, 'teams')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const rows = await db.prepare(`SELECT t.*, c.full_name AS coach_name, (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id) AS members FROM teams t LEFT JOIN coaches c ON c.id = t.coach_id WHERE 1=1` + sportClause(activeSport(req), 't') + ` ORDER BY t.id`).all();
+  /* الاستعلامات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [rows, coachOpts] = await Promise.all([
+    db.prepare(`SELECT t.*, c.full_name AS coach_name, (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id) AS members FROM teams t LEFT JOIN coaches c ON c.id = t.coach_id WHERE 1=1` + sportClause(activeSport(req), 't') + ` ORDER BY t.id`).all(),
+    coachOptions(activeSport(req))
+  ]);
   const page = {
     title: 'فرق السباحة', subtitle: 'فرق الناشئين والبطولات', icon: 'fa-flag-checkered', module: 'teams', active: 'teams',
     columns: [
@@ -1441,7 +1514,7 @@ router.get('/teams', async function (req, res) {
       { key: 'training_plan', label: 'الخطة التدريبية', html: row => row.training_plan ? (row.training_plan.length > 40 ? row.training_plan.slice(0, 40) + '…' : row.training_plan) : '—' }
     ],
     rows,
-    filters: [{ name: 'coach_id', label: 'المدرب', options: await coachOptions(activeSport(req)) }],
+    filters: [{ name: 'coach_id', label: 'المدرب', options: coachOpts }],
     canAdd: canAdd(req.currentUser, 'teams'), addUrl: canAdd(req.currentUser, 'teams') ? '/teams/new' : null, addLabel: 'فريق جديد',
     actions: () => row => [
       { label: 'الأعضاء', icon: 'fa-users', href: '/teams/' + row.id },

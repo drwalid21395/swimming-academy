@@ -144,7 +144,13 @@ router.get('/sessions', async function (req, res) {
   if (status) { sql += ' AND se.status = ?'; params.push(status); }
   if (q) { sql += ' AND (g.name LIKE ? OR se.title LIKE ?)'; const like = '%' + q + '%'; params.push(like, like); }
   sql += ' ORDER BY se.date DESC, se.start_time';
-  const rows = (await db.prepare(sql).all(...params)).map(function (r) {
+  /* الاستعلامات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [rowRows, groupRows, coachRows] = await Promise.all([
+    db.prepare(sql).all(...params),
+    db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL' + groupClause(activeSport(req)) + ' ORDER BY name').all(),
+    db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'coaches') + ' ORDER BY full_name').all()
+  ]);
+  const rows = rowRows.map(function (r) {
     r.status_badge = sesStatusBadge(r.status);
     return r;
   });
@@ -161,8 +167,8 @@ router.get('/sessions', async function (req, res) {
     ],
     rows,
     filters: [
-      { name: 'group_id', label: 'المجموعة', options: (await db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL' + groupClause(activeSport(req)) + ' ORDER BY name').all()).map(g => ({ value: g.id, label: g.name })) },
-      { name: 'coach_id', label: 'الكابتن', options: (await db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'coaches') + ' ORDER BY full_name').all()).map(c => ({ value: c.id, label: c.full_name })) },
+      { name: 'group_id', label: 'المجموعة', options: groupRows.map(g => ({ value: g.id, label: g.name })) },
+      { name: 'coach_id', label: 'الكابتن', options: coachRows.map(c => ({ value: c.id, label: c.full_name })) },
       { name: 'status', label: 'الحالة', options: SES_STATUS }
     ],
     canAdd: canAdd(req.currentUser, 'sessions'),

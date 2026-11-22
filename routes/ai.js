@@ -14,15 +14,19 @@ const publicAskLimit = createRateLimiter({ windowMs: 60 * 1000, max: 12, keyPref
 
 router.get('/ai-replies', async function (req, res) {
   if (!canView(req.currentUser, 'settings')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  /* القراءات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
+  const [settingsRows, guardians, lastMsgs] = await Promise.all([
+    db.prepare('SELECT key, value FROM settings').all(),
+    db.prepare('SELECT id, full_name, phone, whatsapp FROM guardians ORDER BY full_name').all(),
+    db.prepare('SELECT * FROM whatsapp_messages ORDER BY id DESC LIMIT 15').all()
+  ]);
   const current = {};
-  (await db.prepare('SELECT key, value FROM settings').all()).forEach(r => { current[r.key] = r.value; });
+  settingsRows.forEach(r => { current[r.key] = r.value; });
   current.ai_enabled = current.ai_enabled || '0';
   current.ai_provider = current.ai_provider || 'gemini';
   current.ai_model = current.ai_model || PROVIDERS[current.ai_provider].defaultModel;
   current.ai_tone = current.ai_tone || 'مهني';
   current.ai_max_length = current.ai_max_length || '300';
-  const guardians = await db.prepare('SELECT id, full_name, phone, whatsapp FROM guardians ORDER BY full_name').all();
-  const lastMsgs = await db.prepare('SELECT * FROM whatsapp_messages ORDER BY id DESC LIMIT 15').all();
   const webhookUrl = (req.protocol || 'https') + '://' + (req.get('host') || '') + '/webhooks/whatsapp';
   res.render('ai_replies', {
     title: 'الردود الذكية', active: 'ai_replies',

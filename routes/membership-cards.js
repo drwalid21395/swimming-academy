@@ -72,12 +72,15 @@ router.get('/membership-cards', async function (req, res) {
     params.push('%' + q + '%', '%' + q + '%');
   }
   sql += ' ORDER BY s.full_name LIMIT 500';
-  const rows = await db.prepare(sql).all(...params);
-  const stats = await db.prepare(`SELECT
+  /* القراءتان مستقلتان؛ إرسالهما معاً يوفّر رحلة قاعدة البيانات بنفس النتيجة. */
+  const [rows, stats] = await Promise.all([
+    db.prepare(sql).all(...params),
+    db.prepare(`SELECT
       SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS present,
       SUM(CASE WHEN a.status = 'absent' THEN 1 ELSE 0 END) AS absent
     FROM attendance a JOIN sessions s ON s.id = a.session_id
-    WHERE s.date = ? AND s.deleted_at IS NULL`).get(today());
+    WHERE s.date = ? AND s.deleted_at IS NULL`).get(today())
+  ]);
   res.render('membership_cards', {
     title: 'بطاقات العضوية', active: 'membershipCards', rows, q,
     canCreate: canAdd(req.currentUser, 'membershipCards'),
