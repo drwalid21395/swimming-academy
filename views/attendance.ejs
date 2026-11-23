@@ -54,7 +54,14 @@
               <b dir="ltr"><%= ses.start_time %> — <%= ses.end_time || '—' %></b>
               <div class="font-11 text-muted"><%= ses.group_name || 'بدون مجموعة' %><% if (ses.coach_name) { %> · <%= ses.coach_name %><% } %> · <%= ses.marked %> لاعب</div>
             </div>
-            <a href="/attendance?date=<%= ses.date %>&from=<%= encodeURIComponent(ses.start_time || '16:00') %>&to=<%= encodeURIComponent(sesTo) %>&group=<%= ses.group_id || 0 %>" class="btn btn-outline btn-sm" title="فتح الحالة المحفوظة لهذا الموعد"><i class="fas fa-clipboard-user"></i> الحضور</a>
+            <div class="flex gap-1" style="flex-wrap:wrap">
+              <a href="/sessions/<%= ses.id %>" class="btn btn-outline btn-sm" title="تفاصيل الحصة والمجموعات"><i class="fas fa-layer-group"></i> المجموعات</a>
+              <a href="/attendance?date=<%= ses.date %>&from=<%= encodeURIComponent(ses.start_time || '16:00') %>&to=<%= encodeURIComponent(sesTo) %>&group=<%= ses.group_id || 0 %>" class="btn btn-outline btn-sm" title="فتح الحالة المحفوظة لهذا الموعد"><i class="fas fa-clipboard-user"></i> الحضور</a>
+              <% if (canExport) { %>
+                <a href="/sessions/<%= ses.id %>/attendance.pdf" class="btn btn-ghost btn-sm" title="تحميل PDF لهذه الحصة"><i class="fas fa-file-pdf"></i> PDF</a>
+                <a href="/sessions/<%= ses.id %>/attendance.xls" class="btn btn-ghost btn-sm" title="تحميل Excel لهذه الحصة"><i class="fas fa-file-excel"></i> XLS</a>
+              <% } %>
+            </div>
           </div>
         <% }); %>
       <% } else { %>
@@ -109,6 +116,11 @@
                 <% } %>
                 <% if (canScan) { %><a href="/attendance/scan?session=<%= ses.id %>&date=<%= date %>&from=<%= encodeURIComponent(from) %>&to=<%= encodeURIComponent(to) %>&group=<%= groupFilter %>" class="btn btn-success btn-sm"><i class="fas fa-qrcode"></i> مسح الباركود</a><% } %>
                 <a href="/attendance/session/<%= ses.id %>" class="btn btn-outline btn-sm"><i class="fas fa-clipboard-user"></i> صفحة الحضور</a>
+                <a href="/sessions/<%= ses.id %>" class="btn btn-ghost btn-sm"><i class="fas fa-eye"></i> تفاصيل الحصة</a>
+                <% if (canExport) { %>
+                  <a href="/sessions/<%= ses.id %>/attendance.pdf" class="btn btn-ghost btn-sm" title="PDF لهذه الحصة"><i class="fas fa-file-pdf"></i> PDF</a>
+                  <a href="/sessions/<%= ses.id %>/attendance.xls" class="btn btn-ghost btn-sm" title="Excel لهذه الحصة"><i class="fas fa-file-excel"></i> XLS</a>
+                <% } %>
               </div>
               <div class="att-row" style="border-bottom-width:2px">
                 <div class="att-name"><b>اللاعب</b></div>

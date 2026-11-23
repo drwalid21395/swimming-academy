@@ -1,11 +1,12 @@
 /** الحصص والجداول + الحضور والغياب */
 const express = require('express');
 const { db } = require('../lib/db');
-const { audit, money, fmtDate, fmtDateTime, dayAr, today, pct, parseJSON, canView, canAdd, canEdit, canDel } = require('../lib/helpers');
+const { audit, money, fmtDate, fmtDateTime, dayAr, today, pct, parseJSON, canView, canAdd, canEdit, canDel, canExport } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
 const { activeSport, sportClause, groupClause, sessionClause } = require('../lib/sport-context');
 const { ensureGroupSession, swimmerTimeClash } = require('../lib/attendance');
 const { overlaps, validateRange, normalizeTime, toMinutes } = require('../lib/attendance-time');
+const pdfmake = require('../lib/pdf');
 
 function attendanceCounts(status) {
   return status === 'present' || status === 'late';
@@ -119,9 +120,146 @@ async function sessionGroupForSwimmer(sessionId, swimmerId) {
   return s && s.group_id;
 }
 
-/* مزامنة أعضاء عدة مجموعات */
+/* مزامنة أعضاء عدة مجموعات: دفعة واحدة بنفس ترتيب المجموعات (إدراج ثم تنظيف لكل مجموعة) */
 async function syncGroups(groupIds) {
-  for (const gid of groupIds) await syncGroup(gid);
+  const ids = Array.from(new Set((groupIds || []).map(Number).filter(id => id > 0)));
+  if (!ids.length) return;
+  const stmts = [];
+  ids.forEach(function (gid) {
+    stmts.push(
+      { sql: 'INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) SELECT id, ? FROM swimmers WHERE group_id = ? AND deleted_at IS NULL', args: [gid, gid] },
+      { sql: 'INSERT OR IGNORE INTO swimmer_group (swimmer_id, group_id) SELECT DISTINCT swimmer_id, ? FROM subscriptions WHERE group_id = ? AND status = \'نشط\'', args: [gid, gid] },
+      { sql: 'DELETE FROM swimmer_group WHERE group_id = ? AND swimmer_id NOT IN (SELECT id FROM swimmers WHERE group_id = ? AND deleted_at IS NULL UNION SELECT DISTINCT swimmer_id FROM subscriptions WHERE group_id = ? AND status = \'نشط\')', args: [gid, gid, gid] }
+    );
+  });
+  await db.batch(stmts, 'write');
+}
+
+/* صلاحية تحميل تقرير الحصة: عرض (حصص أو حضور) + تصدير (أي من الوحدات المرتبطة) */
+function canExportSession(user) {
+  const canSee = canView(user, 'sessions') || canView(user, 'attendance');
+  const canDownload = canExport(user, 'sessions') || canExport(user, 'attendance') || canExport(user, 'reports');
+  return !!(canSee && canDownload);
+}
+
+const ATT_LABEL = ATT_STATUS.reduce(function (m, s) { m[s.value] = s.label; return m; }, {});
+
+/* بيانات حصة واحدة مجمّعة حسب المجموعات — تُستخدم للعرض ولملفي PDF/Excel */
+async function sessionReportData(sessionId, req) {
+  const id = Number(sessionId);
+  const s = await db.prepare(`SELECT se.*, g.name AS group_name, c.full_name AS coach_name, p.name AS pool_name FROM sessions se
+    LEFT JOIN groups g ON g.id = se.group_id LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id
+    WHERE se.id = ? AND se.deleted_at IS NULL` + sessionClause(activeSport(req), 'se')).get(id);
+  if (!s) return null;
+
+  const groupIds = await sessionGroupIds(s.id);
+  await syncGroups(groupIds);
+  const placeholders = groupIds.length ? groupIds.map(function () { return '?'; }).join(',') : '0';
+  const [groupRows, memberRows] = await Promise.all([
+    groupIds.length ? db.prepare('SELECT id, name FROM groups WHERE id IN (' + placeholders + ') ORDER BY name, id').all(...groupIds) : Promise.resolve([]),
+    groupIds.length ? db.prepare(`SELECT sg.group_id, g.name AS group_name, s.id, s.full_name, s.membership_no,
+        a.status AS att_status, a.reason, a.coach_note
+      FROM swimmer_group sg
+      JOIN swimmers s ON s.id = sg.swimmer_id
+      JOIN groups g ON g.id = sg.group_id
+      LEFT JOIN attendance a ON a.session_id = ? AND a.swimmer_id = s.id
+      WHERE sg.group_id IN (` + placeholders + `)
+      ORDER BY g.name, s.full_name, s.id`).all(s.id, ...groupIds) : Promise.resolve([])
+  ]);
+  const membersByGroup = {};
+  memberRows.forEach(function (m) {
+    (membersByGroup[String(m.group_id)] = membersByGroup[String(m.group_id)] || []).push(m);
+  });
+  const groups = groupRows.map(function (g) {
+    return { id: g.id, name: g.name, members: membersByGroup[String(g.id)] || [] };
+  });
+  return { s, groups, groupNames: groupRows.map(function (g) { return g.name; }) };
+}
+
+/* ---------- تصدير حصة واحدة: PDF + Excel ---------- */
+function sessionPdfDoc(data) {
+  const s = data.s;
+  const content = [
+    { text: 'تقرير الحضور والغياب — حصة تدريبية', style: 'reportTitle' },
+    { text: fmtDate(s.date) + '  ·  ' + s.start_time + ' — ' + (s.end_time || '—'), style: 'meta' },
+    { text: 'المجموعات: ' + ((data.groupNames.length ? data.groupNames : [s.group_name]).filter(Boolean).join('، ') || '—'), style: 'meta2' },
+    { text: 'الكابتن: ' + (s.coach_name || '—') + '   ·   الحمام: ' + (s.pool_name || '—'), style: 'meta2' }
+  ];
+  data.groups.forEach(function (g) {
+    const rows = [[
+      { text: 'اللاعب', style: 'th' }, { text: 'رقم العضوية', style: 'th' },
+      { text: 'الحالة', style: 'th' }, { text: 'ملاحظة', style: 'th' }
+    ]];
+    g.members.forEach(function (m) {
+      rows.push([
+        { text: m.full_name || '—', style: 'td' },
+        { text: m.membership_no || '—', style: 'td' },
+        { text: ATT_LABEL[m.att_status] || '—', style: 'td' },
+        { text: m.coach_note || m.reason || '—', style: 'td' }
+      ]);
+    });
+    content.push({ text: g.name, style: 'sectionTitle', margin: [0, 12, 0, 4] });
+    content.push({
+      table: { headerRows: 1, widths: ['*', 'auto', 'auto', '*'], body: rows },
+      layout: 'lightHorizontalLines'
+    });
+  });
+  if (!data.groups.length) content.push({ text: 'لا توجد مجموعات مرتبطة بهذه الحصة', style: 'meta2', margin: [0, 12, 0, 0] });
+  return {
+    content: content,
+    defaultStyle: { font: 'Tahoma', fontSize: 9.5, color: '#111827', alignment: 'right' },
+    styles: {
+      reportTitle: { fontSize: 16, bold: true, color: '#0284c7', alignment: 'center', margin: [0, 0, 0, 4] },
+      meta: { fontSize: 10, color: '#334155', alignment: 'center', margin: [0, 0, 0, 2] },
+      meta2: { fontSize: 9, color: '#6b7280', alignment: 'center' },
+      sectionTitle: { fontSize: 12, bold: true, color: '#0f172a' },
+      th: { bold: true, fontSize: 9.5, color: '#ffffff', fillColor: '#0284c7', alignment: 'center', margin: [2, 3, 2, 3] },
+      td: { fontSize: 9, alignment: 'right', margin: [1, 2, 1, 2] }
+    }
+  };
+}
+
+function xEsc(v) {
+  return String(v === null || v === undefined ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function xCell(v, style) {
+  return '<td' + (style ? ' style="' + style + '"' : '') + '>' + (v === null || v === undefined || v === '' ? '—' : xEsc(v)) + '</td>';
+}
+function xlsWorkbook(sheetsHtml, opts) {
+  opts = opts || {};
+  let sheetsXml = '';
+  sheetsHtml.forEach(function (sh, i) {
+    sheetsXml += '<x:ExcelWorksheet><x:Name>' + xEsc(sh.name || ('Sheet' + (i + 1))) + '</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/></x:WorksheetOptions></x:ExcelWorksheet>';
+  });
+  let body = opts.body || '';
+  sheetsHtml.forEach(function (sh) { body += sh.html; });
+  return '\uFEFF' + '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8">'
+    + '<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets>' + sheetsXml + '</x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->'
+    + '<style>table{border-collapse:collapse;table-layout:fixed}td,th{border:1px solid #999;padding:4px 7px;font-size:12px;font-family:Tahoma,Arial,sans-serif;vertical-align:top}th{background:#e8eef7;font-weight:700}h2,h3{font-family:Tahoma,Arial,sans-serif}</style></head>'
+    + '<body dir="rtl">' + body + '</body></html>';
+}
+function sessionXlsHtml(data) {
+  const s = data.s;
+  const meta = '<table dir="rtl" style="width:760px;margin-bottom:10px">'
+    + '<tr><th>التاريخ</th><td>' + xEsc(fmtDate(s.date)) + '</td><th>الوقت</th><td dir="ltr">' + xEsc(s.start_time + ' — ' + (s.end_time || '—')) + '</td></tr>'
+    + '<tr><th>المجموعات</th><td colspan="3">' + xEsc((data.groupNames.length ? data.groupNames : [s.group_name]).filter(Boolean).join('، ') || '—') + '</td></tr>'
+    + '<tr><th>الكابتن</th><td>' + xEsc(s.coach_name || '—') + '</td><th>الحمام</th><td>' + xEsc(s.pool_name || '—') + '</td></tr>'
+    + '</table>';
+  let html = '<h2 style="text-align:center">تقرير الحضور والغياب — حصة تدريبية</h2>' + meta;
+  data.groups.forEach(function (g) {
+    html += '<h3>' + xEsc(g.name) + ' (' + g.members.length + ' لاعب)</h3>'
+      + '<table dir="rtl" style="width:760px"><thead><tr><th>اللاعب</th><th>رقم العضوية</th><th>الحالة</th><th>ملاحظة</th></tr></thead><tbody>';
+    g.members.forEach(function (m) {
+      html += '<tr>' + xCell(m.full_name) + xCell(m.membership_no)
+        + xCell(ATT_LABEL[m.att_status] || '—', 'text-align:center')
+        + xCell(m.coach_note || m.reason) + '</tr>';
+    });
+    if (!g.members.length) html += '<tr><td colspan="4">لا يوجد لاعبون</td></tr>';
+    html += '</tbody></table><br/>';
+  });
+  if (!data.groups.length) html += '<p>لا توجد مجموعات مرتبطة بهذه الحصة</p>';
+  return html;
 }
 
 /* ============================================================== */
@@ -154,9 +292,15 @@ router.get('/sessions', async function (req, res) {
     r.status_badge = sesStatusBadge(r.status);
     return r;
   });
+  /* فلاتر client-side سريعة تتيح فتح أي حصة مسجّلة بتاريخ ووقت محددين */
+  const dateOptions = Array.from(new Set(rowRows.map(function (r) { return String(r.date || '').slice(0, 10); }).filter(Boolean)))
+    .sort().reverse().map(function (d) { return { value: d, label: fmtDate(d) }; });
+  const timeOptions = Array.from(new Set(rowRows.map(function (r) { return r.start_time; }).filter(Boolean)))
+    .sort().map(function (t) { return { value: t, label: t }; });
+  const canDownload = canExportSession(req.currentUser);
 
   const page = {
-    title: 'الحصص والجداول', subtitle: 'إدارة الحصص التدريبية ومواعيد المجموعات', icon: 'fa-calendar-days', module: 'sessions', active: 'sessions',
+    title: 'الحصص والجداول', subtitle: 'إدارة الحصص التدريبية ومواعيد المجموعات — كل حصة تُعرض بتاريخها ووقتها، افتحها لرؤية المجموعات واللاعبين', icon: 'fa-calendar-days', module: 'sessions', active: 'sessions',
     tabs: true, activeTab: 'sessions',
     columns: [
       { key: 'date', label: 'التاريخ', html: row => `<div><b>${fmtDate(row.date)}</b><div class="cell-sub">${row.start_time} — ${row.end_time || ''}</div></div>` },
@@ -167,6 +311,8 @@ router.get('/sessions', async function (req, res) {
     ],
     rows,
     filters: [
+      { name: 'date', label: 'التاريخ', options: dateOptions },
+      { name: 'start_time', label: 'وقت الحصة', options: timeOptions },
       { name: 'group_id', label: 'المجموعة', options: groupRows.map(g => ({ value: g.id, label: g.name })) },
       { name: 'coach_id', label: 'الكابتن', options: coachRows.map(c => ({ value: c.id, label: c.full_name })) },
       { name: 'status', label: 'الحالة', options: SES_STATUS }
@@ -174,13 +320,20 @@ router.get('/sessions', async function (req, res) {
     canAdd: canAdd(req.currentUser, 'sessions'),
     addUrl: canAdd(req.currentUser, 'sessions') ? '/sessions/new' : null,
     addLabel: 'حصة جديدة',
-    actions: () => row => [
-      { label: 'الحضور', icon: 'fa-clipboard-user', href: '/attendance/session/' + row.id },
-      { label: 'مسح', icon: 'fa-qrcode', href: '/attendance/scan?session=' + row.id },
-      { label: 'عرض', icon: 'fa-eye', href: '/sessions/' + row.id },
-      { label: 'تعديل', icon: 'fa-pen', href: '/sessions/' + row.id + '/edit' },
-      { label: 'حذف', icon: 'fa-trash', href: '/sessions/' + row.id + '/delete', confirm: 'هل أنت متأكد من حذف الحصة؟', cls: 'text-danger' }
-    ]
+    actions: () => row => {
+      const acts = [
+        { label: 'الحضور', icon: 'fa-clipboard-user', href: '/attendance/session/' + row.id },
+        { label: 'مسح', icon: 'fa-qrcode', href: '/attendance/scan?session=' + row.id },
+        { label: 'عرض', icon: 'fa-eye', href: '/sessions/' + row.id },
+        { label: 'تعديل', icon: 'fa-pen', href: '/sessions/' + row.id + '/edit' },
+        { label: 'حذف', icon: 'fa-trash', href: '/sessions/' + row.id + '/delete', confirm: 'هل أنت متأكد من حذف الحصة؟', cls: 'text-danger' }
+      ];
+      if (canDownload) {
+        acts.push({ label: 'PDF', icon: 'fa-file-pdf', href: '/sessions/' + row.id + '/attendance.pdf' });
+        acts.push({ label: 'Excel', icon: 'fa-file-excel', href: '/sessions/' + row.id + '/attendance.xls' });
+      }
+      return acts;
+    }
   };
   res.render('list', { page });
 });
@@ -281,23 +434,46 @@ router.post('/sessions/bulk-new', async function (req, res) {
   res.redirect('/attendance?date=' + date);
 });
 
+router.get('/sessions/:id/attendance.pdf', async function (req, res) {
+  if (!canExportSession(req.currentUser)) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const data = await sessionReportData(req.params.id, req);
+  if (!data) return res.redirect('/sessions');
+  pdfmake.createPdf(sessionPdfDoc(data)).getBuffer().then(function (buf) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="session-attendance-' + data.s.id + '.pdf"');
+    res.send(buf);
+  }).catch(function (e) {
+    console.error('خطأ في توليد PDF للحصة:', e.message);
+    res.status(500).send('تعذّر توليد ملف PDF: ' + e.message);
+  });
+});
+
+router.get('/sessions/:id/attendance.xls', async function (req, res) {
+  if (!canExportSession(req.currentUser)) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  const data = await sessionReportData(req.params.id, req);
+  if (!data) return res.redirect('/sessions');
+  const sheetName = 'حصة ' + String(data.s.date || '').slice(0, 10) + ' ' + (data.s.start_time || '');
+  const html = xlsWorkbook([{ name: sheetName, html: sessionXlsHtml(data) }]);
+  res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+  res.setHeader('Content-Disposition', "attachment; filename=\"session-attendance-" + data.s.id + ".xls\"");
+  res.send(html);
+});
+
 router.get('/sessions/:id', async function (req, res) {
   if (!canView(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
-  const s = await db.prepare(`SELECT se.*, g.name AS group_name, c.full_name AS coach_name, p.name AS pool_name FROM sessions se
-    LEFT JOIN groups g ON g.id = se.group_id LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id WHERE se.id = ?` + sessionClause(activeSport(req), 'se')).get(Number(req.params.id));
-  if (!s) return res.redirect('/sessions');
-  const groupIds = await sessionGroupIds(s.id);
-  await syncGroups(groupIds);
-  const placeholders = groupIds.length ? groupIds.map(() => '?').join(',') : '0';
-  const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, a.status AS att_status, a.reason, a.coach_note FROM swimmer_group sg
-    JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN attendance a ON a.session_id = ? AND a.swimmer_id = s.id
-    WHERE sg.group_id IN (${placeholders}) ORDER BY s.full_name`).all(s.id, ...groupIds);
-  const groupNames = groupIds.length ? (await db.prepare(`SELECT name FROM groups WHERE id IN (${placeholders}) ORDER BY name`).all(...groupIds)).map(r => r.name) : [];
+  const data = await sessionReportData(req.params.id, req);
+  if (!data) return res.redirect('/sessions');
+  const s = data.s;
+  const members = data.groups.reduce(function (all, g) { return all.concat(g.members); }, []);
   res.render('session_detail', {
     title: 'تفاصيل الحصة', active: 'sessions',
-    s, members, groupNames,
+    s, members, groups: data.groups, groupNames: data.groupNames,
     attMap: ATT_STATUS,
-    page: { canEdit: canEdit(req.currentUser, 'sessions'), canDel: canDel(req.currentUser, 'sessions') }
+    page: {
+      canEdit: canEdit(req.currentUser, 'sessions'),
+      canDel: canDel(req.currentUser, 'sessions'),
+      canExport: canExportSession(req.currentUser)
+    }
   });
 });
 
@@ -424,6 +600,7 @@ router.get('/attendance', async function (req, res) {
   };
   res.render('attendance', { title: 'الحضور والغياب', active: 'attendance', groups, allGroups: groupRows, daySessions, daily, date, from, to, groupFilter, slotMode, today: today(), canSave,
     canAddSession: canAdd(req.currentUser, 'sessions'),
+    canExport: canExportSession(req.currentUser),
     canScan: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance') || canEdit(req.currentUser, 'membershipCards') || canAdd(req.currentUser, 'membershipCards'),
     yday: addDays(today(), -1), dyday: addDays(today(), -2), tomorrow: addDays(today(), 1), isPast: date < today() });
 });
@@ -437,21 +614,35 @@ router.get('/attendance/session/:id', async function (req, res) {
   const groupIds = await sessionGroupIds(s.id);
   await syncGroups(groupIds);
   const placeholders = groupIds.length ? groupIds.map(() => '?').join(',') : '0';
-  const members = await db.prepare(`SELECT s.id, s.full_name, s.membership_no, s.birth_date, a.status AS att_status, a.reason, a.coach_note, a.id AS att_id,
-      (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status = 'نشط') DESC, sub.id DESC LIMIT 1) AS sub_end
-    FROM swimmer_group sg
-    JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN attendance a ON a.session_id = ? AND a.swimmer_id = s.id
-    WHERE sg.group_id IN (${placeholders}) ORDER BY s.full_name`).all(id, ...groupIds);
-  members.forEach(m => { m.sub = subBadge(m.sub_end); });
-  const groupNames = groupIds.length ? (await db.prepare(`SELECT name FROM groups WHERE id IN (${placeholders}) ORDER BY name`).all(...groupIds)).map(r => r.name) : [];
+  const [groupRows, memberRows] = await Promise.all([
+    groupIds.length ? db.prepare('SELECT id, name FROM groups WHERE id IN (' + placeholders + ') ORDER BY name, id').all(...groupIds) : Promise.resolve([]),
+    groupIds.length ? db.prepare(`SELECT sg.group_id, s.id, s.full_name, s.membership_no, s.birth_date, a.status AS att_status, a.reason, a.coach_note, a.id AS att_id,
+        (SELECT sub.end_date FROM subscriptions sub WHERE sub.swimmer_id = s.id ORDER BY (sub.status = 'نشط') DESC, sub.id DESC LIMIT 1) AS sub_end
+      FROM swimmer_group sg
+      JOIN swimmers s ON s.id = sg.swimmer_id LEFT JOIN attendance a ON a.session_id = ? AND a.swimmer_id = s.id
+      WHERE sg.group_id IN (${placeholders}) ORDER BY s.full_name, s.id`).all(id, ...groupIds) : Promise.resolve([])
+  ]);
+  const membersByGroup = {};
+  memberRows.forEach(function (m) {
+    m.sub = subBadge(m.sub_end);
+    (membersByGroup[String(m.group_id)] = membersByGroup[String(m.group_id)] || []).push(m);
+  });
+  const groups = groupRows.map(function (g) {
+    return { id: g.id, name: g.name, members: membersByGroup[String(g.id)] || [] };
+  });
+  const members = groups.reduce(function (all, g) { return all.concat(g.members); }, []);
+  const groupNames = groupRows.map(function (g) { return g.name; });
   const otherSessions = await db.prepare(`SELECT se.id, se.date, se.start_time, se.end_time, se.title,
       g.name AS group_name, (SELECT COUNT(*) FROM attendance a WHERE a.session_id = se.id) AS marked
     FROM sessions se LEFT JOIN groups g ON g.id = se.group_id
     WHERE se.date = ? AND se.deleted_at IS NULL AND se.id <> ? ORDER BY se.start_time, se.id`).all(s.date, s.id);
   res.render('attendance_session', {
     title: 'تسجيل الحضور', active: 'attendance',
-    s, members, groupNames, otherSessions, date: today(), today: today(), money,
-    page: { canEdit: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance') },
+    s, members, groups, groupNames, otherSessions, date: today(), today: today(), money,
+    page: {
+      canEdit: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance'),
+      canExport: canExportSession(req.currentUser)
+    },
     canSave: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance')
   });
 });
