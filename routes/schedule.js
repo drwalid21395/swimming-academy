@@ -4,7 +4,7 @@ const { db } = require('../lib/db');
 const { audit, money, fmtDate, fmtDateTime, dayAr, today, pct, parseJSON, canView, canAdd, canEdit, canDel, canExport } = require('../lib/helpers');
 const { setFlash } = require('../lib/auth-cookie');
 const { activeSport, sportClause, groupClause, sessionClause } = require('../lib/sport-context');
-const { ensureGroupSession, swimmerTimeClash } = require('../lib/attendance');
+const { ensureGroupSession, ensureDateTimeSession, swimmerTimeClash } = require('../lib/attendance');
 const { overlaps, validateRange, normalizeTime, toMinutes } = require('../lib/attendance-time');
 const pdfmake = require('../lib/pdf');
 
@@ -152,20 +152,34 @@ async function sessionReportData(sessionId, req) {
     WHERE se.id = ? AND se.deleted_at IS NULL` + sessionClause(activeSport(req), 'se')).get(id);
   if (!s) return null;
 
-  const groupIds = await sessionGroupIds(s.id);
+  /* كل الحصص المتوافقة في نفس اليوم والتوقيت تُعرض كمجموعات داخل حصة واحدة */
+  const siblings = await db.prepare(`SELECT se.id FROM sessions se
+    WHERE se.date = ? AND se.start_time = ? AND COALESCE(se.end_time, '') = COALESCE(?, '') AND se.deleted_at IS NULL` +
+    sessionClause(activeSport(req), 'se') + ` ORDER BY se.id`).all(s.date, s.start_time, s.end_time || null);
+  const sessionIds = siblings.map(function (x) { return Number(x.id); });
+  if (!sessionIds.length) sessionIds.push(id);
+  const siblingGroups = await Promise.all(sessionIds.map(function (sid) { return sessionGroupIds(sid); }));
+  const groupIds = Array.from(new Set(siblingGroups.reduce(function (all, arr) { return all.concat(arr); }, [])));
   await syncGroups(groupIds);
   const placeholders = groupIds.length ? groupIds.map(function () { return '?'; }).join(',') : '0';
-  const [groupRows, memberRows] = await Promise.all([
+  const sPlace = sessionIds.map(function () { return '?'; }).join(',');
+  const [groupRows, memberRows, attRows] = await Promise.all([
     groupIds.length ? db.prepare('SELECT id, name FROM groups WHERE id IN (' + placeholders + ') ORDER BY name, id').all(...groupIds) : Promise.resolve([]),
-    groupIds.length ? db.prepare(`SELECT sg.group_id, g.name AS group_name, s.id, s.full_name, s.membership_no,
-        a.status AS att_status, a.reason, a.coach_note
-      FROM swimmer_group sg
-      JOIN swimmers s ON s.id = sg.swimmer_id
-      JOIN groups g ON g.id = sg.group_id
-      LEFT JOIN attendance a ON a.session_id = ? AND a.swimmer_id = s.id
+    groupIds.length ? db.prepare(`SELECT sg.group_id, sw.id, sw.full_name, sw.membership_no
+      FROM swimmer_group sg JOIN swimmers sw ON sw.id = sg.swimmer_id
       WHERE sg.group_id IN (` + placeholders + `)
-      ORDER BY g.name, s.full_name, s.id`).all(s.id, ...groupIds) : Promise.resolve([])
+      ORDER BY sw.full_name, sw.id`).all(...groupIds) : Promise.resolve([]),
+    db.prepare('SELECT swimmer_id, session_id, status, reason, coach_note FROM attendance WHERE session_id IN (' + sPlace + ')').all(...sessionIds)
   ]);
+  const attMap = {};
+  attRows.forEach(function (a) { attMap[String(a.swimmer_id)] = a; });
+  memberRows.forEach(function (m) {
+    const a = attMap[String(m.id)];
+    m.att_status = a ? a.status : null;
+    m.reason = a ? a.reason : '';
+    m.coach_note = a ? a.coach_note : '';
+    m.att_session_id = a ? a.session_id : s.id;
+  });
   const membersByGroup = {};
   memberRows.forEach(function (m) {
     (membersByGroup[String(m.group_id)] = membersByGroup[String(m.group_id)] || []).push(m);
@@ -282,21 +296,32 @@ router.get('/sessions', async function (req, res) {
   if (status) { sql += ' AND se.status = ?'; params.push(status); }
   if (q) { sql += ' AND (g.name LIKE ? OR se.title LIKE ?)'; const like = '%' + q + '%'; params.push(like, like); }
   sql += ' ORDER BY se.date DESC, se.start_time';
-  /* الاستعلامات مستقلة؛ إرسالها معاً يوفّر رحلات قاعدة البيانات بنفس النتيجة. */
-  const [rowRows, groupRows, coachRows] = await Promise.all([
-    db.prepare(sql).all(...params),
-    db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL' + groupClause(activeSport(req)) + ' ORDER BY name').all(),
-    db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'coaches') + ' ORDER BY full_name').all()
-  ]);
-  const rows = rowRows.map(function (r, idx) {
+  const rowRows = await db.prepare(sql).all(...params);
+  /* حصة واحدة لكل تاريخ+توقيت: تُجمع الحصص المسجّلة لمجموعات مختلفة في صف واحد */
+  const buckets = new Map();
+  rowRows.forEach(function (r) {
+    const key = String(r.date || '') + '|' + String(r.start_time || '') + '|' + String(r.end_time || '');
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { ...r, present_count: 0, absent_count: 0 };
+      buckets.set(key, bucket);
+    }
+    bucket.present_count += Number(r.present_count) || 0;
+    bucket.absent_count += Number(r.absent_count) || 0;
+  });
+  const merged = Array.from(buckets.values()).sort(function (a, b) {
+    return String(b.date || '').localeCompare(String(a.date || ''))
+      || String(a.start_time || '').localeCompare(String(b.start_time || ''))
+      || Number(a.id) - Number(b.id);
+  });
+  const rows = merged.map(function (r, idx) {
     r.serial = idx + 1;
-    r.status_badge = sesStatusBadge(r.status);
     return r;
   });
   /* فلاتر client-side سريعة تتيح فتح أي حصة مسجّلة بتاريخ ووقت محددين */
-  const dateOptions = Array.from(new Set(rowRows.map(function (r) { return String(r.date || '').slice(0, 10); }).filter(Boolean)))
+  const dateOptions = Array.from(new Set(rows.map(function (r) { return String(r.date || '').slice(0, 10); }).filter(Boolean)))
     .sort().reverse().map(function (d) { return { value: d, label: fmtDate(d) }; });
-  const timeOptions = Array.from(new Set(rowRows.map(function (r) { return r.start_time; }).filter(Boolean)))
+  const timeOptions = Array.from(new Set(rows.map(function (r) { return r.start_time; }).filter(Boolean)))
     .sort().map(function (t) { return { value: t, label: t }; });
   const page = {
     title: 'الحصص والجداول', subtitle: 'كل حصة تسجّل بتاريخها ووقتها — اضغط على التمرين لعرض المجموعات واللاعبين وحالتهم', icon: 'fa-calendar-days', module: 'sessions', active: 'sessions',
@@ -311,10 +336,7 @@ router.get('/sessions', async function (req, res) {
     rows,
     filters: [
       { name: 'date', label: 'التاريخ', options: dateOptions },
-      { name: 'start_time', label: 'وقت الحصة', options: timeOptions },
-      { name: 'group_id', label: 'المجموعة', options: groupRows.map(g => ({ value: g.id, label: g.name })) },
-      { name: 'coach_id', label: 'الكابتن', options: coachRows.map(c => ({ value: c.id, label: c.full_name })) },
-      { name: 'status', label: 'الحالة', options: SES_STATUS }
+      { name: 'start_time', label: 'وقت التمرين', options: timeOptions }
     ],
     canAdd: canAdd(req.currentUser, 'sessions'),
     addUrl: canAdd(req.currentUser, 'sessions') ? '/sessions/new' : null,
@@ -538,19 +560,17 @@ router.get('/attendance', async function (req, res) {
     sessions = sessions.filter(function (s) { return overlaps(from, to, s.start_time, s.end_time); });
     let created = false;
     if (!sessions.length && canSave) {
-      const info = await db.prepare(`INSERT INTO sessions
-        (group_id, title, date, start_time, end_time, coach_id, pool_id, status, is_compensatory, note, created_by)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(g.id, g.name + ' - ' + date + ' (' + from + ')', date, from, to, g.coach_id || null, g.pool_id || null,
-          'scheduled', 0, 'أُنشئت من شاشة الحضور والغياب', req.currentUser.id);
-      const sid = Number(info.lastInsertRowid || 0);
-      await db.prepare('INSERT OR IGNORE INTO session_groups (session_id, group_id) VALUES (?,?)').run(sid, g.id);
-      for (const m of members) await db.prepare("INSERT OR IGNORE INTO attendance (session_id, swimmer_id, status) VALUES (?,?,'absent')").run(sid, m.id);
-      sessions = [await db.prepare(`SELECT se.*, g2.name AS group_name, c.full_name AS coach_name, p.name AS pool_name
-        FROM sessions se LEFT JOIN groups g2 ON g2.id = se.group_id LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id WHERE se.id = ?`).get(sid)];
-      created = true;
-      audit(req.currentUser.id, req.currentUser.full_name, 'add', 'sessions', sid,
-        'حصة جديدة بالوقت: ' + g.name + ' — ' + date + ' (' + from + ' - ' + to + ')', req);
+      /* حصة واحدة لكل تاريخ+توقيت: المجموعة الجديدة تُنضم للحصة الموجودة بدل إنشاء حصة أخرى */
+      const result = await ensureDateTimeSession(date, from, to, g, req.currentUser.id, 'أُنشئت من شاشة الحضور والغياب');
+      if (result.session) {
+        const sid = Number(result.session.id);
+        for (const m of members) await db.prepare("INSERT OR IGNORE INTO attendance (session_id, swimmer_id, status) VALUES (?,?,'absent')").run(sid, m.id);
+        sessions = [await db.prepare(`SELECT se.*, g2.name AS group_name, c.full_name AS coach_name, p.name AS pool_name
+          FROM sessions se LEFT JOIN groups g2 ON g2.id = se.group_id LEFT JOIN coaches c ON c.id = se.coach_id LEFT JOIN pools p ON p.id = se.pool_id WHERE se.id = ?`).get(sid)];
+        created = result.created;
+        if (created) audit(req.currentUser.id, req.currentUser.full_name, 'add', 'sessions', sid,
+          'حصة جديدة بالوقت: ' + g.name + ' — ' + date + ' (' + from + ' - ' + to + ')', req);
+      }
     }
     for (const s of sessions) {
       s.attMap = {};
@@ -747,6 +767,15 @@ router.post('/attendance/quick-session', async function (req, res) {
       const sw = await db.prepare('SELECT full_name FROM swimmers WHERE id = ?').get(dup.swimmer_id);
       return res.json({ ok: false, error: 'اللاعب ' + ((sw && sw.full_name) || ('#' + dup.swimmer_id)) + ' مسجّل بالفعل في حصة متداخلة في هذا اليوم' });
     }
+  }
+
+  /* حصة موجودة لنفس اليوم والتوقيت لمجموعة أخرى؟ تُضاف المجموعة لها بدل حصة جديدة */
+  const shared = await db.prepare(`SELECT id FROM sessions
+    WHERE date = ? AND start_time = ? AND COALESCE(end_time, '') = COALESCE(?, '') AND deleted_at IS NULL
+    ORDER BY id LIMIT 1`).get(date, range.from, range.to);
+  if (shared) {
+    await db.prepare('INSERT OR IGNORE INTO session_groups (session_id, group_id) VALUES (?,?)').run(shared.id, gid);
+    return res.json({ ok: true, session_id: shared.id, url: '/attendance/session/' + shared.id, reused: true });
   }
 
   const info = await db.prepare(`INSERT INTO sessions

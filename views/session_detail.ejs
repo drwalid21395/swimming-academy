@@ -44,9 +44,9 @@
       <h3><i class="fas fa-clipboard-user"></i> الحضور — المجموعات واللاعبون</h3>
       <div class="flex gap-1" style="flex-wrap:wrap">
         <% if (page.canSave) { %>
-          <button class="btn btn-success btn-sm" data-mark-all="present" data-session="<%= s.id %>"><i class="fas fa-check"></i> الكل حاضر</button>
-          <button class="btn btn-outline-danger btn-sm" data-mark-all="absent" data-session="<%= s.id %>"><i class="fas fa-xmark"></i> الكل غائب</button>
-          <button class="btn btn-outline-warning btn-sm" data-mark-all="excused" data-session="<%= s.id %>"><i class="fas fa-book"></i> الكل معتذر</button>
+          <button class="btn btn-success btn-sm" data-mark-all="present"><i class="fas fa-check"></i> الكل حاضر</button>
+          <button class="btn btn-outline-danger btn-sm" data-mark-all="absent"><i class="fas fa-xmark"></i> الكل غائب</button>
+          <button class="btn btn-outline-warning btn-sm" data-mark-all="excused"><i class="fas fa-book"></i> الكل معتذر</button>
         <% } %>
         <span class="badge badge-gray"><%= groups.length %> مجموعة · <%= members.length %> لاعب</span>
       </div>
@@ -93,10 +93,10 @@
                 </div>
                 <% if (page.canSave) { %>
                   <div class="att-btns">
-                    <button class="att-btn <%= (m.att_status || 'absent') === 'present' ? 'active-present' : '' %>" data-status="present" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="حاضر"><i class="fas fa-check"></i> <span>حاضر</span></button>
-                    <button class="att-btn <%= (m.att_status || 'absent') === 'absent' ? 'active-absent' : '' %>" data-status="absent" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="غائب"><i class="fas fa-xmark"></i> <span>غائب</span></button>
-                    <button class="att-btn <%= (m.att_status || 'absent') === 'excused' ? 'active-excused' : '' %>" data-status="excused" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="معتذر"><i class="fas fa-book"></i> <span>معتذر</span></button>
-                    <button class="att-btn <%= (m.att_status || 'absent') === 'late' ? 'active-late' : '' %>" data-status="late" data-swimmer="<%= m.id %>" data-session="<%= s.id %>" title="متأخر"><i class="fas fa-clock"></i> <span>متأخر</span></button>
+                    <button class="att-btn <%= (m.att_status || 'absent') === 'present' ? 'active-present' : '' %>" data-status="present" data-swimmer="<%= m.id %>" data-session="<%= m.att_session_id || s.id %>" title="حاضر"><i class="fas fa-check"></i> <span>حاضر</span></button>
+                    <button class="att-btn <%= (m.att_status || 'absent') === 'absent' ? 'active-absent' : '' %>" data-status="absent" data-swimmer="<%= m.id %>" data-session="<%= m.att_session_id || s.id %>" title="غائب"><i class="fas fa-xmark"></i> <span>غائب</span></button>
+                    <button class="att-btn <%= (m.att_status || 'absent') === 'excused' ? 'active-excused' : '' %>" data-status="excused" data-swimmer="<%= m.id %>" data-session="<%= m.att_session_id || s.id %>" title="معتذر"><i class="fas fa-book"></i> <span>معتذر</span></button>
+                    <button class="att-btn <%= (m.att_status || 'absent') === 'late' ? 'active-late' : '' %>" data-status="late" data-swimmer="<%= m.id %>" data-session="<%= m.att_session_id || s.id %>" title="متأخر"><i class="fas fa-clock"></i> <span>متأخر</span></button>
                   </div>
                 <% } %>
               </div>
