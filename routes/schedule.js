@@ -154,8 +154,8 @@ async function sessionReportData(sessionId, req) {
 
   /* كل الحصص المتوافقة في نفس اليوم والتوقيت تُعرض كمجموعات داخل حصة واحدة */
   const siblings = await db.prepare(`SELECT se.id FROM sessions se
-    WHERE se.date = ? AND se.start_time = ? AND COALESCE(se.end_time, '') = COALESCE(?, '') AND se.deleted_at IS NULL` +
-    sessionClause(activeSport(req), 'se') + ` ORDER BY se.id`).all(s.date, s.start_time, s.end_time || null);
+    WHERE se.date = ? AND se.start_time = ? AND se.deleted_at IS NULL` +
+    sessionClause(activeSport(req), 'se') + ` ORDER BY se.id`).all(s.date, s.start_time);
   const sessionIds = siblings.map(function (x) { return Number(x.id); });
   if (!sessionIds.length) sessionIds.push(id);
   const siblingGroups = await Promise.all(sessionIds.map(function (sid) { return sessionGroupIds(sid); }));
@@ -300,7 +300,7 @@ router.get('/sessions', async function (req, res) {
   /* حصة واحدة لكل تاريخ+توقيت: تُجمع الحصص المسجّلة لمجموعات مختلفة في صف واحد */
   const buckets = new Map();
   rowRows.forEach(function (r) {
-    const key = String(r.date || '') + '|' + String(r.start_time || '') + '|' + String(r.end_time || '');
+    const key = String(r.date || '') + '|' + String(r.start_time || '');
     let bucket = buckets.get(key);
     if (!bucket) {
       bucket = { ...r, present_count: 0, absent_count: 0 };
@@ -771,8 +771,8 @@ router.post('/attendance/quick-session', async function (req, res) {
 
   /* حصة موجودة لنفس اليوم والتوقيت لمجموعة أخرى؟ تُضاف المجموعة لها بدل حصة جديدة */
   const shared = await db.prepare(`SELECT id FROM sessions
-    WHERE date = ? AND start_time = ? AND COALESCE(end_time, '') = COALESCE(?, '') AND deleted_at IS NULL
-    ORDER BY id LIMIT 1`).get(date, range.from, range.to);
+    WHERE date = ? AND start_time = ? AND deleted_at IS NULL
+    ORDER BY id LIMIT 1`).get(date, range.from);
   if (shared) {
     await db.prepare('INSERT OR IGNORE INTO session_groups (session_id, group_id) VALUES (?,?)').run(shared.id, gid);
     return res.json({ ok: true, session_id: shared.id, url: '/attendance/session/' + shared.id, reused: true });
