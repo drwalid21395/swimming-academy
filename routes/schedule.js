@@ -269,8 +269,8 @@ router.get('/sessions', async function (req, res) {
   if (!canView(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
   const { group, coach, status, q } = req.query;
   let sql = `SELECT se.*, g.name AS group_name, g.program_id, c.full_name AS coach_name, p.name AS pool_name,
-      (SELECT COUNT(*) FROM attendance a WHERE a.session_id = se.id) AS att_count,
-      (SELECT COUNT(*) FROM attendance a WHERE a.session_id = se.id AND a.status = 'present') AS present_count
+      (SELECT COUNT(*) FROM attendance a WHERE a.session_id = se.id AND a.status IN ('present','late')) AS present_count,
+      (SELECT COUNT(*) FROM attendance a WHERE a.session_id = se.id AND a.status IN ('absent','excused')) AS absent_count
     FROM sessions se
     LEFT JOIN groups g ON g.id = se.group_id
     LEFT JOIN coaches c ON c.id = se.coach_id
@@ -288,7 +288,8 @@ router.get('/sessions', async function (req, res) {
     db.prepare('SELECT * FROM groups WHERE deleted_at IS NULL' + groupClause(activeSport(req)) + ' ORDER BY name').all(),
     db.prepare('SELECT id, full_name FROM coaches WHERE deleted_at IS NULL' + sportClause(activeSport(req), 'coaches') + ' ORDER BY full_name').all()
   ]);
-  const rows = rowRows.map(function (r) {
+  const rows = rowRows.map(function (r, idx) {
+    r.serial = idx + 1;
     r.status_badge = sesStatusBadge(r.status);
     return r;
   });
@@ -297,16 +298,15 @@ router.get('/sessions', async function (req, res) {
     .sort().reverse().map(function (d) { return { value: d, label: fmtDate(d) }; });
   const timeOptions = Array.from(new Set(rowRows.map(function (r) { return r.start_time; }).filter(Boolean)))
     .sort().map(function (t) { return { value: t, label: t }; });
-  const canDownload = canExportSession(req.currentUser);
-
   const page = {
-    title: 'الحصص والجداول', subtitle: 'إدارة الحصص التدريبية ومواعيد المجموعات — كل حصة تُعرض بتاريخها ووقتها، افتحها لرؤية المجموعات واللاعبين', icon: 'fa-calendar-days', module: 'sessions', active: 'sessions',
+    title: 'الحصص والجداول', subtitle: 'كل حصة تسجّل بتاريخها ووقتها — اضغط على التمرين لعرض المجموعات واللاعبين وحالتهم', icon: 'fa-calendar-days', module: 'sessions', active: 'sessions',
     tabs: true, activeTab: 'sessions',
     columns: [
-      { key: 'date', label: 'التاريخ والوقت', html: row => `<div><b>${fmtDate(row.date)}</b><div class="cell-sub" dir="ltr">${row.start_time} — ${row.end_time || ''}</div></div>` },
-      { key: 'coach_name', label: 'الكابتن' },
-      { key: 'att_count', label: 'الحضور', html: row => `<span class="badge ${row.present_count === row.att_count && row.att_count > 0 ? 'badge-success' : 'badge-info'}">${row.present_count} / ${row.att_count}</span>` },
-      { key: 'status', label: 'الحالة', html: row => row.status_badge }
+      { key: 'serial', label: 'المسلسل', html: row => `<span class="text-soft">${row.serial}</span>` },
+      { key: 'date', label: 'تاريخ التمرين', html: row => `<a href="/sessions/${row.id}" class="cell-title" style="color:var(--primary)">${fmtDate(row.date)}</a>` },
+      { key: 'start_time', label: 'توقيت التمرين', html: row => `<a href="/sessions/${row.id}" class="cell-title" style="color:var(--primary)" dir="ltr">${row.start_time} — ${row.end_time || ''}</a>` },
+      { key: 'present_count', label: 'عدد الحضور', html: row => `<span class="badge badge-success">${row.present_count}</span>` },
+      { key: 'absent_count', label: 'عدد الغياب', html: row => `<span class="badge badge-danger">${row.absent_count}</span>` }
     ],
     rows,
     filters: [
@@ -318,21 +318,7 @@ router.get('/sessions', async function (req, res) {
     ],
     canAdd: canAdd(req.currentUser, 'sessions'),
     addUrl: canAdd(req.currentUser, 'sessions') ? '/sessions/new' : null,
-    addLabel: 'حصة جديدة',
-    actions: () => row => {
-      const acts = [
-        { label: 'الحضور', icon: 'fa-clipboard-user', href: '/attendance/session/' + row.id },
-        { label: 'مسح', icon: 'fa-qrcode', href: '/attendance/scan?session=' + row.id },
-        { label: 'عرض', icon: 'fa-eye', href: '/sessions/' + row.id },
-        { label: 'تعديل', icon: 'fa-pen', href: '/sessions/' + row.id + '/edit' },
-        { label: 'حذف', icon: 'fa-trash', href: '/sessions/' + row.id + '/delete', confirm: 'هل أنت متأكد من حذف الحصة؟', cls: 'text-danger' }
-      ];
-      if (canDownload) {
-        acts.push({ label: 'PDF', icon: 'fa-file-pdf', href: '/sessions/' + row.id + '/attendance.pdf' });
-        acts.push({ label: 'Excel', icon: 'fa-file-excel', href: '/sessions/' + row.id + '/attendance.xls' });
-      }
-      return acts;
-    }
+    addLabel: 'حصة جديدة'
   };
   res.render('list', { page });
 });
