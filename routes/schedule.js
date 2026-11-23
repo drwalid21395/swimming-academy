@@ -303,8 +303,7 @@ router.get('/sessions', async function (req, res) {
     title: 'الحصص والجداول', subtitle: 'إدارة الحصص التدريبية ومواعيد المجموعات — كل حصة تُعرض بتاريخها ووقتها، افتحها لرؤية المجموعات واللاعبين', icon: 'fa-calendar-days', module: 'sessions', active: 'sessions',
     tabs: true, activeTab: 'sessions',
     columns: [
-      { key: 'date', label: 'التاريخ', html: row => `<div><b>${fmtDate(row.date)}</b><div class="cell-sub">${row.start_time} — ${row.end_time || ''}</div></div>` },
-      { key: 'group_name', label: 'المجموعة', html: row => `<div class="avatar-cell"><div class="avatar-sm" style="background:linear-gradient(135deg,#0ea5e9,#2563eb)">${(row.group_name || 'م').trim().charAt(0)}</div><div><div class="cell-title">${row.group_name || '—'}</div><div class="cell-sub">${row.pool_name || ''}</div></div></div>` },
+      { key: 'date', label: 'التاريخ والوقت', html: row => `<div><b>${fmtDate(row.date)}</b><div class="cell-sub" dir="ltr">${row.start_time} — ${row.end_time || ''}</div></div>` },
       { key: 'coach_name', label: 'الكابتن' },
       { key: 'att_count', label: 'الحضور', html: row => `<span class="badge ${row.present_count === row.att_count && row.att_count > 0 ? 'badge-success' : 'badge-info'}">${row.present_count} / ${row.att_count}</span>` },
       { key: 'status', label: 'الحالة', html: row => row.status_badge }
@@ -472,7 +471,8 @@ router.get('/sessions/:id', async function (req, res) {
     page: {
       canEdit: canEdit(req.currentUser, 'sessions'),
       canDel: canDel(req.currentUser, 'sessions'),
-      canExport: canExportSession(req.currentUser)
+      canExport: canExportSession(req.currentUser),
+      canSave: canEdit(req.currentUser, 'attendance') || canAdd(req.currentUser, 'attendance')
     }
   });
 });
