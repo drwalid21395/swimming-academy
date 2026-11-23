@@ -340,7 +340,11 @@ router.get('/sessions', async function (req, res) {
     ],
     canAdd: canAdd(req.currentUser, 'sessions'),
     addUrl: canAdd(req.currentUser, 'sessions') ? '/sessions/new' : null,
-    addLabel: 'حصة جديدة'
+    addLabel: 'حصة جديدة',
+    bulkUrl: canDel(req.currentUser, 'sessions') ? '/sessions/bulk' : null,
+    bulkActions: canDel(req.currentUser, 'sessions') ? [
+      { value: 'delete', label: 'حذف الحصص المحددة', icon: 'fa-trash', confirm: 'هل أنت متأكد من حذف الحصص المحددة؟ ستُحذف أيضاً الحصص المرتبطة بنفس التاريخ والتوقيت مع الاحتفاظ بسجل الحضور.' }
+    ] : []
   };
   res.render('list', { page });
 });
@@ -513,6 +517,41 @@ router.post('/sessions/:id/edit', async function (req, res) {
   audit(req.currentUser.id, req.currentUser.full_name, 'edit', 'sessions', id, 'تعديل حصة (' + groupIds.length + ' مجموعة)', req);
   setFlash(res, { type: 'success', message: 'تم حفظ التعديلات' });
   res.redirect('/sessions/' + id);
+});
+/* حذف جماعي: الصف الواحد يمثل كل الحصص المسجّلة على نفس التاريخ ووقت البداية */
+router.post('/sessions/bulk', async function (req, res) {
+  const ids = [].concat(req.body.ids || []).map(Number).filter(n => Number.isSafeInteger(n) && n > 0);
+  const action = String(req.body.action || '');
+  if (!ids.length) { setFlash(res, { type: 'error', message: 'لم يتم تحديد أي حصة' }); return res.redirect('/sessions'); }
+  if (action !== 'delete') { setFlash(res, { type: 'error', message: 'إجراء غير معروف' }); return res.redirect('/sessions'); }
+  if (!canDel(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
+  try {
+    const ph = ids.map(function () { return '?'; }).join(',');
+    const picked = await db.prepare(`SELECT se.id, se.date, se.start_time FROM sessions se
+      WHERE se.id IN (${ph}) AND se.deleted_at IS NULL` + sessionClause(activeSport(req), 'se')).all(...ids);
+    const pairs = [];
+    const seen = new Set();
+    picked.forEach(function (s) {
+      const d = String(s.date || '');
+      const t = String(s.start_time || '');
+      const key = d + '|' + t;
+      if (!seen.has(key)) { seen.add(key); pairs.push([d, t]); }
+    });
+    if (!pairs.length) { setFlash(res, { type: 'error', message: 'لم يتم العثور على الحصص المحددة' }); return res.redirect('/sessions'); }
+    const slotsSql = pairs.map(function () { return "(COALESCE(date, '') = ? AND COALESCE(start_time, '') = ?)"; }).join(' OR ');
+    const siblings = await db.prepare(`SELECT id FROM sessions WHERE deleted_at IS NULL AND (${slotsSql})` + sessionClause(activeSport(req)))
+      .all(...pairs.reduce(function (all, p) { return all.concat(p); }, []));
+    const targetIds = Array.from(new Set(siblings.map(function (s) { return Number(s.id); })));
+    if (!targetIds.length) { setFlash(res, { type: 'error', message: 'لم يتم العثور على الحصص المحددة' }); return res.redirect('/sessions'); }
+    const tph = targetIds.map(function () { return '?'; }).join(',');
+    await db.prepare(`UPDATE sessions SET deleted_at = datetime('now','localtime') WHERE id IN (${tph}) AND deleted_at IS NULL`).run(...targetIds);
+    audit(req.currentUser.id, req.currentUser.full_name, 'delete', 'sessions', null, 'حذف جماعي لعدد ' + targetIds.length + ' حصة', req);
+    setFlash(res, { type: 'success', message: 'تم حذف ' + targetIds.length + ' حصة مع الاحتفاظ بسجل الحضور' });
+  } catch (e) {
+    console.error('فشل الحذف الجماعي للحصص:', e.message);
+    setFlash(res, { type: 'error', message: 'تعذّر حذف الحصص: ' + e.message });
+  }
+  res.redirect('/sessions');
 });
 router.post('/sessions/:id/delete', async function (req, res) {
   if (!canDel(req.currentUser, 'sessions')) return res.status(403).render('errors/403', { layout: false, user: req.currentUser });
